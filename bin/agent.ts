@@ -236,6 +236,7 @@ async function main(): Promise<void> {
           .then((result) => {
             if (result["ok"] !== true) throw new Error(String(result["error"] ?? "brand failed"));
             applyBrand(String(result["name"]), result["colors"] as string[]);
+            ui?.setBrandCustomColors((result["customColors"] ?? []) as string[]);
             ui?.notice("✓ brand name set — " + String(result["name"]));
           })
           .catch((error: Error) => ui?.notice("✘ " + error.message));
@@ -245,6 +246,7 @@ async function main(): Promise<void> {
           .then((result) => {
             if (result["ok"] !== true) throw new Error(String(result["error"] ?? "brand failed"));
             applyBrand(String(result["name"]), result["colors"] as string[]);
+            ui?.setBrandCustomColors((result["customColors"] ?? []) as string[]);
             ui?.notice("✓ colors set — " + colors.join(" + "));
           })
           .catch((error: Error) => ui?.notice("✘ " + error.message));
@@ -347,13 +349,6 @@ async function main(): Promise<void> {
   await chat.connect();
   if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);
 
-  try {
-    const brand = await getBrand();
-    process.env.AGENT_NAME = brand.name;
-    process.env.AGENT_COLORS = brand.colors.join(",");
-  } catch {
-  }
-
   if (!interactive) {
     const { images, errors } = await loadImages(task);
     for (const message of errors) stdout.write(C.dim + "  · " + message + C.reset + "\n");
@@ -365,8 +360,17 @@ async function main(): Promise<void> {
     exit(0);
   }
 
+  let savedBrand: { name: string; colors: string[]; customColors: string[] } | null = null;
+  try {
+    savedBrand = await getBrand();
+    process.env.AGENT_NAME = savedBrand.name;
+    process.env.AGENT_COLORS = savedBrand.colors.join(",");
+  } catch {
+  }
+
   ui?.enableHero(PRODUCT_VERSION);
   ui?.show();
+  if (savedBrand) ui?.setBrandCustomColors(savedBrand.customColors);
   void getSetupStatus()
     .then((status) => {
       if (status.needsSetup) ui?.notice("· no provider connected — /setup connects one · /brand makes it yours ·");

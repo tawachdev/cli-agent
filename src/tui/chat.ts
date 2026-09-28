@@ -82,6 +82,7 @@ export const skipSetup = (): Promise<Record<string, unknown>> =>
 export interface BrandInfo {
   name: string;
   colors: string[];
+  customColors: string[];
   source: string;
 }
 
@@ -89,6 +90,7 @@ export const getBrand = (): Promise<BrandInfo> =>
   request("/brand").then((r) => ({
     name: String(r["name"] ?? "MIMON"),
     colors: (r["colors"] as string[]) ?? ["teal", "gold"],
+    customColors: (r["customColors"] as string[]) ?? [],
     source: String(r["source"] ?? "default"),
   }));
 

@@ -295,10 +295,11 @@ export class Tui {
   private brandBuffer = "";
   private brandError = "";
   private brandPicks: string[] = [];
-  private brandCurrent: { name: string; colors: string[] } | null = null;
+  private brandCurrent: { name: string; colors: string[]; customColors: string[] } | null = null;
   private brandColorIndex = 0;
   private brandModeIndex = 0;
   private brandSingleColor = false;
+  private brandCustomColors: string[] = [];
   private customColorBuffer = "";
   private customColorError = "";
   private addFields: [string, string, string] = ["", "", ""];
@@ -701,8 +702,12 @@ export class Tui {
     return this.boxed("brand name", body);
   }
 
+  private paletteEntries(): string[] {
+    return [...Object.keys(BRAND_PALETTE), ...this.brandCustomColors, "custom hex…"];
+  }
+
   private brandColorsLines(): string[] {
-    const names = [...Object.keys(BRAND_PALETTE), "custom hex…"];
+    const names = this.paletteEntries();
     const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
     const letter = this.brandCurrent?.name[this.brandPicks.length] ?? "?";
     const preview = (this.brandCurrent?.name ?? "")
@@ -722,7 +727,12 @@ export class Tui {
         if (index >= names.length) break;
         const name = names[index]!;
         const sel = index === this.brandColorIndex;
-        const swatch = name === "custom hex…" ? "\x1b[38;5;80m" + "＃" + C.reset : BRAND_PALETTE[name] + "██" + C.reset;
+        const isCustom = this.brandCustomColors.includes(name);
+        const swatch = name === "custom hex…"
+          ? "\x1b[38;5;80m" + "＃" + C.reset
+          : isCustom
+            ? entryColor(name) + "██" + C.reset
+            : BRAND_PALETTE[name] + "██" + C.reset;
         const cell = (sel ? C.teal + "❯ " + C.reset : "   ") + swatch + " " + (sel ? C.bold + C.teal + name : C.cream + name) + C.reset;
         cells.push(this.padCell(cell, cellWidth));
       }
@@ -776,13 +786,19 @@ export class Tui {
     this.refresh();
   }
 
-  openBrand(current: { name: string; colors: string[] }): void {
-    this.brandCurrent = current;
+  openBrand(current: { name: string; colors: string[]; customColors?: string[] }): void {
+    this.brandCustomColors = current.customColors ?? [];
+    this.brandCurrent = { name: current.name, colors: current.colors, customColors: this.brandCustomColors };
     this.brandError = "";
     this.brandPicks = [];
     this.view = "brand";
     this.brandIndex = 0;
     this.refresh();
+  }
+
+  setBrandCustomColors(colors: string[]): void {
+    this.brandCustomColors = colors;
+    if (this.view === "brandColors") this.refresh();
   }
 
   refreshBrand(): void {
@@ -1084,7 +1100,7 @@ export class Tui {
       return;
     }
     if (this.view === "brandColors") {
-      const names = [...Object.keys(BRAND_PALETTE), "custom"];
+      const names = [...this.paletteEntries().slice(0, -1), "custom"];
       const count = names.length;
       const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
       const move = (delta: number) => {

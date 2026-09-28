@@ -16,24 +16,35 @@ describe("brand store", () => {
   it("resolves effective brand: default, then env, then file", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "brand-store-"));
     const store = new BrandStore(workspace, {});
-    expect(store.effective()).toEqual({ name: "MIMON", colors: ["teal", "gold"], source: "default" });
+    expect(store.effective()).toEqual({ name: "MIMON", colors: ["teal", "gold"], customColors: [], source: "default" });
 
     const envStore = new BrandStore(workspace, { AGENT_NAME: "anir", AGENT_COLORS: "purple,pink" });
-    expect(envStore.effective()).toEqual({ name: "ANIR", colors: ["purple", "pink"], source: "env" });
+    expect(envStore.effective()).toEqual({ name: "ANIR", colors: ["purple", "pink"], customColors: [], source: "env" });
 
     await store.write("sam", ["cyan", "orange"]);
-    expect(store.effective()).toEqual({ name: "SAM", colors: ["cyan", "orange"], source: "file" });
-    expect(envStore.effective()).toEqual({ name: "SAM", colors: ["cyan", "orange"], source: "file" });
-    expect(new BrandStore(workspace, {}).effective().source).toBe("file");
+    expect(store.effective()).toEqual({ name: "SAM", colors: ["cyan", "orange"], customColors: [], source: "file" });
+    expect(envStore.effective()).toEqual({ name: "SAM", colors: ["cyan", "orange"], customColors: [], source: "file" });
+    expect(new BrandStore(workspace, {}).effective().customColors).toEqual([]);
   });
 
   it("ignores corrupt or invalid brand.json and falls back", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "brand-store-"));
     const store = new BrandStore(workspace, {});
     await Bun.write(join(workspace, ".agent", "brand.json"), "{ not json");
-    expect(store.effective()).toEqual({ name: "MIMON", colors: ["teal", "gold"], source: "default" });
+    expect(store.effective()).toEqual({ name: "MIMON", colors: ["teal", "gold"], customColors: [], source: "default" });
     await Bun.write(join(workspace, ".agent", "brand.json"), JSON.stringify({ name: "TOOLONGNAME16", colors: ["teal", "gold"] }));
     expect(store.effective().source).toBe("default");
+  });
+
+  it("applied hex colors join the user palette and survive restarts", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "brand-store-"));
+    const store = new BrandStore(workspace, {});
+    await store.write("zeta", ["#ff5a00", "teal"]);
+    await store.write("zeta", ["#00ff88"]);
+    const saved = JSON.parse(readFileSync(join(workspace, ".agent", "brand.json"), "utf8")) as { customColors: string[] };
+    expect(saved.customColors).toEqual(["#00ff88", "#ff5a00"]);
+    const reopened = new BrandStore(workspace, {});
+    expect(reopened.effective().customColors).toEqual(["#00ff88", "#ff5a00"]);
   });
 
   it("reset writes the defaults back to the file", async () => {
@@ -42,7 +53,7 @@ describe("brand store", () => {
     await store.write("zeta", ["red", "blue"]);
     await store.reset();
     const saved = JSON.parse(readFileSync(join(workspace, ".agent", "brand.json"), "utf8"));
-    expect(saved).toEqual({ name: "MIMON", colors: ["teal", "gold"] });
+    expect(saved).toEqual({ name: "MIMON", colors: ["teal", "gold"], customColors: [] });
   });
 });
 
