@@ -703,15 +703,19 @@ export class Tui {
   private providerAddLines(): string[] {
     const labels = ["name (a-z, 0-9, -)", "base url (https://…)", "models (comma separated)"];
     const body: string[] = [];
+    const budget = Math.max(8, this.innerWidth() - 2);
     for (let i = 0; i < labels.length; i++) {
       const active = i === this.addFieldIndex;
       const marker = active ? C.teal + "❯ " + C.reset : "  ";
+      const label = trunc(labels[i]!, 24);
       const value = this.addFields[i]!;
+      const room = budget - label.length - 2 - (active ? 1 : 0);
+      const tail = room > 4 && value.length > room ? "…" + value.slice(-(room - 1)) : value;
       const field = active
-        ? C.bold + trunc(labels[i]!, Math.max(4, this.usable - 10)) + C.reset + "  " + C.cream + value + C.reset + C.inverse + " " + C.reset
+        ? C.bold + label + C.reset + "  " + C.cream + tail + C.reset + C.inverse + " " + C.reset
         : value
-          ? C.dim + trunc(labels[i]!, Math.max(4, this.usable - 10)) + C.reset + "  " + value + C.reset
-          : C.dim + trunc(labels[i]!, Math.max(4, this.usable - 10)) + C.reset;
+          ? C.dim + label + C.reset + "  " + C.dim + tail + C.reset
+          : C.dim + label + C.reset;
       body.push(marker + field);
     }
     if (this.addError) {

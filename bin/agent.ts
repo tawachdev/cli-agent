@@ -319,15 +319,15 @@ async function main(): Promise<void> {
     const killBackend = (): void => {
       spawnedBackend?.kill();
     };
+    const die = (): void => {
+      cleanup();
+      killBackend();
+      exit(0);
+    };
     process.on("exit", killBackend);
-    process.on("SIGINT", () => {
-      killBackend();
-      exit(0);
-    });
-    process.on("SIGTERM", () => {
-      killBackend();
-      exit(0);
-    });
+    process.on("SIGINT", die);
+    process.on("SIGTERM", die);
+    process.on("SIGPIPE", die);
     let up = false;
     for (let i = 0; i < 30 && !up; i++) {
       await new Promise<void>((resolve) => setTimeout(resolve, 300));

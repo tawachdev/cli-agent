@@ -345,3 +345,22 @@ describe("brand picker under hero", () => {
     }
   });
 });
+
+describe("form bounds", () => {
+  it("a long base URL stays inside the box on the rendered screen", () => {
+    const { vt, tui } = makeVt(24, 80);
+    tui.openProviders([{ name: "anthropic", models: ["m"], keySet: false }]);
+    tui.show();
+    key(tui, "down");
+    key(tui, "enter");
+    for (const ch of "myprovider") tui.handleKey({ kind: "char", ch });
+    key(tui, "enter");
+    for (const ch of "https://api.very-long-domain-name.example.com/openai/v1/with/long/path/segments") tui.handleKey({ kind: "char", ch });
+    const screen = vt.screen();
+    for (const line of screen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(80);
+    }
+    expect(screen).toContain("…");
+    expect(screen).not.toContain("very-long-domain");
+  });
+});

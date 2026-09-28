@@ -23,7 +23,7 @@ The terminal is the whole product and the `/` menu is its control panel: `/setup
 
 Any OpenAI-compatible endpoint (Groq, OpenRouter, Together, LM Studio...) is a first-class citizen: `/providers` → **+ add provider** → name, base URL, models — it joins the list like a builtin; open it to set its key and bind a tier. Custom providers persist in `.agent/providers.json` (`kind` is always `openai`; other kinds can be added by editing that file). Base URLs are validated defensively before the engine ever dials one: real URL parse, public `https://` only (`http` allowed for 127.0.0.1/localhost), private and link-local IP ranges (10.x, 192.168.x, 172.16–31.x, 169.254.x), embedded credentials, control characters and overlong values are all rejected.
 
-Inside the TUI: type `/` and pick **/brand** — change the name (2–12 letters), pick two colors live from the palette, or reset. The choice is saved (`.agent/brand.json`) and every launch after that boots with your brand — no environment variables needed.
+Inside the TUI: type `/` and pick **/brand** — change the name (2–12 letters), change colors (one for the whole name or one per letter, from presets, the 256-color grid, or custom hex — applied colors are remembered as your swatches), or reset. The choice is saved (`.agent/brand.json`) and every launch after that boots with your brand — no environment variables needed.
 
 Environment works too:
 
