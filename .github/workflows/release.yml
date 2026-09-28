@@ -8,46 +8,26 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            target: darwin-arm64
-          - os: macos-latest
-            target: darwin-x64
-          - os: ubuntu-latest
-            target: linux-arm64
-          - os: ubuntu-latest
-            target: linux-x64
-    runs-on: ${{ matrix.os }}
+  release:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run typecheck
       - run: bun test
-      - run: bun build --compile bin/agent.ts --target ${{ matrix.target }} --outfile dist/agent
-      - name: checksum
+      - name: compile all targets (cross-compile from linux)
+        run: |
+          for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+            bun build --compile bin/agent.ts --target "$target" --outfile "dist/agent-$target"
+          done
+      - name: checksums
         run: |
           cd dist
-          mv agent agent-${{ matrix.target }}
-          if [ "${{ runner.os }}" = "macOS" ]; then shasum -a 256 agent-${{ matrix.target }} > agent-${{ matrix.target }}.sha256
-          else sha256sum agent-${{ matrix.target }} > agent-${{ matrix.target }}.sha256; fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: agent-${{ matrix.target }}
-          path: dist/agent-${{ matrix.target }}*
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
+          for f in agent-*; do
+            case "$f" in *.sha256) continue ;; esac
+            sha256sum "$f" > "$f.sha256"
+          done
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/agent-*
