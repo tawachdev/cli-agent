@@ -310,7 +310,8 @@ export class Tui {
   private addError = "";
   private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null }> = [];
   private pendingPaths = new Set<string>();
-  private lastRenderLines = 0;
+  private lastLines: string[] = [];
+  private cursorLine = 0;
 
   constructor(
     private readonly tty: Tty,
@@ -580,22 +581,60 @@ export class Tui {
   }
 
   private render(): void {
-    const prevInputRow = this.inputRow;
     const lines = this.buildLines();
-    const fullClear = this.shown && this.heroActive && lines.length !== this.lastRenderLines;
-    if (fullClear) {
-      this.tty.write("\x1b[2J\x1b[H");
-      this.shown = false;
-    } else if (this.shown && prevInputRow > 0) {
-      this.tty.write("\x1b[" + prevInputRow + "A");
+    const inputRow = this.inputRow;
+    const prev = this.lastLines;
+    let wrote = false;
+    let endLine = this.cursorLine;
+    if (!this.shown || prev.length === 0) {
+      if (this.shown && this.cursorLine > 0) {
+        this.tty.write("\x1b[" + this.cursorLine + "A");
+      }
+      this.tty.write("\r\x1b[J");
+      this.tty.write(lines.join("\r\n"));
+      wrote = true;
+      endLine = lines.length - 1;
+    } else {
+      const total = Math.max(prev.length, lines.length);
+      const changed: number[] = [];
+      for (let i = 0; i < total; i++) {
+        if (prev[i] !== lines[i]) changed.push(i);
+      }
+      if (changed.length > 0) {
+        const move = (from: number, to: number): void => {
+          if (to < from) this.tty.write("\x1b[" + (from - to) + "A");
+          else if (to > from) this.tty.write("\x1b[" + (to - from) + "B");
+        };
+        if (changed.length * 3 > lines.length) {
+          const d = changed[0]!;
+          move(this.cursorLine, d);
+          this.tty.write("\r\x1b[J");
+          this.tty.write(lines.slice(d).join("\r\n"));
+          endLine = lines.length - 1;
+        } else {
+          let cur = this.cursorLine;
+          for (const idx of changed) {
+            move(cur, idx);
+            this.tty.write("\r\x1b[K");
+            if (idx < lines.length) this.tty.write(lines[idx]!);
+            cur = idx;
+          }
+          endLine = changed[changed.length - 1]!;
+        }
+        wrote = true;
+      }
     }
-    this.tty.write("\r\x1b[J");
-    this.lastRenderLines = lines.length;
-    this.tty.write(lines.join("\r\n"));
-    const back = lines.length - 1 - this.inputRow;
-    if (back > 0) this.tty.write("\x1b[" + back + "A");
+    if (wrote) {
+      if (endLine > inputRow) this.tty.write("\x1b[" + (endLine - inputRow) + "A");
+      else if (endLine < inputRow) this.tty.write("\x1b[" + (inputRow - endLine) + "B");
+    } else if (this.cursorLine !== inputRow) {
+      const delta = this.cursorLine - inputRow;
+      this.tty.write(delta > 0 ? "\x1b[" + delta + "A" : "\x1b[" + -delta + "B");
+    }
     this.tty.write("\r");
     if (this.cursorCol > 0) this.tty.write("\x1b[" + this.cursorCol + "C");
+    this.lastLines = lines;
+    this.cursorLine = inputRow;
     this.shown = true;
   }
 
@@ -621,6 +660,8 @@ export class Tui {
     if (this.inputRow > 0) this.tty.write("\x1b[" + this.inputRow + "A");
     this.tty.write("\r\x1b[J");
     this.shown = false;
+    this.lastLines = [];
+    this.cursorLine = 0;
   }
 
   notice(msg: string): void {
@@ -844,10 +885,11 @@ export class Tui {
 
   onResize(): void {
     if (this.busy && this.view !== "permission") return;
-    this.lastRenderLines = 0;
+    this.lastLines = [];
     if (this.heroActive && this.shown) {
       this.tty.write("\x1b[2J\x1b[H");
       this.shown = false;
+      this.cursorLine = 0;
       this.regenerateHero();
       this.show();
       return;

@@ -729,6 +729,47 @@ describe("brand view", () => {
   });
 });
 
+describe("render byte budget", () => {
+  class CountingTty implements Tty {
+    chunks: string[] = [];
+    columns = 100;
+    rows = 40;
+    write(data: string): void {
+      this.chunks.push(data);
+    }
+    bytesSince(mark: number): number {
+      return this.chunks.slice(mark).join("").length;
+    }
+  }
+
+  it("typing one character rewrites a bounded number of bytes", () => {
+    const tty = new CountingTty();
+    const tui = new Tui(tty, { onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {}, onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {}, onWizardSkip: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
+    tui.enableHero("0.1.0");
+    tui.show();
+    type(tui, "hello worl");
+    const mark = tty.chunks.length;
+    type(tui, "d");
+    expect(tty.bytesSince(mark)).toBeLessThan(200);
+  });
+
+  it("one grid arrow rewrites a bounded number of bytes", () => {
+    const tty = new CountingTty();
+    const tui = new Tui(tty, { onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {}, onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {}, onWizardSkip: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
+    tui.show();
+    tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    for (let i = 0; i < 15; i++) tui.handleKey({ kind: "right" });
+    tui.handleKey({ kind: "enter" });
+    const mark = tty.chunks.length;
+    tui.handleKey({ kind: "right" });
+    expect(tty.bytesSince(mark)).toBeLessThan(2000);
+  });
+});
+
 describe("image attachments", () => {
   it("detects a dropped image path, strips it and previews it", async () => {
     const dir = join(tmpdir(), "mimon-attach-");

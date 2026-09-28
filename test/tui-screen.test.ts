@@ -330,7 +330,8 @@ describe("brand picker under hero", () => {
     key(tui, "down");
     key(tui, "enter");
     const afterPicker = vt.fullClears;
-    expect(afterOpen).toBeGreaterThan(before);
+    expect(afterOpen).toBe(before);
+    expect(afterPicker).toBe(before);
     for (let i = 0; i < 6; i++) {
       key(tui, "down");
       key(tui, "right");
