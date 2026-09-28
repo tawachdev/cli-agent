@@ -308,7 +308,7 @@ async function main(): Promise<void> {
   try {
     await chat.healthCheck();
   } catch {
-    stdout.write(C.dim + "\n  backend down - starting it for you..." + C.reset + "\n");
+
     const compiled = !process.execPath.endsWith("bun") && !process.execPath.includes("/bun-");
     spawnedBackend = compiled
       ? spawn(process.execPath, ["serve"], { stdio: "ignore" })
@@ -345,7 +345,7 @@ async function main(): Promise<void> {
       cleanup();
       exit(1);
     }
-    stdout.write(C.dim + "  ✓ backend ready at " + backendOrigin + C.reset + "\n");
+
   }
 
   await chat.newSession();
