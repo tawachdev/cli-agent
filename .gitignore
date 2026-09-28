@@ -11,3 +11,4 @@ dist/
 .agent/
 npm/main/node_modules/
 npm/**/package-lock.json
+npm/platforms/*/bin/
