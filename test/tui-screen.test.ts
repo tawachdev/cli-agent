@@ -286,3 +286,32 @@ describe("virtual terminal resize storm", () => {
     expect(cap.exited).toBe(1);
   });
 });
+
+describe("brand picker under hero", () => {
+  it("repaints fully with no residue and keeps the palette inside the box on wide screens", () => {
+    const { vt, tui } = makeVt(30, 200);
+    tui.enableHero("0.1.0");
+    tui.show();
+    tui.openBrand({ name: "BLO", colors: ["teal", "gold"] });
+    expect(vt.count("make it yours")).toBe(1);
+    key(tui, "down");
+    key(tui, "enter");
+    expect(vt.count("brand colors")).toBe(1);
+    expect(vt.count("BLO")).toBeLessThanOrEqual(2);
+    key(tui, "down");
+    key(tui, "enter");
+    expect(vt.count("letter L (2/3)")).toBe(1);
+    expect(vt.count("╭")).toBeLessThanOrEqual(3);
+    key(tui, "enter");
+    expect(vt.count("letter O (3/3)")).toBe(1);
+    key(tui, "enter");
+    key(tui, "down");
+    expect(vt.count("brand colors")).toBe(0);
+    expect(vt.count("make it yours")).toBe(0);
+    expect(vt.count("╭")).toBeLessThanOrEqual(2);
+    expectClean(vt, 200);
+    for (const line of vt.screen().split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(200);
+    }
+  });
+});

@@ -584,6 +584,13 @@ export class Tui {
 
   private refresh(): void {
     if (!this.shown || this.busy) return;
+    if (this.heroActive) {
+      this.tty.write("\x1b[2J\x1b[H");
+      this.shown = false;
+      this.regenerateHero();
+      this.show();
+      return;
+    }
     this.cursorCol = this.cursorColumn();
     this.render();
   }
@@ -701,7 +708,7 @@ export class Tui {
       "",
     ];
     const perRow = 2;
-    const cellWidth = Math.max(16, Math.floor(this.usable / perRow) - 4);
+    const cellWidth = Math.max(14, Math.floor((this.innerWidth() - 6) / perRow));
     for (let row = 0; row < names.length; row += perRow) {
       const cells: string[] = [];
       for (let col = 0; col < perRow; col++) {
