@@ -138,8 +138,9 @@ export class Chat {
   private stateLabel = "IDLE";
   private lastFailure = "";
   private awaitingRun = false;
+  uiHandlesErrors = false;
   onError: (message: string) => void = (message) => {
-    this.tty.write(C.red + "  ✘ " + message + "\n" + C.reset);
+    if (!this.uiHandlesErrors) this.tty.write(C.red + "  ✘ " + message + "\n" + C.reset);
   };
 
   constructor(
@@ -284,7 +285,7 @@ export class Chat {
         break;
       case "turn.aborted":
         this.chipClose();
-        this.tty.write(C.red + "  ✘ aborted\n" + C.reset);
+        this.onError("aborted");
         break;
       case "context.compacted":
         this.tty.write(C.dim + "  · context compacted ·\n" + C.reset);

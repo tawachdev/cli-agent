@@ -829,6 +829,17 @@ describe("failure print channel", () => {
     chat.onEvent({ type: "turn.failed", payload: { reason: "boom" } });
     expect(errors).toEqual(["failed: boom"]);
   });
+
+  it("with uiHandlesErrors nothing raw is written outside the box", () => {
+    const { chat } = makeChat();
+    chat.uiHandlesErrors = true;
+    let errors: string[] = [];
+    chat.onError = (m: string) => errors.push(m);
+    chat.onEvent({ type: "turn.failed", payload: { reason: "boom" } });
+    chat.onEvent({ type: "turn.aborted", payload: {} });
+    expect(errors).toEqual(["failed: boom", "aborted"]);
+    expect(chunks.join("")).not.toContain("✘");
+  });
 });
 
 describe("keylessProviderBindings", () => {

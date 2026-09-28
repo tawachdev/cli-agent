@@ -77,7 +77,7 @@ async function main(): Promise<void> {
         await chat.run(t, images);
         if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);
       } catch (error) {
-        stdout.write(C.red + "  ✘ " + (error instanceof Error ? error.message : "turn failed") + C.reset + "\n");
+        chat.onError(error instanceof Error ? error.message : "turn failed");
       } finally {
         ui?.endBusy();
       }
@@ -276,6 +276,7 @@ async function main(): Promise<void> {
     });
     ui = tui;
     chat.permissionAsk = () => tui.permission();
+    chat.uiHandlesErrors = true;
     chat.onError = (message) => tui.showError(message);
     stdin.on("data", (chunk) => feedKeys(String(chunk), tui));
     stdout.on("resize", () => tui.onResize());
