@@ -441,11 +441,12 @@ describe("double-send repro", () => {
     };
     tui.show();
     const type = (s: string) => { for (const ch of s) tui.handleKey({ kind: "char", ch }); };
+    const ui = chat.ui;
     const send = async (msg: string) => {
       type(msg);
       key(tui, "enter");
       tui.beginBusy();
-      chat.ui.printAbove([" YOU " + msg]);
+      ui.printAbove([" YOU " + msg]);
       await chat.onEvent({ type: "turn.failed", payload: { reason: "no API key for gemini" } });
       chat.onError("failed: no API key for gemini");
       tui.endBusy();
