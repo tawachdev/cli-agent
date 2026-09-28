@@ -1,0 +1,12 @@
+{
+  "name": "@mimon/darwin-arm64",
+  "version": "0.1.0",
+  "description": "mimon CLI binary for darwin-arm64",
+  "license": "UNLICENSED",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
+}

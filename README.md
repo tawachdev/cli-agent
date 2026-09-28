@@ -9,6 +9,17 @@ A terminal AI coding agent in one package. Clone, install, run — the terminal 
 
 ## Install — one command, nothing else
 
+With npm (or pnpm/yarn/bun — any of them):
+
+```sh
+npm i -g mimon
+mimon
+```
+
+No clone, no build step: the package carries a self-contained binary for your platform (macOS/Linux, arm64/x64 — the runtime is embedded). First launch opens the setup wizard in the terminal: bring any API key (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint) — or skip and use local Ollama. One-shot without installing: `npx mimon "summarize this folder"`.
+
+Prefer curl? Same binary from GitHub Releases:
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/tawachdev/cli-agent/main/install.sh | sh
 agent

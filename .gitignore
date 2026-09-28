@@ -9,3 +9,5 @@ dist/
 .env
 .DS_Store
 .agent/
+npm/main/node_modules/
+npm/**/package-lock.json
