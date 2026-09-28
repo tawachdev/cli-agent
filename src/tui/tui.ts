@@ -312,6 +312,8 @@ export class Tui {
   private errorLines: string[] = [];
   private lastLines: string[] = [];
   private cursorLine = 0;
+  private transcript: string[] = [];
+  private lastWasStream = false;
 
   constructor(
     private readonly tty: Tty,
@@ -388,6 +390,9 @@ export class Tui {
 
   private renderInput(): string {
     const maxText = this.innerWidth();
+    if (this.busy) {
+      return C.dim + trunc("▌ working — esc to stop", maxText) + C.reset;
+    }
     if (this.input === "") {
       return C.dim + trunc('Ask anything… "fix the flaky test in auth"', maxText) + C.reset;
     }
@@ -562,7 +567,14 @@ export class Tui {
     const prefix = hero.length + menu.length + overlay.length;
     const lines = [...hero, ...menu, ...overlay];
     if (this.rows >= 4) {
-      lines.push(this.boxEdge(true), this.boxLine(this.renderInput()));
+      lines.push(this.boxEdge(true));
+      const inner = Math.max(10, this.innerWidth() - 4);
+      for (const logical of this.transcript) {
+        for (const visual of wrap(logical, inner)) {
+          lines.push(this.boxLine(visual));
+        }
+      }
+      lines.push(this.boxLine(this.renderInput()));
       for (const line of this.errorLines) {
         lines.push(this.boxLine(C.red + trunc(line, this.usable - 4) + C.reset));
       }
@@ -641,13 +653,15 @@ export class Tui {
   }
 
   private refresh(): void {
-    if (!this.shown || this.busy) return;
+    if (!this.shown) {
+      if (this.busy) this.show();
+      return;
+    }
     this.cursorCol = this.cursorColumn();
     this.render();
   }
 
   show(): void {
-    if (this.busy && this.view !== "permission") return;
     this.cursorCol = this.cursorColumn();
     this.render();
     this.shown = true;
@@ -987,6 +1001,29 @@ export class Tui {
       this.errorLines = [];
       this.refresh();
     }
+  }
+
+  pushLine(line: string): void {
+    this.transcript.push(line);
+    if (this.transcript.length > 400) this.transcript.splice(0, this.transcript.length - 400);
+    this.lastWasStream = false;
+    this.refresh();
+  }
+
+  streamAppend(text: string): void {
+    if (this.transcript.length === 0 || !this.lastWasStream) {
+      this.transcript.push(text);
+      this.lastWasStream = true;
+    } else {
+      this.transcript[this.transcript.length - 1]! += text;
+    }
+    this.refresh();
+  }
+
+  replaceLast(line: string): void {
+    if (this.transcript.length === 0) this.transcript.push(line);
+    else this.transcript[this.transcript.length - 1]! = line;
+    this.refresh();
   }
 
   takePendingImages(): LoadedImage[] {

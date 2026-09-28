@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Chat } from "../src/tui/chat";
 import { Tui, type Key, type Tty } from "../src/tui/tui";
 
 class VirtualTerminal {
@@ -387,6 +388,43 @@ describe("form bounds", () => {
     }
     expect(screen).toContain("…");
     expect(screen).not.toContain("very-long-domain");
+  });
+});
+
+describe("full chat flow in box", () => {
+  it("renders YOU, streamed answer, tool line and error inside the box", async () => {
+    const { vt, tui } = makeVt(40, 100);
+    tui.show();
+    const chat = new Chat({ write: () => {}, columns: 100, rows: 40 }, async () => "n");
+    chat.uiHandlesErrors = true;
+    chat.onError = (m) => tui.showError(m);
+    chat.ui = {
+      pushLine: (l) => tui.pushLine(l),
+      streamAppend: (t) => tui.streamAppend(t),
+      replaceLast: (l) => tui.replaceLast(l),
+    };
+    const type = (s: string) => { for (const ch of s) tui.handleKey({ kind: "char", ch }); };
+    type("hi");
+    key(tui, "enter");
+    tui.beginBusy();
+    chat.ui.pushLine("\x1b[7m YOU \x1b[0m hi");
+    await chat.onEvent({ type: "token.delta", payload: { text: "Salam! Kifach " } });
+    await chat.onEvent({ type: "token.delta", payload: { text: "n3awnek?" } });
+    await chat.onEvent({ type: "message.completed", payload: {} });
+    await chat.onEvent({ type: "tool.requested", payload: { name: "fs.read", arguments: { path: "a.ts" } } });
+    await chat.onEvent({ type: "tool.result", payload: { ok: true, name: "fs.read" } });
+    chat.ui.pushLine("\x1b[7m YOU \x1b[0m ok");
+    await chat.onEvent({ type: "turn.failed", payload: { reason: "no API key" } });
+    chat.onError("failed: no API key");
+    const screen = vt.screen();
+    expect(screen).toContain("YOU");
+    expect(screen).toContain("Salam! Kifach n3awnek?");
+    expect(screen).toContain("fs.read");
+    expect(screen).toContain("failed: no API key");
+    for (const line of screen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(100);
+    }
+    expect(vt.count("╭")).toBeLessThanOrEqual(2);
   });
 });
 
