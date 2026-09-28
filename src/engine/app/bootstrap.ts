@@ -122,7 +122,7 @@ const server = Bun.serve({
 logger.info("backend listening", {
   url: `http://${config.hostname}:${config.port}`,
   db: config.dbPath,
-  activeModel: bindings.get("mimon2"),
+  activeModel: registry.splitBinding(bindings.get("mimon2")).def ? bindings.get("mimon2") : "not connected (/setup)",
   workspaceRoot: config.workspaceRoot,
   numCtx: config.numCtx,
   tools: tools.list().length,

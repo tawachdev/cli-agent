@@ -14,12 +14,13 @@ export function createModelsRoute(
   const route = new Hono();
   route.get("/", (c) => {
     const all = bindings.all();
+    const display = (binding: string): string => (registry.splitBinding(binding).def ? binding : "not connected (/setup)");
     const roles = RUNNABLE_ROLES.map((role) => ({
       role,
-      model: all[role],
+      model: display(all[role]),
       source: bindings.source(role),
     }));
-    return c.json({ ok: true, roles, active: all.mimon2 });
+    return c.json({ ok: true, roles, active: display(all.mimon2) });
   });
   route.put("/:role", async (c) => {
     const role = c.req.param("role") as RunnableRole;
