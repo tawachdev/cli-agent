@@ -37,6 +37,8 @@ Technical identifiers (`AGENT_*` env vars, `.agent/` state folder, `agent` Keych
 
 ## Images in the terminal
 
+Drag an image into the terminal: the path disappears, the image renders immediately as a preview, and a `▤N` counter appears in the status bar — enter sends it with your message (esc clears the attachments). You can also just type a path:
+
 ```sh
 bun run cli "what does /path/to/screenshot.png show?"
 ```
