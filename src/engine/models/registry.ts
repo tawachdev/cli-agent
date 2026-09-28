@@ -178,6 +178,11 @@ export class ProviderRegistry {
     return { provider: instantiate(def, apiKey), model };
   }
 
+  hasKey(name: string): boolean {
+    if (!this.defs.has(name)) return false;
+    return this.keystore.get(name) !== null;
+  }
+
   setKey(name: string, key: string): void {
     if (!this.defs.has(name)) throw new Error(`unknown provider: ${name}`);
     this.keystore.set(name, key);

@@ -27,8 +27,15 @@ export function createModelsRoute(
     if (!RUNNABLE_ROLES.includes(role)) return c.json({ ok: false, error: "unknown role" }, 404);
     const body = bindingBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ ok: false, error: "binding required" }, 400);
-    if (!registry.splitBinding(body.data.binding).def && body.data.binding.includes("/")) {
+    const parts = registry.splitBinding(body.data.binding);
+    if (!parts.def && body.data.binding.includes("/")) {
       return c.json({ ok: false, error: "unknown provider in binding" }, 400);
+    }
+    if (parts.def && !registry.hasKey(parts.def.name)) {
+      return c.json(
+        { ok: false, error: `no API key for "${parts.def.name}" — open /providers, set its key, then bind` },
+        400,
+      );
     }
     await bindings.set(role, body.data.binding);
     audit.write("model.binding_set", { role, binding: body.data.binding });

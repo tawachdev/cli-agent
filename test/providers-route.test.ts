@@ -290,6 +290,19 @@ describe("model bindings via /models routes", () => {
     });
     expect(rejected.status).toBe(400);
 
+    const keyless = await app.request("/models/mimon2", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ binding: "anthropic/claude-sonnet-4-5" }),
+    });
+    expect(keyless.status).toBe(400);
+    expect(((await keyless.json()) as { error: string }).error).toContain("no API key");
+
+    await app.request("/providers/anthropic/key", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "sk-test" }),
+    });
     const saved = await app.request("/models/mimon2", {
       method: "PUT",
       headers: { "content-type": "application/json" },
