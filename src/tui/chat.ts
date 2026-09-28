@@ -141,9 +141,10 @@ export class Chat {
   uiHandlesErrors = false;
   lastWasStream = false;
   ui: {
-    pushLine(line: string): void;
-    streamAppend(text: string): void;
-    replaceLast(line: string): void;
+    printAbove(lines: string[]): void;
+    stream(text: string): void;
+    streamStart(): void;
+    streamEnd(): void;
   } | null = null;
   onError: (message: string) => void = (message) => {
     if (!this.uiHandlesErrors) this.tty.write(C.red + "  ✘ " + message + "\n" + C.reset);
@@ -196,7 +197,7 @@ export class Chat {
       "● " + this.stateLabel + " · steps " + this.steps + " · ctx " + this.ctxPct + "%" +
       (this.tokensPerSec !== null ? " · " + this.tokensPerSec.toFixed(1) + " tok/s" : "") +
       (this.lastTool ? " · " + this.lastTool : "");
-    if (this.ui) this.ui.pushLine(C.dim + dashboard + C.reset);
+    if (this.ui) this.ui.printAbove([C.dim + dashboard + C.reset]);
     else this.tty.write(fit(
       "  " + chip(this.stateLabel, this.stateLabel === "DONE") + " " +
       C.dim + "steps " + C.reset + this.steps + "  " +
@@ -219,7 +220,7 @@ export class Chat {
       case "plan.updated": {
         this.chipClose();
         if (uiMode) {
-          for (const l of wrap("▢ plan: " + String(p.plan ?? ""), 100)) this.ui!.pushLine(l);
+          this.ui!.printAbove(wrap("▢ plan: " + String(p.plan ?? ""), 90).map((l) => C.gold + l + C.reset));
         } else {
           const lines = wrap(String(p.plan ?? ""), WIDTH() - 10).map((l) => "  " + l);
           panel(this.tty, "plan", C.gold, C.slate, lines);
@@ -232,20 +233,21 @@ export class Chat {
           this.streaming = true;
           this.stateLabel = "RESPONDING";
           if (uiMode) {
-            this.ui!.streamAppend(C.gold + "✦ " + C.reset + C.cream + (p["text"] as string) + C.reset);
+            this.ui!.streamStart();
+            this.ui!.stream(C.gold + "✦ " + C.reset + C.cream + (p["text"] as string) + C.reset);
             break;
           } else {
             this.tty.write(C.gold + C.bold + "  ✦ " + brandName().toLowerCase() + " " + C.reset + C.dim + "─".repeat(Math.max(4, WIDTH() - 12)) + C.reset + "\n" + C.cream + "  ");
           }
         }
-        if (uiMode) this.ui!.streamAppend(p["text"] as string);
+        if (uiMode) this.ui!.stream(p["text"] as string);
         else this.tty.write(p["text"] as string);
         break;
       }
       case "message.completed":
         if (this.streaming) {
-          if (!uiMode) this.tty.write(C.reset + "\n");
-          this.lastWasStream = false;
+          if (uiMode) this.ui!.streamEnd();
+          else this.tty.write(C.reset + "\n");
           this.streaming = false;
         }
         break;
@@ -257,7 +259,7 @@ export class Chat {
         const short = args.length > WIDTH() - 30 ? args.slice(0, WIDTH() - 33) + "..." : args;
         const toolLine = "  " + C.teal + (TOOL_ICON[String(p.name)] ?? "◆") + C.reset + " " +
           C.bold + String(p.name) + C.reset + C.dim + " " + short + C.reset;
-        if (uiMode) this.ui!.pushLine(toolLine);
+        if (uiMode) this.ui!.printAbove([toolLine]);
         else {
           this.tty.write(toolLine + " ");
           this.chipOpen = true;
@@ -270,11 +272,11 @@ export class Chat {
         this.lastToolMs = ms;
         const ok = p["ok"] === true;
         if (uiMode) {
-          this.ui!.replaceLast(
+          this.ui!.printAbove([
             "  " + C.teal + (TOOL_ICON[String(this.lastTool)] ?? "◆") + C.reset + " " +
-            C.bold + this.lastTool + C.reset + "  " +
-            (ok ? C.green + "✔ ok " + fmtSecs(ms) + C.reset : C.red + "✘ " + (p["error"] as string ?? "failed") + C.reset),
-          );
+            C.bold + this.lastTool + C.reset,
+            "  " + (ok ? C.green + "✔ ok " + fmtSecs(ms) + C.reset : C.red + "✘ " + (p["error"] as string ?? "failed") + C.reset),
+          ]);
         } else {
           this.tty.write(
             ok
@@ -300,9 +302,9 @@ export class Chat {
       }
       case "verify.result":
         if (uiMode) {
-          this.ui!.pushLine(p["ok"] === true
-            ? C.green + "✔ verified " + C.reset + C.dim + p["command"] + C.reset
-            : C.red + "✘ verify FAILED " + C.reset + C.dim + p["command"] + C.reset);
+          this.ui!.printAbove([p["ok"] === true
+            ? C.green + "✔ verified " + C.reset + C.dim + (p["command"] as string) + C.reset
+            : C.red + "✘ verify FAILED " + C.reset + C.dim + (p["command"] as string) + C.reset]);
         } else {
           this.tty.write(
             p["ok"] === true
@@ -327,7 +329,7 @@ export class Chat {
         this.onError("aborted");
         break;
       case "context.compacted":
-        if (uiMode) this.ui!.pushLine(C.dim + "· context compacted ·" + C.reset);
+        if (uiMode) this.ui!.printAbove([C.dim + "· context compacted ·" + C.reset]);
         else this.tty.write(C.dim + "  · context compacted ·\n" + C.reset);
         break;
       default:
@@ -340,7 +342,7 @@ export class Chat {
     if (this.streaming) this.streaming = false;
     const uiMode = this.ui !== null;
     if (uiMode) {
-      this.ui!.pushLine(C.gold + "⛨ permission" + C.reset + " " + (p["target"] as string));
+      this.ui!.printAbove([C.gold + "⛨ permission" + C.reset + " " + (p["target"] as string)]);
     } else {
       this.tty.write("\n" + C.inverse + C.gold + C.bold + " ⛨ PERMISSION " + C.reset + C.dim + " " + (p["class"] as string) + C.reset + "\n");
       this.tty.write(C.bold + "  " + (p["target"] as string) + C.reset + "\n");
@@ -350,7 +352,7 @@ export class Chat {
       const box = WIDTH() - 6;
       for (const line of wrap(preview, box).slice(0, 16)) {
         const colored = line.startsWith("+") ? C.green + line : line.startsWith("-") ? C.red + line : C.dim + line;
-        if (this.ui) this.ui.pushLine("  " + colored);
+        if (this.ui) this.ui.printAbove(["  " + colored]);
         else this.tty.write("  " + colored + C.reset + "\n");
       }
     }
@@ -358,7 +360,7 @@ export class Chat {
     let approved = false;
     if (this.isAllowed(target)) {
       approved = true;
-      if (this.ui) this.ui.pushLine(C.dim + "  (allowed earlier this session)" + C.reset);
+      if (this.ui) this.ui.printAbove([C.dim + "  (allowed earlier this session)" + C.reset]);
       else this.tty.write(C.dim + "  (allowed earlier this session)\n" + C.reset);
     } else {
       const answer = await this.permissionAsk();
@@ -370,7 +372,7 @@ export class Chat {
       approved,
       sessionId: this.sessionId,
     });
-    if (this.ui) this.ui.pushLine(C.dim + (approved ? "· allowed ·" : "· denied ·") + C.reset);
+    if (this.ui) this.ui.printAbove([C.dim + (approved ? "· allowed ·" : "· denied ·") + C.reset]);
     else this.tty.write(C.dim + (approved ? "  · allowed ·\n" : "  · denied ·\n") + C.reset);
   }
 
@@ -382,12 +384,12 @@ export class Chat {
   }
 
   private line(text: string): void {
-    if (this.ui) this.ui.pushLine(text);
+    if (this.ui) this.ui.printAbove([text]);
     else this.tty.write(text + "\n");
   }
 
   private stream(text: string): void {
-    if (this.ui) this.ui.streamAppend(text);
+    if (this.ui) this.ui.stream(text);
     else this.tty.write(text);
   }
 
@@ -404,7 +406,7 @@ export class Chat {
   private async runOnce(task: string, images: LoadedImage[]): Promise<void> {
     this.lastTool = "";
     const tag = images.length > 0 ? C.dim + "  +" + images.length + " image" + (images.length > 1 ? "s" : "") + C.reset : "";
-    if (this.ui) this.ui.pushLine(C.inverse + C.bold + " YOU " + C.reset + " " + task + tag);
+    if (this.ui) this.ui.printAbove([C.inverse + C.bold + " YOU " + C.reset + " " + task + tag]);
     else this.tty.write(C.inverse + C.bold + " YOU " + C.reset + " " + task + tag + "\n");
     for (const image of images) renderImage(this.tty, image);
     const payload: Record<string, unknown> = { sessionId: this.sessionId, task, role: this.role };

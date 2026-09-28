@@ -312,8 +312,7 @@ export class Tui {
   private errorLines: string[] = [];
   private lastLines: string[] = [];
   private cursorLine = 0;
-  private transcript: string[] = [];
-  private lastWasStream = false;
+
 
   constructor(
     private readonly tty: Tty,
@@ -567,14 +566,7 @@ export class Tui {
     const prefix = hero.length + menu.length + overlay.length;
     const lines = [...hero, ...menu, ...overlay];
     if (this.rows >= 4) {
-      lines.push(this.boxEdge(true));
-      const inner = Math.max(10, this.innerWidth() - 4);
-      for (const logical of this.transcript) {
-        for (const visual of wrap(logical, inner)) {
-          lines.push(this.boxLine(visual));
-        }
-      }
-      lines.push(this.boxLine(this.renderInput()));
+      lines.push(this.boxEdge(true), this.boxLine(this.renderInput()));
       for (const line of this.errorLines) {
         lines.push(this.boxLine(C.red + trunc(line, this.usable - 4) + C.reset));
       }
@@ -687,14 +679,7 @@ export class Tui {
     this.busy = true;
     this.heroActive = false;
     this.turns += 1;
-    if (this.shown) {
-      const below = this.lastLines.length - 1 - this.inputRow;
-      if (below > 0) this.tty.write("\x1b[" + below + "B");
-      this.tty.write("\r\n");
-      this.lastLines = [];
-      this.cursorLine = 0;
-      this.shown = false;
-    }
+    this.hide();
   }
 
   endBusy(): void {
@@ -1003,27 +988,30 @@ export class Tui {
     }
   }
 
-  pushLine(line: string): void {
-    this.transcript.push(line);
-    if (this.transcript.length > 400) this.transcript.splice(0, this.transcript.length - 400);
-    this.lastWasStream = false;
-    this.refresh();
-  }
-
-  streamAppend(text: string): void {
-    if (this.transcript.length === 0 || !this.lastWasStream) {
-      this.transcript.push(text);
-      this.lastWasStream = true;
-    } else {
-      this.transcript[this.transcript.length - 1]! += text;
+  printAbove(lines: string[]): void {
+    if (lines.length === 0) return;
+    if (this.shown && this.inputRow > 0) {
+      this.tty.write("\x1b[" + this.inputRow + "A");
     }
-    this.refresh();
+    this.tty.write("\r\x1b[J");
+    for (const line of lines) this.tty.write(line + "\n");
+    this.lastLines = [];
+    this.cursorLine = 0;
+    this.shown = false;
+    this.show();
   }
 
-  replaceLast(line: string): void {
-    if (this.transcript.length === 0) this.transcript.push(line);
-    else this.transcript[this.transcript.length - 1]! = line;
-    this.refresh();
+  streamStart(): void {
+    if (this.shown) this.hide();
+  }
+
+  stream(text: string): void {
+    this.tty.write(text);
+  }
+
+  streamEnd(): void {
+    this.tty.write(C.reset + "\n");
+    this.show();
   }
 
   takePendingImages(): LoadedImage[] {
@@ -1548,8 +1536,12 @@ export class Tui {
           return;
         }
         const task = this.input.trim();
+        if (!task && this.errorLines.length === 0) return;
+        if (this.errorLines.length > 0) {
+          this.printAbove(this.errorLines.map((l) => C.red + "✘ " + l + C.reset));
+          this.errorLines = [];
+        }
         if (!task) return;
-        this.errorLines = [];
         if (this.history[this.history.length - 1] !== task) this.history.push(task);
         this.historyIndex = null;
         this.input = "";

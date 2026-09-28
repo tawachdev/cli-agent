@@ -220,14 +220,12 @@ describe("virtual terminal resize storm", () => {
     tui.endBusy();
     vt.resize(90, 24);
     tui.onResize();
-    const boxesAfterSend = vt.count("╭");
-    expect(boxesAfterSend).toBeGreaterThanOrEqual(2);
+    expect(vt.count("╭")).toBe(1);
     type(tui, "/");
-    const boxesBeforeShrink = vt.count("╭");
     vt.resize(30, 24);
     tui.onResize();
     expect(vt.count("/model")).toBeLessThanOrEqual(1);
-    expect(vt.count("╭")).toBeLessThanOrEqual(boxesBeforeShrink);
+    expect(vt.count("╭")).toBe(1);
     key(tui, "escape");
     tui.openPicker();
     vt.resize(70, 24);
@@ -399,21 +397,22 @@ describe("full chat flow in box", () => {
     chat.uiHandlesErrors = true;
     chat.onError = (m) => tui.showError(m);
     chat.ui = {
-      pushLine: (l) => tui.pushLine(l),
-      streamAppend: (t) => tui.streamAppend(t),
-      replaceLast: (l) => tui.replaceLast(l),
+      printAbove: (ls) => tui.printAbove(ls),
+      stream: (t) => tui.stream(t),
+      streamStart: () => tui.streamStart(),
+      streamEnd: () => tui.streamEnd(),
     };
     const type = (s: string) => { for (const ch of s) tui.handleKey({ kind: "char", ch }); };
     type("hi");
     key(tui, "enter");
     tui.beginBusy();
-    chat.ui.pushLine("\x1b[7m YOU \x1b[0m hi");
+    chat.ui.printAbove(["\x1b[7m YOU \x1b[0m hi"]);
     await chat.onEvent({ type: "token.delta", payload: { text: "Salam! Kifach " } });
     await chat.onEvent({ type: "token.delta", payload: { text: "n3awnek?" } });
     await chat.onEvent({ type: "message.completed", payload: {} });
     await chat.onEvent({ type: "tool.requested", payload: { name: "fs.read", arguments: { path: "a.ts" } } });
     await chat.onEvent({ type: "tool.result", payload: { ok: true, name: "fs.read" } });
-    chat.ui.pushLine("\x1b[7m YOU \x1b[0m ok");
+    chat.ui.printAbove(["\x1b[7m YOU \x1b[0m ok"]);
     await chat.onEvent({ type: "turn.failed", payload: { reason: "no API key" } });
     chat.onError("failed: no API key");
     const screen = vt.screen();
