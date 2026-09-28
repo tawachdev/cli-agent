@@ -47,14 +47,34 @@ export const BUILTIN_PROVIDERS: ProviderDef[] = [
   },
 ];
 
+const PRIVATE_V4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.)/;
+
+export function safeProviderBaseUrl(value: string): boolean {
+  if (value.length === 0 || value.length > 300) return false;
+  if (/[\s\x00-\x1f\x7f]/.test(value)) return false;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.username || url.password) return false;
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const loopback = host === "127.0.0.1" || host === "localhost" || host === "::1";
+  if (url.protocol === "http:") return loopback;
+  if (url.protocol !== "https:") return false;
+  if (loopback) return true;
+  if (PRIVATE_V4.test(host)) return false;
+  if (/^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)) return false;
+  return host.includes(".") || host === "::1";
+}
+
 export const extraProviderSchema = z.object({
   name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
   kind: z.enum(["openai", "anthropic"]),
-  baseUrl: z
-    .string()
-    .refine((value) => value.startsWith("https://") || value.startsWith("http://127.0.0.1"), {
-      message: "baseUrl must be https:// (or http://127.0.0.1 for local testing)",
-    }),
+  baseUrl: z.string().refine(safeProviderBaseUrl, {
+    message: "baseUrl must be a public https:// URL (http:// allowed for 127.0.0.1/localhost only)",
+  }),
   models: z.array(z.string().min(1)).default([]),
 });
 

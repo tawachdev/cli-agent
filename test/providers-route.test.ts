@@ -174,7 +174,28 @@ describe("provider registry and /providers routes", () => {
       path,
       JSON.stringify([{ name: "insecure", kind: "openai", baseUrl: "http://10.0.0.5/v1", models: [] }]),
     );
-    await expect(loadExtraProviders(path)).rejects.toThrow("baseUrl must be https://");
+    await expect(loadExtraProviders(path)).rejects.toThrow("baseUrl must be a public https:// URL");
+
+    for (const blocked of [
+      "https://10.0.0.5/v1",
+      "https://192.168.1.10/v1",
+      "https://172.16.0.5/v1",
+      "https://169.254.169.254/latest",
+      "https://user:pass@evil.example/v1",
+      "https://evil.example/v1 with space",
+    ]) {
+      writeFileSync(
+        path,
+        JSON.stringify([{ name: "insecure", kind: "openai", baseUrl: blocked, models: [] }]),
+      );
+      await expect(loadExtraProviders(path)).rejects.toThrow("baseUrl must be a public https:// URL");
+    }
+
+    writeFileSync(
+      path,
+      JSON.stringify([{ name: "local", kind: "openai", baseUrl: "http://localhost:1234/v1", models: [] }]),
+    );
+    expect((await loadExtraProviders(path)).length).toBe(1);
 
     writeFileSync(
       path,

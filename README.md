@@ -21,7 +21,7 @@ The terminal is the whole product and the `/` menu is its control panel: `/setup
 
 ## Make it yours
 
-Any OpenAI-compatible endpoint (Groq, OpenRouter, Together, LM Studio...) is a first-class citizen: `/providers` → **+ add provider** → name, base URL, models — it joins the list like a builtin; open it to set its key and bind a tier. Custom providers persist in `.agent/providers.json` (`kind` is always `openai`; other kinds can be added by editing that file).
+Any OpenAI-compatible endpoint (Groq, OpenRouter, Together, LM Studio...) is a first-class citizen: `/providers` → **+ add provider** → name, base URL, models — it joins the list like a builtin; open it to set its key and bind a tier. Custom providers persist in `.agent/providers.json` (`kind` is always `openai`; other kinds can be added by editing that file). Base URLs are validated defensively before the engine ever dials one: real URL parse, public `https://` only (`http` allowed for 127.0.0.1/localhost), private and link-local IP ranges (10.x, 192.168.x, 172.16–31.x, 169.254.x), embedded credentials, control characters and overlong values are all rejected.
 
 Inside the TUI: type `/` and pick **/brand** — change the name (2–12 letters), pick two colors live from the palette, or reset. The choice is saved (`.agent/brand.json`) and every launch after that boots with your brand — no environment variables needed.
 
@@ -31,7 +31,7 @@ Environment works too:
 AGENT_NAME=ANIR AGENT_COLORS=purple,gold bun run cli
 ```
 
-`AGENT_NAME` — 2–12 letters, spells your name in the pixel font (full A–Z, two sizes). `AGENT_COLORS` — two names from the palette: `teal gold cream green red slate purple blue cyan orange pink white gray dark`. Invalid values fall back to the defaults. Permanent defaults live in `src/shared/brand.ts` (`DEFAULT_BRAND` / `DEFAULT_COLORS`) — one file owns the identity. A saved `/brand` choice wins over the environment.
+`AGENT_NAME` — 2–12 letters, spells your name in the pixel font (full A–Z, two sizes). `AGENT_COLORS` — one color **per letter**, cycled if shorter: `AGENT_COLORS=green,black,red,blue` paints M in green, I in black… The picker in `/brand` walks letter by letter with a live preview of your name. Palette: `teal gold cream green red slate purple blue cyan orange pink white gray dark`. Invalid values fall back to the defaults. Permanent defaults live in `src/shared/brand.ts` (`DEFAULT_BRAND` / `DEFAULT_COLORS`) — one file owns the identity. A saved `/brand` choice wins over the environment.
 
 Technical identifiers (`AGENT_*` env vars, `.agent/` state folder, `agent` Keychain service, port `7800`) are stable on purpose so the product can coexist with any other agent on the same machine.
 

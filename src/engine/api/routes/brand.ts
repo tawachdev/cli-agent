@@ -6,7 +6,7 @@ import { validColors, validName, type BrandStore } from "../../brand";
 
 const brandBody = z.object({
   name: z.string().optional(),
-  colors: z.tuple([z.string(), z.string()]).optional(),
+  colors: z.array(z.string()).min(1).max(12).optional(),
   reset: z.boolean().optional(),
 });
 

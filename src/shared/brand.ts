@@ -23,13 +23,22 @@ export const BRAND_PALETTE: Record<string, string> = {
   dark: "\x1b[38;5;235m",
 };
 
-export const DEFAULT_COLORS: [string, string] = ["teal", "gold"];
+export const DEFAULT_COLORS: string[] = ["teal", "gold"];
 
-export function brandColors(env: Record<string, string | undefined> = process.env): [string, string] {
+export function validColorList(value: string[] | undefined): string[] | null {
+  if (!value || value.length === 0 || value.length > 12) return null;
+  const lowered = value.map((name) => name.trim().toLowerCase());
+  return lowered.every((name) => BRAND_PALETTE[name]) ? lowered : null;
+}
+
+export function brandColors(env: Record<string, string | undefined> = process.env): string[] {
   const raw = env["AGENT_COLORS"] ?? "";
-  const parts = raw.split(",").map((name) => name.trim().toLowerCase());
-  if (parts.length === 2 && parts.every((name) => BRAND_PALETTE[name])) {
-    return [BRAND_PALETTE[parts[0]!]!, BRAND_PALETTE[parts[1]!]!];
-  }
-  return [BRAND_PALETTE[DEFAULT_COLORS[0]!]!, BRAND_PALETTE[DEFAULT_COLORS[1]!]!];
+  const codes = validColorList(raw.split(",").filter((part) => part.trim() !== ""))
+    ?.map((name) => BRAND_PALETTE[name]!);
+  if (codes && codes.length > 0) return codes;
+  return DEFAULT_COLORS.map((name) => BRAND_PALETTE[name]!);
+}
+
+export function colorForLetter(index: number, colors: string[]): string {
+  return colors[index % colors.length]!;
 }

@@ -148,7 +148,7 @@ async function main(): Promise<void> {
         .then((list) => ui?.openProviders(list))
         .catch(() => {});
     };
-    const applyBrand = (name: string, colors: [string, string]): void => {
+    const applyBrand = (name: string, colors: string[]): void => {
       process.env.AGENT_NAME = name;
       process.env.AGENT_COLORS = colors.join(",");
       tui.refreshBrand();
@@ -235,17 +235,17 @@ async function main(): Promise<void> {
         putBrand({ name })
           .then((result) => {
             if (result["ok"] !== true) throw new Error(String(result["error"] ?? "brand failed"));
-            applyBrand(String(result["name"]), result["colors"] as [string, string]);
+            applyBrand(String(result["name"]), result["colors"] as string[]);
             ui?.notice("✓ brand name set — " + String(result["name"]));
           })
           .catch((error: Error) => ui?.notice("✘ " + error.message));
       },
-      onBrandColors: (first, second) => {
-        putBrand({ colors: [first, second] })
+      onBrandColors: (colors) => {
+        putBrand({ colors })
           .then((result) => {
             if (result["ok"] !== true) throw new Error(String(result["error"] ?? "brand failed"));
-            applyBrand(String(result["name"]), result["colors"] as [string, string]);
-            ui?.notice("✓ colors set — " + first + " + " + second);
+            applyBrand(String(result["name"]), result["colors"] as string[]);
+            ui?.notice("✓ colors set — " + colors.join(" + "));
           })
           .catch((error: Error) => ui?.notice("✘ " + error.message));
       },
@@ -253,7 +253,7 @@ async function main(): Promise<void> {
         putBrand({ reset: true })
           .then((result) => {
             if (result["ok"] !== true) throw new Error(String(result["error"] ?? "brand failed"));
-            applyBrand(String(result["name"]), result["colors"] as [string, string]);
+            applyBrand(String(result["name"]), result["colors"] as string[]);
             ui?.notice("· brand reset to defaults ·");
           })
           .catch((error: Error) => ui?.notice("✘ " + error.message));

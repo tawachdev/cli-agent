@@ -43,7 +43,7 @@ interface Captured {
   wizardKeys: Array<{ name: string; key: string }>;
   wizardSkips: number;
   brandNames: string[];
-  brandColors: Array<[string, string]>;
+  brandColors: string[][];
   brandResets: number;
   adds: Array<{ name: string; baseUrl: string; models: string[] }>;
 }
@@ -88,7 +88,7 @@ function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captu
       cap.wizardSkips += 1;
     },
       onBrandName: (name) => cap.brandNames.push(name),
-      onBrandColors: (a, b) => cap.brandColors.push([a, b]),
+      onBrandColors: (colors) => cap.brandColors.push(colors),
       onBrandReset: () => {
         cap.brandResets += 1;
       },
@@ -603,20 +603,34 @@ describe("brand view", () => {
     expect(tty.text()).toContain("2-12 letters");
   });
 
-  it("picks two colors and fires onBrandColors", () => {
+  it("picks one color per letter and fires onBrandColors with the full list", () => {
     const { tui, tty, cap } = makeTui();
     tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
     tui.show();
     tui.handleKey({ kind: "down" });
     tui.handleKey({ kind: "enter" });
-    expect(tty.text()).toContain("pick color 1 of 2");
-    tui.handleKey({ kind: "enter" });
-    expect(tty.text()).toContain("pick color 2 of 2");
+    expect(tty.text()).toContain("letter A (1/4)");
     tui.handleKey({ kind: "right" });
     tui.handleKey({ kind: "enter" });
-    expect(cap.brandColors.length).toBe(1);
-    expect(cap.brandColors[0]![0]).toBe("teal");
-    expect(cap.brandColors[0]![1]).toBe("gold");
+    expect(tty.text()).toContain("letter N (2/4)");
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "enter" });
+    expect(tty.text()).toContain("letter R (4/4)");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.brandColors).toEqual([["gold", "teal", "teal", "teal"]]);
+  });
+
+  it("esc undoes the last letter pick before leaving", () => {
+    const { tui, tty, cap } = makeTui();
+    tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "escape" });
+    tui.handleKey({ kind: "escape" });
+    expect(cap.brandColors).toEqual([]);
+    expect(tty.text()).toContain("make it yours");
   });
 
   it("reset fires onBrandReset", () => {

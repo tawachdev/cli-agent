@@ -81,18 +81,18 @@ export const skipSetup = (): Promise<Record<string, unknown>> =>
 
 export interface BrandInfo {
   name: string;
-  colors: [string, string];
+  colors: string[];
   source: string;
 }
 
 export const getBrand = (): Promise<BrandInfo> =>
   request("/brand").then((r) => ({
     name: String(r["name"] ?? "MIMON"),
-    colors: (r["colors"] as [string, string]) ?? ["teal", "gold"],
+    colors: (r["colors"] as string[]) ?? ["teal", "gold"],
     source: String(r["source"] ?? "default"),
   }));
 
-export const putBrand = (body: { name?: string; colors?: [string, string]; reset?: boolean }): Promise<Record<string, unknown>> =>
+export const putBrand = (body: { name?: string; colors?: string[]; reset?: boolean }): Promise<Record<string, unknown>> =>
   request("/brand", body, "PUT");
 
 const TOOL_ICON: Record<string, string> = {

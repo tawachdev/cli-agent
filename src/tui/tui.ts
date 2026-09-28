@@ -1,5 +1,5 @@
 import { stdout } from "node:process";
-import { BRAND_PALETTE, brandColors, brandName } from "../shared/brand";
+import { BRAND_PALETTE, brandColors, brandName, colorForLetter } from "../shared/brand";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -89,13 +89,13 @@ export function fmtSecs(ms: number): string {
 
 function boxLines(cols: number, version: string): string[] {
   const brand = brandName();
-  const [colorA, colorB] = brandColors();
+  const palette = brandColors();
   const meta = "v" + version + " · fully local";
   const wide = glyphWord(brand, false);
   const mini = glyphWord(brand, true);
   const single = (): string[] => {
     const plain = trunc("✦ " + brand + " v" + version, Math.max(6, cols));
-    return [colorA + C.bold + plain.slice(0, brand.length + 2) + C.reset + C.dim + plain.slice(brand.length + 2) + C.reset];
+    return [palette[0]! + C.bold + plain.slice(0, brand.length + 2) + C.reset + C.dim + plain.slice(brand.length + 2) + C.reset];
   };
   if (!wide || !mini) return single();
   const useMini = cols < wide.width + 13;
@@ -115,7 +115,7 @@ function boxLines(cols: number, version: string): string[] {
   };
   const lines: string[] = [open, blank];
   for (const cells of art.cells) {
-    const colored = cells.map((cell, i) => (i % 2 === 0 ? colorA : colorB) + cell + C.reset).join(gap);
+    const colored = cells.map((cell, i) => colorForLetter(i, palette) + cell + C.reset).join(gap);
     lines.push(row(colored, art.width));
   }
   lines.push(blank);
@@ -257,7 +257,7 @@ export interface TuiHooks {
   onWizardKey(name: string, key: string): void;
   onWizardSkip(): void;
   onBrandName(name: string): void;
-  onBrandColors(first: string, second: string): void;
+  onBrandColors(colors: string[]): void;
   onBrandReset(): void;
   onAddProvider(name: string, baseUrl: string, models: string[]): void;
 }
@@ -294,9 +294,8 @@ export class Tui {
   private brandIndex = 0;
   private brandBuffer = "";
   private brandError = "";
-  private brandColorStage = 0;
-  private brandColorFirst = "";
-  private brandCurrent: { name: string; colors: [string, string] } | null = null;
+  private brandPicks: string[] = [];
+  private brandCurrent: { name: string; colors: string[] } | null = null;
   private brandColorIndex = 0;
   private addFields: [string, string, string] = ["", "", ""];
   private addFieldIndex = 0;
@@ -359,6 +358,20 @@ export class Tui {
   private boxLine(content: string): string {
     const pad = Math.max(0, this.innerWidth() - visibleLen(content));
     return this.boxLead() + C.dim + "│" + C.reset + " " + content + " ".repeat(pad) + " " + C.dim + "│" + C.reset;
+  }
+
+  private boxed(title: string, body: string[]): string[] {
+    const dashes = Math.max(2, this.innerWidth() - 5 - title.length);
+    const out: string[] = [
+      this.boxLead() + C.dim + "╭─ " + C.reset + C.gold + C.bold + trunc(title, this.innerWidth() - 8) + C.reset + " " + C.dim + "─".repeat(dashes) + "╮" + C.reset,
+    ];
+    for (const line of body) out.push(this.boxLine(line));
+    out.push(this.boxEdge(false));
+    return out;
+  }
+
+  private padCell(text: string, width: number): string {
+    return text + " ".repeat(Math.max(1, width - visibleLen(text)));
   }
 
   private renderInput(): string {
@@ -491,13 +504,13 @@ export class Tui {
 
   private keyInputLines(): string[] {
     const masked = "●".repeat(Math.min(this.keyBuffer.length, Math.max(4, this.usable - 40)));
-    const prompt = "API key for " + (this.openProvider?.name ?? "") + ":";
-    return [
-      "  " + C.dim + trunc("── " + (this.openProvider?.name ?? ""), Math.max(6, this.usable - 2)) + C.reset,
-      this.bar() + C.bold + trunc(prompt, this.usable - 4) + C.reset,
-      this.bar() + C.cream + masked + C.reset + C.inverse + " " + C.reset,
-      "  " + C.dim + trunc("enter save · esc cancel", Math.max(6, this.usable - 2)) + C.reset,
+    const body = [
+      C.bold + trunc("API key for " + (this.openProvider?.name ?? ""), this.usable - 6) + C.reset,
+      C.cream + masked + C.reset + C.inverse + " " + C.reset,
+      C.dim + trunc("stored in your Keychain — never displayed, never logged", Math.max(6, this.usable - 6)) + C.reset,
+      C.dim + trunc("enter save · esc cancel", Math.max(6, this.usable - 6)) + C.reset,
     ];
+    return this.boxed("provider key", body);
   }
 
   private bindToLines(): string[] {
@@ -627,62 +640,68 @@ export class Tui {
 
   private providerAddLines(): string[] {
     const labels = ["name (a-z, 0-9, -)", "base url (https://…)", "models (comma separated)"];
-    const lines: string[] = ["  " + C.dim + trunc("── add provider ──", Math.max(6, this.usable - 2)) + C.reset];
+    const body: string[] = [];
     for (let i = 0; i < labels.length; i++) {
       const active = i === this.addFieldIndex;
-      const bar = active ? this.bar() : "   ";
+      const marker = active ? C.teal + "❯ " + C.reset : "  ";
       const value = this.addFields[i]!;
       const field = active
-        ? C.cream + value + C.reset + C.inverse + " " + C.reset
+        ? C.bold + trunc(labels[i]!, Math.max(4, this.usable - 10)) + C.reset + "  " + C.cream + value + C.reset + C.inverse + " " + C.reset
         : value
-          ? C.dim + value + C.reset
-          : C.dim + trunc(labels[i]!, Math.max(4, this.usable - 8)) + C.reset;
-      lines.push(bar + field);
+          ? C.dim + trunc(labels[i]!, Math.max(4, this.usable - 10)) + C.reset + "  " + value + C.reset
+          : C.dim + trunc(labels[i]!, Math.max(4, this.usable - 10)) + C.reset;
+      body.push(marker + field);
     }
     if (this.addError) {
-      lines.push(this.bar() + C.red + trunc(this.addError, this.usable - 4) + C.reset);
+      body.push(C.red + trunc(this.addError, this.usable - 6) + C.reset);
     }
-    lines.push("  " + C.dim + trunc("enter next · esc cancel", Math.max(6, this.usable - 2)) + C.reset);
-    return lines;
+    body.push(C.dim + trunc("enter next · esc cancel", Math.max(6, this.usable - 6)) + C.reset);
+    return this.boxed("add provider · any OpenAI-compatible endpoint", body);
   }
 
   private brandLines(): string[] {
     const current = this.brandCurrent;
     const title = current
-      ? "── make it yours · " + current.name + " · " + current.colors.join(" + ") + " ──"
+      ? "make it yours · " + current.name + " · " + current.colors.join(" + ")
       : "── make it yours ──";
     const items = ["change name", "change colors", "reset to defaults"];
-    const lines: string[] = ["  " + C.dim + trunc(title, Math.max(6, this.usable - 2)) + C.reset];
+    const body: string[] = [];
     const budget = Math.max(8, this.usable - 6);
     for (let i = 0; i < items.length; i++) {
       const sel = i === this.brandIndex;
       const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
       const text = sel ? C.bold + C.teal + items[i]! + C.reset : C.bold + C.cream + items[i]! + C.reset;
-      lines.push("  " + cursorCell + text);
+      body.push(cursorCell + text);
     }
-    lines.push("  " + C.dim + trunc("↑↓ move · enter select · esc close", Math.max(6, this.usable - 2)) + C.reset);
-    return lines;
+    body.push(C.dim + trunc("↑↓ move · enter select · esc close", Math.max(6, this.usable - 6)) + C.reset);
+    return this.boxed(title, body);
   }
 
   private brandNameLines(): string[] {
-    const lines: string[] = [
-      "  " + C.dim + trunc("── brand name ──", Math.max(6, this.usable - 2)) + C.reset,
-      this.bar() + C.bold + "New name:" + C.reset + " " + C.cream + this.brandBuffer + C.reset + C.inverse + " " + C.reset,
+    const body = [
+      C.bold + "New name:" + C.reset + " " + C.cream + this.brandBuffer + C.reset + C.inverse + " " + C.reset,
     ];
     if (this.brandError) {
-      lines.push(this.bar() + C.red + trunc(this.brandError, this.usable - 4) + C.reset);
+      body.push(C.red + trunc(this.brandError, this.usable - 6) + C.reset);
     }
-    lines.push("  " + C.dim + trunc("2-12 letters · enter save · esc back", Math.max(6, this.usable - 2)) + C.reset);
-    return lines;
+    body.push(C.dim + trunc("2-12 letters · enter save · esc back", Math.max(6, this.usable - 6)) + C.reset);
+    return this.boxed("brand name", body);
   }
 
   private brandColorsLines(): string[] {
     const names = Object.keys(BRAND_PALETTE);
-    const stage = this.brandColorStage === 0 ? "pick color 1 of 2" : "pick color 2 of 2 (" + this.brandColorFirst + ")";
-    const lines: string[] = [
-      "  " + C.dim + trunc("── brand colors · " + stage + " ──", Math.max(6, this.usable - 2)) + C.reset,
+    const total = this.brandCurrent?.name.length ?? 1;
+    const letter = this.brandCurrent?.name[this.brandPicks.length] ?? "?";
+    const preview = (this.brandCurrent?.name ?? "")
+      .split("")
+      .map((ch, i) => (i < this.brandPicks.length ? BRAND_PALETTE[this.brandPicks[i]!]! + C.bold + ch + C.reset : C.dim + ch + C.reset))
+      .join(" ");
+    const body: string[] = [
+      C.bold + "preview:" + C.reset + "  " + preview,
+      "",
     ];
     const perRow = 2;
+    const cellWidth = Math.max(16, Math.floor(this.usable / perRow) - 4);
     for (let row = 0; row < names.length; row += perRow) {
       const cells: string[] = [];
       for (let col = 0; col < perRow; col++) {
@@ -691,13 +710,13 @@ export class Tui {
         const name = names[index]!;
         const sel = index === this.brandColorIndex;
         const swatch = BRAND_PALETTE[name] + "██" + C.reset;
-        const cell = (sel ? C.teal + "❯ " + C.reset : "  ") + swatch + " " + (sel ? C.bold + C.teal + name : C.cream + name) + C.reset;
-        cells.push(cell.padEnd(Math.max(14, Math.floor(this.usable / perRow) - 2)));
+        const cell = (sel ? C.teal + "❯ " + C.reset : "   ") + swatch + " " + (sel ? C.bold + C.teal + name : C.cream + name) + C.reset;
+        cells.push(this.padCell(cell, cellWidth));
       }
-      lines.push("  " + cells.join(""));
+      body.push(cells.join(""));
     }
-    lines.push("  " + C.dim + trunc("↑↓ move · enter pick · esc back", Math.max(6, this.usable - 2)) + C.reset);
-    return lines;
+    body.push(C.dim + trunc("picking for letter " + letter + " (" + (this.brandPicks.length + 1) + "/" + total + ") · enter pick · esc undo", Math.max(6, this.usable - 6)) + C.reset);
+    return this.boxed("brand colors", body);
   }
 
   openWizard(providers: ProviderEntry[]): void {
@@ -715,10 +734,10 @@ export class Tui {
     this.refresh();
   }
 
-  openBrand(current: { name: string; colors: [string, string] }): void {
+  openBrand(current: { name: string; colors: string[] }): void {
     this.brandCurrent = current;
     this.brandError = "";
-    this.brandColorStage = 0;
+    this.brandPicks = [];
     this.view = "brand";
     this.brandIndex = 0;
     this.refresh();
@@ -819,8 +838,7 @@ export class Tui {
       return;
     }
     if (this.brandIndex === 1) {
-      this.brandColorStage = 0;
-      this.brandColorFirst = "";
+      this.brandPicks = [];
       this.brandColorIndex = 0;
       this.view = "brandColors";
       this.refresh();
@@ -994,6 +1012,7 @@ export class Tui {
     if (this.view === "brandColors") {
       const names = Object.keys(BRAND_PALETTE);
       const count = names.length;
+      const total = this.brandCurrent?.name.length ?? 1;
       const move = (delta: number) => {
         this.brandColorIndex = (this.brandColorIndex + delta + count) % count;
         this.refresh();
@@ -1003,26 +1022,27 @@ export class Tui {
       if (key.kind === "left") return move(-1);
       if (key.kind === "right") return move(1);
       if (key.kind === "enter") {
-        const picked = names[this.brandColorIndex]!;
-        if (this.brandColorStage === 0) {
-          this.brandColorFirst = picked;
-          this.brandColorStage = 1;
-          this.refresh();
-        } else {
-          const first = this.brandColorFirst;
-          this.brandColorStage = 0;
-          this.brandColorFirst = "";
+        this.brandPicks.push(names[this.brandColorIndex]!);
+        if (this.brandPicks.length >= total) {
+          const picks = this.brandPicks;
+          this.brandPicks = [];
           this.view = "prompt";
           this.refresh();
-          this.hooks.onBrandColors(first, picked);
+          this.hooks.onBrandColors(picks);
+          return;
         }
+        this.brandColorIndex = 0;
+        this.refresh();
         return;
       }
       if (key.kind === "escape") {
-        this.brandColorStage = 0;
-        this.brandColorFirst = "";
-        this.view = "brand";
-        this.refresh();
+        if (this.brandPicks.length > 0) {
+          this.brandPicks.pop();
+          this.refresh();
+        } else {
+          this.view = "brand";
+          this.refresh();
+        }
       }
       return;
     }
