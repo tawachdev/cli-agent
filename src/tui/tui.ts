@@ -808,6 +808,10 @@ export class Tui {
     return this.boxed("custom color", body);
   }
 
+  private gridPerRow(): number {
+    return Math.max(6, Math.floor((this.innerWidth() - 2) / 3));
+  }
+
   private brandGridLines(): string[] {
     const letter = this.brandSingleColor ? "" : this.brandCurrent?.name[this.brandPicks.length] ?? "?";
     const stage = this.brandSingleColor
@@ -818,19 +822,24 @@ export class Tui {
       C.bold + "preview:" + C.reset + "  " + entryColor(picked) + "████████" + C.reset + "  " + C.dim + picked + C.reset,
       "",
     ];
-    const cell = "██";
-    const perRow = Math.max(8, Math.floor((this.usable - 4) / 3));
-    for (let row = 0; row < 256; row += perRow) {
+    const perRow = this.gridPerRow();
+    const maxRows = Math.max(3, Math.min(10, this.rows - 16));
+    const totalRows = Math.ceil(256 / perRow);
+    let firstRow = Math.max(0, Math.min(Math.floor(this.gridIndex / perRow) - Math.floor(maxRows / 2), totalRows - maxRows));
+    const lastRow = Math.min(totalRows, firstRow + maxRows);
+    if (firstRow > 0) body.push(C.dim + "  ↑ more" + C.reset);
+    for (let row = firstRow; row < lastRow; row++) {
       const cells: string[] = [];
       for (let col = 0; col < perRow; col++) {
-        const index = row + col;
+        const index = row * perRow + col;
         if (index >= 256) break;
-        const color = "\x1b[48;5;" + index + "m" + cell + C.reset;
-        const marker = index === this.gridIndex ? C.teal + "❯" + C.reset : C.dim + " " + C.reset;
+        const color = "\x1b[38;5;" + index + "m██" + C.reset;
+        const marker = index === this.gridIndex ? C.teal + "❯" + C.reset : " ";
         cells.push(marker + color);
       }
       body.push(cells.join(""));
     }
+    if (lastRow < totalRows) body.push(C.dim + "  ↓ more" + C.reset);
     body.push(C.dim + trunc(stage + " · ↑↓←→ move · enter pick · esc back", Math.max(6, this.usable - 6)) + C.reset);
     return this.boxed("all 256 colors", body);
   }
@@ -1302,7 +1311,7 @@ export class Tui {
       return;
     }
     if (this.view === "brandGrid256") {
-      const perRow = Math.max(8, Math.floor((this.usable - 4) / 3));
+      const perRow = this.gridPerRow();
       const move = (delta: number) => {
         this.gridIndex = Math.max(0, Math.min(255, this.gridIndex + delta));
         this.refresh();

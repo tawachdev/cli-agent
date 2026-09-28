@@ -684,7 +684,47 @@ describe("brand view", () => {
     tui.handleKey({ kind: "enter" });
     tui.handleKey({ kind: "enter" });
     tui.handleKey({ kind: "enter" });
-    expect(cap.brandColors).toEqual([["#00ff5f", "teal", "teal"]]);
+    expect(cap.brandColors).toEqual([["#00afff", "teal", "teal"]]);
+  });
+
+  it("grid rows never exceed the box width and use foreground colors", () => {
+    const { tui, tty } = makeTui(140, 30);
+    tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    for (let i = 0; i < 15; i++) tui.handleKey({ kind: "right" });
+    tui.handleKey({ kind: "enter" });
+    const raw = tty.chunks.join("");
+    const last = raw.slice(raw.lastIndexOf("\x1b[J") + 3).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "");
+    for (const line of last.split("\n")) {
+      expect(line.replace(/\x1b\[[0-9;?]*m/g, "").length).toBeLessThanOrEqual(138);
+    }
+    expect(raw.slice(raw.lastIndexOf("\x1b[J"))).toContain("\x1b[38;5;");
+    expect(raw.slice(raw.lastIndexOf("\x1b[J"))).not.toContain("\x1b[48;5;");
+  });
+
+  it("grid window stays inside a short terminal and scrolls with the cursor", () => {
+    const { tui, tty } = makeTui(100, 22);
+    tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    for (let i = 0; i < 15; i++) tui.handleKey({ kind: "right" });
+    tui.handleKey({ kind: "enter" });
+    const lastFrame = (): string => {
+      const raw = tty.chunks.join("");
+      return raw.slice(raw.lastIndexOf("\x1b[J") + 3).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "");
+    };
+    expect(lastFrame().split("\n").length).toBeLessThanOrEqual(22);
+    for (let i = 0; i < 8; i++) tui.handleKey({ kind: "down" });
+    const frame = lastFrame();
+    expect(frame).toContain("more");
+    expect(frame.split("\n").length).toBeLessThanOrEqual(22);
   });
 
   it("custom hex rejects invalid input without firing", () => {
