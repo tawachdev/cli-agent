@@ -40,7 +40,11 @@ function feedKeys(chunk: string, tui: Tui): void {
 }
 
 async function main(): Promise<void> {
-  const task = process.argv.slice(2).join(" ").trim();
+  if (process.argv[2] === "serve") {
+    await import("../src/engine/app/bootstrap.ts");
+    return;
+  }
+  const task = process.argv.slice(2).filter((arg) => arg !== "serve").join(" ").trim();
   const interactive = task === "";
 
   if (interactive && !stdin.isTTY) {
@@ -311,11 +315,14 @@ async function main(): Promise<void> {
     await chat.healthCheck();
   } catch {
     stdout.write(C.dim + "\n  backend down - starting it for you..." + C.reset + "\n");
-    spawnedBackend = spawn(
-      process.execPath,
-      [fileURLToPath(new URL("../src/engine/app/bootstrap.ts", import.meta.url))],
-      { stdio: "ignore", cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
-    );
+    const compiled = !process.execPath.endsWith("bun") && !process.execPath.includes("/bun-");
+    spawnedBackend = compiled
+      ? spawn(process.execPath, ["serve"], { stdio: "ignore" })
+      : spawn(
+          process.execPath,
+          [fileURLToPath(new URL("../src/engine/app/bootstrap.ts", import.meta.url))],
+          { stdio: "ignore", cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
+        );
     const killBackend = (): void => {
       spawnedBackend?.kill();
     };

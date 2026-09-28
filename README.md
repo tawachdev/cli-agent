@@ -7,7 +7,16 @@ A terminal AI coding agent in one package. Clone, install, run — the terminal 
 - **Make it yours** — the product name and its two colors are one environment variable away, or one line for a permanent rebrand.
 - **Images in the terminal** — drop an image path into the prompt: real pixels on iTerm2/WezTerm/kitty/Ghostty, a clean info panel elsewhere; the model sees it either way.
 
-## 30-second start
+## Install — one command, nothing else
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tawachdev/cli-agent/main/install.sh | sh
+agent
+```
+
+Downloads a single self-contained binary (macOS/Linux, arm64/x64 — the runtime is embedded, nothing to install), verifies its checksum, puts it on your PATH. First launch opens the setup wizard in the terminal: bring any API key (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint) — or skip and use local Ollama.
+
+From source instead (development):
 
 ```sh
 bun install

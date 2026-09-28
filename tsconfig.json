@@ -13,7 +13,8 @@
     "noEmit": true,
     "types": [
       "bun"
-    ]
+    ],
+    "allowImportingTsExtensions": true
   },
   "include": [
     "bin",

@@ -11,7 +11,8 @@
     "dev": "bun run src/engine/app/bootstrap.ts",
     "stage": "bun run scripts/stage.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "build:bin": "bun build --compile bin/agent.ts --outfile dist/agent"
   },
   "dependencies": {
     "hono": "^4.13.8",
