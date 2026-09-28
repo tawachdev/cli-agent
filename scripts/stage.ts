@@ -42,6 +42,7 @@ function section(title: string, columns: number, drive: (tui: Tui) => void): voi
     onBrandName: () => {},
     onBrandColors: () => {},
     onBrandReset: () => {},
+    onAddProvider: () => {},
   });
   tui.show();
   drive(tui);

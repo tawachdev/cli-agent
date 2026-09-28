@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { brandName } from "../src/shared/brand";
 import { C, decodeChunk, PRODUCT_VERSION, panel, splash, Tui, type Tty } from "../src/tui/tui";
 import {
+  addProvider,
   backendOrigin,
   Chat,
   deleteProviderKey,
@@ -256,6 +257,18 @@ async function main(): Promise<void> {
             ui?.notice("· brand reset to defaults ·");
           })
           .catch((error: Error) => ui?.notice("✘ " + error.message));
+      },
+      onAddProvider: (name, baseUrl, models) => {
+        addProvider({ name, kind: "openai", baseUrl, models })
+          .then((result) => {
+            if (result["ok"] !== true) throw new Error(String(result["error"] ?? "add failed"));
+            ui?.notice("✓ " + name + " added — open it to set its key");
+            refreshProviders();
+          })
+          .catch((error: Error) => {
+            ui?.notice("✘ " + error.message);
+            refreshProviders();
+          });
       },
     });
     ui = tui;

@@ -45,6 +45,7 @@ interface Captured {
   brandNames: string[];
   brandColors: Array<[string, string]>;
   brandResets: number;
+  adds: Array<{ name: string; baseUrl: string; models: string[] }>;
 }
 
 function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captured } {
@@ -66,6 +67,7 @@ function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captu
     brandNames: [],
     brandColors: [],
     brandResets: 0,
+    adds: [],
   };
   const tui = new Tui(tty, {
     onSubmit: (t) => cap.submitted.push(t),
@@ -90,6 +92,7 @@ function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captu
       onBrandReset: () => {
         cap.brandResets += 1;
       },
+      onAddProvider: (name, baseUrl, models) => cap.adds.push({ name, baseUrl, models }),
   });
   return { tui, tty, cap };
 }
@@ -624,5 +627,72 @@ describe("brand view", () => {
     tui.handleKey({ kind: "down" });
     tui.handleKey({ kind: "enter" });
     expect(cap.brandResets).toBe(1);
+  });
+});
+
+describe("add provider flow", () => {
+  const PROVIDERS = [
+    { name: "anthropic", models: ["claude-sonnet-4-5"], keySet: false },
+  ];
+
+  it("shows the add row and opens the three-field form", () => {
+    const { tui, tty } = makeTui(100, 30);
+    tui.openProviders(PROVIDERS);
+    tui.show();
+    expect(tty.text()).toContain("+ add provider");
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    const t = tty.text();
+    expect(t).toContain("add provider");
+    expect(t).toContain("base url");
+    expect(t).toContain("models");
+  });
+
+  it("collects name, url and models, then fires onAddProvider", () => {
+    const { tui, cap } = makeTui(100, 30);
+    tui.openProviders(PROVIDERS);
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    type(tui, "groq");
+    tui.handleKey({ kind: "enter" });
+    type(tui, "https://api.groq.com/openai/v1");
+    tui.handleKey({ kind: "enter" });
+    type(tui, "llama-3.3-70b, kimi-k2");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.adds).toEqual([
+      { name: "groq", baseUrl: "https://api.groq.com/openai/v1", models: ["llama-3.3-70b", "kimi-k2"] },
+    ]);
+  });
+
+  it("rejects a bad name and a non-https url without firing the hook", () => {
+    const { tui, tty, cap } = makeTui(100, 30);
+    tui.openProviders(PROVIDERS);
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    type(tui, "Bad Name");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.adds).toEqual([]);
+    expect(tty.text()).toContain("lowercase letters");
+    for (let i = 0; i < 8; i++) tui.handleKey({ kind: "backspace" });
+    type(tui, "groq");
+    tui.handleKey({ kind: "enter" });
+    type(tui, "http://10.0.0.5/v1");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.adds).toEqual([]);
+    expect(tty.text()).toContain("https://");
+  });
+
+  it("escape cancels the form and returns to the list", () => {
+    const { tui, tty, cap } = makeTui(100, 30);
+    tui.openProviders(PROVIDERS);
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    type(tui, "groq");
+    tui.handleKey({ kind: "escape" });
+    expect(cap.adds).toEqual([]);
+    expect(tty.text()).toContain("cloud providers");
   });
 });

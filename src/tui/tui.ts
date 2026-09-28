@@ -259,13 +259,14 @@ export interface TuiHooks {
   onBrandName(name: string): void;
   onBrandColors(first: string, second: string): void;
   onBrandReset(): void;
+  onAddProvider(name: string, baseUrl: string, models: string[]): void;
 }
 
 export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
   private cursor = 0;
-  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" = "prompt";
+  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "providerAdd" = "prompt";
   private menuIndex = 0;
   private pickerIndex = 1;
   private shown = false;
@@ -297,6 +298,9 @@ export class Tui {
   private brandColorFirst = "";
   private brandCurrent: { name: string; colors: [string, string] } | null = null;
   private brandColorIndex = 0;
+  private addFields: [string, string, string] = ["", "", ""];
+  private addFieldIndex = 0;
+  private addError = "";
 
   constructor(
     private readonly tty: Tty,
@@ -451,6 +455,11 @@ export class Tui {
       const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
       const text = sel ? C.bold + C.teal + "skip · use local Ollama" + C.reset : C.dim + "skip · use local Ollama" + C.reset;
       lines.push("  " + cursorCell + text);
+    } else {
+      const sel = this.providerIndex === this.providers.length;
+      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
+      const text = sel ? C.bold + C.teal + "+ add provider (any OpenAI-compatible URL)" + C.reset : C.dim + "+ add provider" + C.reset;
+      lines.push("  " + cursorCell + text);
     }
     const footer = this.usable >= 42 ? "↑↓ move · enter open · esc close" : "↑↓ · enter · esc";
     lines.push("  " + C.dim + trunc(footer, Math.max(6, this.usable - 2)) + C.reset);
@@ -525,6 +534,7 @@ export class Tui {
       : this.view === "brand" ? this.brandLines()
       : this.view === "brandName" ? this.brandNameLines()
       : this.view === "brandColors" ? this.brandColorsLines()
+      : this.view === "providerAdd" ? this.providerAddLines()
       : [];
     const hero = this.heroActive ? this.hero : [];
     const prefix = hero.length + menu.length + overlay.length;
@@ -613,6 +623,27 @@ export class Tui {
     this.view = this.openProvider ? "provider" : "providers";
     this.providerIndex = Math.min(this.providerIndex, Math.max(0, providers.length - 1));
     this.refresh();
+  }
+
+  private providerAddLines(): string[] {
+    const labels = ["name (a-z, 0-9, -)", "base url (https://…)", "models (comma separated)"];
+    const lines: string[] = ["  " + C.dim + trunc("── add provider ──", Math.max(6, this.usable - 2)) + C.reset];
+    for (let i = 0; i < labels.length; i++) {
+      const active = i === this.addFieldIndex;
+      const bar = active ? this.bar() : "   ";
+      const value = this.addFields[i]!;
+      const field = active
+        ? C.cream + value + C.reset + C.inverse + " " + C.reset
+        : value
+          ? C.dim + value + C.reset
+          : C.dim + trunc(labels[i]!, Math.max(4, this.usable - 8)) + C.reset;
+      lines.push(bar + field);
+    }
+    if (this.addError) {
+      lines.push(this.bar() + C.red + trunc(this.addError, this.usable - 4) + C.reset);
+    }
+    lines.push("  " + C.dim + trunc("enter next · esc cancel", Math.max(6, this.usable - 2)) + C.reset);
+    return lines;
   }
 
   private brandLines(): string[] {
@@ -807,6 +838,14 @@ export class Tui {
         this.hooks.onWizardSkip();
         return;
       }
+      if (!this.wizardMode && this.providerIndex >= this.providers.length) {
+        this.addFields = ["", "", ""];
+        this.addFieldIndex = 0;
+        this.addError = "";
+        this.view = "providerAdd";
+        this.refresh();
+        return;
+      }
       const p = this.providers[this.providerIndex];
       if (!p) return;
       this.openProvider = p;
@@ -987,9 +1026,63 @@ export class Tui {
       }
       return;
     }
+    if (this.view === "providerAdd") {
+      const label = this.addFieldIndex === 0 ? "name" : this.addFieldIndex === 1 ? "base url" : "models";
+      if (key.kind === "char" && this.addFields[this.addFieldIndex]!.length < 200) {
+        this.addFields[this.addFieldIndex] = this.addFields[this.addFieldIndex]! + key.ch;
+        this.addError = "";
+        this.refresh();
+      } else if (key.kind === "backspace") {
+        this.addFields[this.addFieldIndex] = this.addFields[this.addFieldIndex]!.slice(0, -1);
+        this.refresh();
+      } else if (key.kind === "up" && this.addFieldIndex > 0) {
+        this.addFieldIndex -= 1;
+        this.addError = "";
+        this.refresh();
+      } else if (key.kind === "down" && this.addFieldIndex < 2) {
+        this.addFieldIndex += 1;
+        this.refresh();
+      } else if (key.kind === "enter") {
+        const [name, url, models] = this.addFields;
+        if (this.addFieldIndex < 2 && !this.addFields[this.addFieldIndex]) {
+          this.addError = label + " is required";
+          this.refresh();
+          return;
+        }
+        if (this.addFieldIndex === 0 && !/^[a-z0-9][a-z0-9-]*$/.test(name!)) {
+          this.addError = "name: lowercase letters, digits, -";
+          this.refresh();
+          return;
+        }
+        if (this.addFieldIndex === 1 && !/^https:\/\//.test(url!) && !/^http:\/\/127\.0\.0\.1/.test(url!)) {
+          this.addError = "url must be https:// (or http://127.0.0.1)";
+          this.refresh();
+          return;
+        }
+        if (this.addFieldIndex < 2) {
+          this.addFieldIndex += 1;
+          this.refresh();
+          return;
+        }
+        const list = (models ?? "").split(",").map((m) => m.trim()).filter(Boolean);
+        this.addFields = ["", "", ""];
+        this.addFieldIndex = 0;
+        this.addError = "";
+        this.view = "providers";
+        this.refresh();
+        this.hooks.onAddProvider(name!, url!, list);
+      } else if (key.kind === "escape") {
+        this.addFields = ["", "", ""];
+        this.addFieldIndex = 0;
+        this.addError = "";
+        this.view = "providers";
+        this.refresh();
+      }
+      return;
+    }
     if (this.view === "providers" || this.view === "provider" || this.view === "bindTo") {
       const count =
-        this.view === "providers" ? this.providers.length + (this.wizardMode ? 1 : 0)
+        this.view === "providers" ? this.providers.length + 1
         : this.view === "bindTo" ? BIND_TARGETS.length
         : (this.openProvider?.models.length ?? 0) + (this.openProvider?.keySet ? 3 : 2);
       if (count === 0) return;

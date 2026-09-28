@@ -169,6 +169,7 @@ function makeVt(rows: number, cols: number): { vt: VirtualTerminal; tui: Tui; ca
     onBrandName: () => {},
     onBrandColors: () => {},
     onBrandReset: () => {},
+    onAddProvider: () => {},
   });
   return { vt, tui, cap };
 }

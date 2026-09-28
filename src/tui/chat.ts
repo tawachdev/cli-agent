@@ -70,6 +70,9 @@ export const testProvider = (name: string, model: string): Promise<Record<string
 export const putBinding = (role: string, binding: string): Promise<Record<string, unknown>> =>
   request(`/models/${role}`, { binding }, "PUT");
 
+export const addProvider = (body: { name: string; kind: "openai"; baseUrl: string; models: string[] }): Promise<Record<string, unknown>> =>
+  request("/providers", body, "POST");
+
 export const getSetupStatus = (): Promise<{ needsSetup: boolean }> =>
   request("/setup").then((r) => ({ needsSetup: r["needsSetup"] === true }));
 
