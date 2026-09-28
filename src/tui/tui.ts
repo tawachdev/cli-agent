@@ -669,7 +669,14 @@ export class Tui {
     this.busy = true;
     this.heroActive = false;
     this.turns += 1;
-    this.hide();
+    if (this.shown) {
+      const below = this.lastLines.length - 1 - this.inputRow;
+      if (below > 0) this.tty.write("\x1b[" + below + "B");
+      this.tty.write("\r\n");
+      this.lastLines = [];
+      this.cursorLine = 0;
+      this.shown = false;
+    }
   }
 
   endBusy(): void {
