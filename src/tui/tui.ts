@@ -1,5 +1,5 @@
 import { stdout } from "node:process";
-import { brandColors, brandName } from "../shared/brand";
+import { BRAND_PALETTE, brandColors, brandName } from "../shared/brand";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -148,19 +148,19 @@ export interface BindTarget {
 }
 
 export const BIND_TARGETS: BindTarget[] = [
-  { role: "mimon1", label: brandName() + " 1" },
-  { role: "mimon2", label: brandName() + " 2" },
-  { role: "mimon3", label: brandName() + " 3" },
-  { role: "mimonMax", label: brandName() + " MAX" },
+  { role: "mimon1", get label() { return brandName() + " 1"; } },
+  { role: "mimon2", get label() { return brandName() + " 2"; } },
+  { role: "mimon3", get label() { return brandName() + " 3"; } },
+  { role: "mimonMax", get label() { return brandName() + " MAX"; } },
   { role: "coder", label: "Coder" },
   { role: "general", label: "General" },
 ];
 
 export const TIERS: MimonTier[] = [
-  { id: "mimon1", label: brandName() + " 1", blurb: "fast · light tasks", dot: C.teal },
-  { id: "mimon2", label: brandName() + " 2", blurb: "balanced · code · default", dot: C.cream },
-  { id: "mimon3", label: brandName() + " 3", blurb: "deep reasoning", dot: C.green },
-  { id: "mimonMax", label: brandName() + " MAX", blurb: "maximum strength", dot: C.gold },
+  { id: "mimon1", get label() { return brandName() + " 1"; }, blurb: "fast · light tasks", dot: C.teal },
+  { id: "mimon2", get label() { return brandName() + " 2"; }, blurb: "balanced · code · default", dot: C.cream },
+  { id: "mimon3", get label() { return brandName() + " 3"; }, blurb: "deep reasoning", dot: C.green },
+  { id: "mimonMax", get label() { return brandName() + " MAX"; }, blurb: "maximum strength", dot: C.gold },
 ];
 
 export interface SlashCommand {
@@ -172,19 +172,30 @@ const COMMANDS: SlashCommand[] = [
   { name: "/new", description: "Start a fresh session" },
   { name: "/model", description: "Settings · switch " + brandName() + " model" },
   { name: "/providers", description: "Settings · cloud providers & keys" },
-  { name: "/setup", description: "First-time setup · provider & API key" },
+  { name: "/setup", description: "Setup · connect a provider & key" },
+  { name: "/brand", description: "Make it yours · change name & colors" },
   { name: "/stop", description: "Abort the running turn" },
   { name: "/help", description: "Show keyboard shortcuts" },
   { name: "/exit", description: "Quit " + brandName().toLowerCase() },
 ];
 
-const TIPS = [
+const TIP_BASES = [
   "type / then enter opens the model settings",
-  "tab cycles " + brandName() + " 1 · 2 · 3 · MAX instantly",
+  "tab cycles ",
   "drag an image into the prompt to send it to the model",
   "esc stops a running turn cold",
-  "/new starts a fresh session any time",
+  "/brand changes the name & colors any time",
 ];
+
+function tipsList(): string[] {
+  return [
+    TIP_BASES[0]!,
+    TIP_BASES[1]! + brandName() + " 1 · 2 · 3 · MAX instantly",
+    TIP_BASES[2]!,
+    TIP_BASES[3]!,
+    TIP_BASES[4]!,
+  ];
+}
 
 export type Key =
   | { kind: "char"; ch: string }
@@ -245,13 +256,16 @@ export interface TuiHooks {
   onBindModel(role: string, binding: string): void;
   onWizardKey(name: string, key: string): void;
   onWizardSkip(): void;
+  onBrandName(name: string): void;
+  onBrandColors(first: string, second: string): void;
+  onBrandReset(): void;
 }
 
 export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
   private cursor = 0;
-  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" = "prompt";
+  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" = "prompt";
   private menuIndex = 0;
   private pickerIndex = 1;
   private shown = false;
@@ -276,6 +290,13 @@ export class Tui {
   private keyBuffer = "";
   private bindModel = "";
   private wizardMode = false;
+  private brandIndex = 0;
+  private brandBuffer = "";
+  private brandError = "";
+  private brandColorStage = 0;
+  private brandColorFirst = "";
+  private brandCurrent: { name: string; colors: [string, string] } | null = null;
+  private brandColorIndex = 0;
 
   constructor(
     private readonly tty: Tty,
@@ -363,7 +384,7 @@ export class Tui {
   }
 
   private renderTip(): string {
-    const tip = TIPS[this.turns % TIPS.length]!;
+    const tip = tipsList()[this.turns % 5]!;
     return "  " + C.gold + "● tip " + C.reset + C.dim + trunc(tip, this.usable - 10) + C.reset;
   }
 
@@ -501,6 +522,9 @@ export class Tui {
       : this.view === "provider" ? this.providerItems()
       : this.view === "keyInput" ? this.keyInputLines()
       : this.view === "bindTo" ? this.bindToLines()
+      : this.view === "brand" ? this.brandLines()
+      : this.view === "brandName" ? this.brandNameLines()
+      : this.view === "brandColors" ? this.brandColorsLines()
       : [];
     const hero = this.heroActive ? this.hero : [];
     const prefix = hero.length + menu.length + overlay.length;
@@ -591,6 +615,60 @@ export class Tui {
     this.refresh();
   }
 
+  private brandLines(): string[] {
+    const current = this.brandCurrent;
+    const title = current
+      ? "── make it yours · " + current.name + " · " + current.colors.join(" + ") + " ──"
+      : "── make it yours ──";
+    const items = ["change name", "change colors", "reset to defaults"];
+    const lines: string[] = ["  " + C.dim + trunc(title, Math.max(6, this.usable - 2)) + C.reset];
+    const budget = Math.max(8, this.usable - 6);
+    for (let i = 0; i < items.length; i++) {
+      const sel = i === this.brandIndex;
+      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
+      const text = sel ? C.bold + C.teal + items[i]! + C.reset : C.bold + C.cream + items[i]! + C.reset;
+      lines.push("  " + cursorCell + text);
+    }
+    lines.push("  " + C.dim + trunc("↑↓ move · enter select · esc close", Math.max(6, this.usable - 2)) + C.reset);
+    return lines;
+  }
+
+  private brandNameLines(): string[] {
+    const lines: string[] = [
+      "  " + C.dim + trunc("── brand name ──", Math.max(6, this.usable - 2)) + C.reset,
+      this.bar() + C.bold + "New name:" + C.reset + " " + C.cream + this.brandBuffer + C.reset + C.inverse + " " + C.reset,
+    ];
+    if (this.brandError) {
+      lines.push(this.bar() + C.red + trunc(this.brandError, this.usable - 4) + C.reset);
+    }
+    lines.push("  " + C.dim + trunc("2-12 letters · enter save · esc back", Math.max(6, this.usable - 2)) + C.reset);
+    return lines;
+  }
+
+  private brandColorsLines(): string[] {
+    const names = Object.keys(BRAND_PALETTE);
+    const stage = this.brandColorStage === 0 ? "pick color 1 of 2" : "pick color 2 of 2 (" + this.brandColorFirst + ")";
+    const lines: string[] = [
+      "  " + C.dim + trunc("── brand colors · " + stage + " ──", Math.max(6, this.usable - 2)) + C.reset,
+    ];
+    const perRow = 2;
+    for (let row = 0; row < names.length; row += perRow) {
+      const cells: string[] = [];
+      for (let col = 0; col < perRow; col++) {
+        const index = row + col;
+        if (index >= names.length) break;
+        const name = names[index]!;
+        const sel = index === this.brandColorIndex;
+        const swatch = BRAND_PALETTE[name] + "██" + C.reset;
+        const cell = (sel ? C.teal + "❯ " + C.reset : "  ") + swatch + " " + (sel ? C.bold + C.teal + name : C.cream + name) + C.reset;
+        cells.push(cell.padEnd(Math.max(14, Math.floor(this.usable / perRow) - 2)));
+      }
+      lines.push("  " + cells.join(""));
+    }
+    lines.push("  " + C.dim + trunc("↑↓ move · enter pick · esc back", Math.max(6, this.usable - 2)) + C.reset);
+    return lines;
+  }
+
   openWizard(providers: ProviderEntry[]): void {
     this.providers = providers;
     this.openProvider = null;
@@ -603,6 +681,20 @@ export class Tui {
   exitWizard(): void {
     this.wizardMode = false;
     this.view = "prompt";
+    this.refresh();
+  }
+
+  openBrand(current: { name: string; colors: [string, string] }): void {
+    this.brandCurrent = current;
+    this.brandError = "";
+    this.brandColorStage = 0;
+    this.view = "brand";
+    this.brandIndex = 0;
+    this.refresh();
+  }
+
+  refreshBrand(): void {
+    if (this.heroActive) this.regenerateHero();
     this.refresh();
   }
 
@@ -685,6 +777,27 @@ export class Tui {
     this.setTier(t);
     this.hooks.onTierChange(t);
     this.notice("✓ model set to " + t.label);
+  }
+
+  private selectBrandItem(): void {
+    if (this.brandIndex === 0) {
+      this.brandBuffer = "";
+      this.brandError = "";
+      this.view = "brandName";
+      this.refresh();
+      return;
+    }
+    if (this.brandIndex === 1) {
+      this.brandColorStage = 0;
+      this.brandColorFirst = "";
+      this.brandColorIndex = 0;
+      this.view = "brandColors";
+      this.refresh();
+      return;
+    }
+    this.view = "prompt";
+    this.refresh();
+    this.hooks.onBrandReset();
   }
 
   private selectProviderItem(): void {
@@ -791,6 +904,85 @@ export class Tui {
         this.keyBuffer = "";
         if (this.wizardMode) this.openProvider = null;
         this.view = this.wizardMode ? "providers" : "provider";
+        this.refresh();
+      }
+      return;
+    }
+    if (this.view === "brand") {
+      if (key.kind === "up") {
+        this.brandIndex = (this.brandIndex + 2) % 3;
+        this.refresh();
+      }
+      if (key.kind === "down") {
+        this.brandIndex = (this.brandIndex + 1) % 3;
+        this.refresh();
+      }
+      if (key.kind === "enter") this.selectBrandItem();
+      if (key.kind === "escape") {
+        this.view = "prompt";
+        this.refresh();
+      }
+      return;
+    }
+    if (this.view === "brandName") {
+      if (key.kind === "char" && this.brandBuffer.length < 12) {
+        this.brandBuffer += key.ch;
+        this.brandError = "";
+        this.refresh();
+      } else if (key.kind === "backspace") {
+        this.brandBuffer = this.brandBuffer.slice(0, -1);
+        this.refresh();
+      } else if (key.kind === "enter") {
+        if (/^[A-Za-z]{2,12}$/.test(this.brandBuffer)) {
+          const name = this.brandBuffer.toUpperCase();
+          this.brandBuffer = "";
+          this.brandError = "";
+          this.view = "prompt";
+          this.refresh();
+          this.hooks.onBrandName(name);
+        } else {
+          this.brandError = "name must be 2-12 letters";
+          this.refresh();
+        }
+      } else if (key.kind === "escape") {
+        this.brandBuffer = "";
+        this.brandError = "";
+        this.view = "brand";
+        this.refresh();
+      }
+      return;
+    }
+    if (this.view === "brandColors") {
+      const names = Object.keys(BRAND_PALETTE);
+      const count = names.length;
+      const move = (delta: number) => {
+        this.brandColorIndex = (this.brandColorIndex + delta + count) % count;
+        this.refresh();
+      };
+      if (key.kind === "up") return move(-2);
+      if (key.kind === "down") return move(2);
+      if (key.kind === "left") return move(-1);
+      if (key.kind === "right") return move(1);
+      if (key.kind === "enter") {
+        const picked = names[this.brandColorIndex]!;
+        if (this.brandColorStage === 0) {
+          this.brandColorFirst = picked;
+          this.brandColorStage = 1;
+          this.refresh();
+        } else {
+          const first = this.brandColorFirst;
+          this.brandColorStage = 0;
+          this.brandColorFirst = "";
+          this.view = "prompt";
+          this.refresh();
+          this.hooks.onBrandColors(first, picked);
+        }
+        return;
+      }
+      if (key.kind === "escape") {
+        this.brandColorStage = 0;
+        this.brandColorFirst = "";
+        this.view = "brand";
         this.refresh();
       }
       return;

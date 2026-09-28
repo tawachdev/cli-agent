@@ -20,6 +20,7 @@ import { loadExtraProviders, ProviderRegistry } from "../src/engine/models/regis
 import { BindingsStore } from "../src/engine/models/bindings";
 import { ToolRegistry } from "../src/engine/tools/registry";
 import { StreamRegistry } from "../src/engine/api/ws/agent-stream";
+import { BrandStore } from "../src/engine/brand";
 
 const OPENAI_SSE = 'data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n';
 
@@ -88,6 +89,7 @@ function buildApp(options: { workspaceRoot: string; env: Record<string, string |
     registry: options.registry,
     workspaceRoot: options.workspaceRoot,
     dataDir: options.workspaceRoot,
+    brand: new BrandStore(options.workspaceRoot, options.env ?? {}),
   });
   return { app, db, audit, bindings };
 }

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { createAgentRoute } from "../api/routes/agent";
+import { createBrandRoute } from "../api/routes/brand";
 import { createHealthRoute } from "../api/routes/health";
 import { createModelsRoute } from "../api/routes/models";
 import { createProvidersRoute } from "../api/routes/providers";
@@ -10,6 +11,7 @@ import type { Agent } from "../core/agent/agent";
 import type { AuditWriter } from "../core/audit/audit";
 import { PendingPermissions } from "../core/permissions/pending";
 import type { Db } from "../db/client";
+import type { BrandStore } from "../brand";
 import type { BindingsStore } from "../models/bindings";
 import type { ProviderRegistry } from "../models/registry";
 import type { Logger } from "../shared/logger";
@@ -26,6 +28,7 @@ export interface ServerDeps {
   registry: ProviderRegistry;
   workspaceRoot: string;
   dataDir: string;
+  brand: BrandStore;
 }
 
 export function createServer(deps: ServerDeps): Hono {
@@ -35,6 +38,7 @@ export function createServer(deps: ServerDeps): Hono {
   app.route("/models", createModelsRoute(deps.bindings, deps.registry, deps.audit));
   app.route("/providers", createProvidersRoute(deps.registry, deps.audit));
   app.route("/setup", createSetupRoute(deps.bindings, deps.registry, deps.workspaceRoot, deps.audit));
+  app.route("/brand", createBrandRoute(deps.brand, deps.audit));
   app.route("/sessions", createSessionsRoute(deps.db, deps.pending, deps.streams));
   app.route("/agent", createAgentRoute(deps.agent, deps.streams, deps.pending, deps.db));
   app.get(

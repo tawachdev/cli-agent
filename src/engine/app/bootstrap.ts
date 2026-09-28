@@ -32,6 +32,7 @@ import { loadPluginRoots } from "../plugins/loader";
 import { StreamRegistry, websocket } from "../api/ws/agent-stream";
 import { dirname } from "node:path";
 import { spawnOllamaIfEnabled } from "../core/services/state";
+import { BrandStore } from "../brand";
 
 const config = loadConfig();
 const logger = createLogger(config.logLevel);
@@ -95,6 +96,7 @@ const agent = new Agent({
 const streams = new StreamRegistry();
 const dataDir = dirname(config.dbPath);
 spawnOllamaIfEnabled(dataDir);
+const brandStore = new BrandStore(config.workspaceRoot, process.env);
 
 const server = Bun.serve({
   fetch: createServer({
@@ -109,6 +111,7 @@ const server = Bun.serve({
     registry,
     workspaceRoot: config.workspaceRoot,
     dataDir,
+    brand: brandStore,
   }).fetch,
   websocket,
   port: config.port,

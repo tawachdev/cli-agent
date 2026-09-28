@@ -16,6 +16,7 @@ import { OllamaProvider } from "../src/engine/models/provider";
 import { BindingsStore } from "../src/engine/models/bindings";
 import { ToolRegistry } from "../src/engine/tools/registry";
 import { StreamRegistry } from "../src/engine/api/ws/agent-stream";
+import { BrandStore } from "../src/engine/brand";
 
 describe("GET /health", () => {
   it("returns ok when the database answers", async () => {
@@ -55,6 +56,7 @@ describe("GET /health", () => {
       registry,
       workspaceRoot: "/tmp",
       dataDir: "/tmp",
+      brand: new BrandStore("/tmp", process.env),
     });
     const response = await app.request("/health");
     expect(response.status).toBe(200);

@@ -42,6 +42,9 @@ interface Captured {
   binds: Array<{ role: string; binding: string }>;
   wizardKeys: Array<{ name: string; key: string }>;
   wizardSkips: number;
+  brandNames: string[];
+  brandColors: Array<[string, string]>;
+  brandResets: number;
 }
 
 function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captured } {
@@ -60,6 +63,9 @@ function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captu
     binds: [],
     wizardKeys: [],
     wizardSkips: 0,
+    brandNames: [],
+    brandColors: [],
+    brandResets: 0,
   };
   const tui = new Tui(tty, {
     onSubmit: (t) => cap.submitted.push(t),
@@ -79,6 +85,11 @@ function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captu
     onWizardSkip: () => {
       cap.wizardSkips += 1;
     },
+      onBrandName: (name) => cap.brandNames.push(name),
+      onBrandColors: (a, b) => cap.brandColors.push([a, b]),
+      onBrandReset: () => {
+        cap.brandResets += 1;
+      },
   });
   return { tui, tty, cap };
 }
@@ -550,5 +561,68 @@ describe("setup wizard", () => {
     tui.handleKey({ kind: "escape" });
     expect(cap.wizardSkips).toBe(0);
     expect(tty.text()).toContain("Ask anything");
+  });
+});
+
+describe("brand view", () => {
+  it("is reachable from the slash menu", () => {
+    const { tui, tty } = makeTui();
+    tui.show();
+    type(tui, "/");
+    tty.clear();
+    type(tui, "br");
+    expect(tty.text()).toContain("/brand");
+  });
+
+  it("shows current identity and fires onBrandName with a valid name", () => {
+    const { tui, tty, cap } = makeTui();
+    tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
+    tui.show();
+    const t = tty.text();
+    expect(t).toContain("make it yours");
+    expect(t).toContain("change name");
+    expect(t).toContain("reset to defaults");
+
+    tui.handleKey({ kind: "enter" });
+    type(tui, "sam");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.brandNames).toEqual(["SAM"]);
+  });
+
+  it("rejects an invalid name without firing the hook", () => {
+    const { tui, tty, cap } = makeTui();
+    tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
+    tui.show();
+    tui.handleKey({ kind: "enter" });
+    type(tui, "x");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.brandNames).toEqual([]);
+    expect(tty.text()).toContain("2-12 letters");
+  });
+
+  it("picks two colors and fires onBrandColors", () => {
+    const { tui, tty, cap } = makeTui();
+    tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    expect(tty.text()).toContain("pick color 1 of 2");
+    tui.handleKey({ kind: "enter" });
+    expect(tty.text()).toContain("pick color 2 of 2");
+    tui.handleKey({ kind: "right" });
+    tui.handleKey({ kind: "enter" });
+    expect(cap.brandColors.length).toBe(1);
+    expect(cap.brandColors[0]![0]).toBe("teal");
+    expect(cap.brandColors[0]![1]).toBe("gold");
+  });
+
+  it("reset fires onBrandReset", () => {
+    const { tui, cap } = makeTui();
+    tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    expect(cap.brandResets).toBe(1);
   });
 });

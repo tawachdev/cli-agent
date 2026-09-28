@@ -15,6 +15,7 @@ import { ToolRegistry } from "../src/engine/tools/registry";
 import { createServer } from "../src/engine/app/server";
 import { createLogger } from "../src/engine/shared/logger";
 import { StreamRegistry } from "../src/engine/api/ws/agent-stream";
+import { BrandStore } from "../src/engine/brand";
 
 const PNG_1X1 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -148,6 +149,7 @@ describe("images on the /agent/run route", () => {
       } as never,
       workspaceRoot: "/tmp",
       dataDir: "/tmp",
+      brand: new BrandStore("/tmp", process.env),
     });
     return { app, db, provider };
   }

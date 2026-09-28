@@ -9,9 +9,11 @@ import {
   Chat,
   deleteProviderKey,
   getBindings,
+  getBrand,
   getProviders,
   getSetupStatus,
   putBinding,
+  putBrand,
   putProviderKey,
   skipSetup,
   testProvider,
@@ -111,6 +113,13 @@ async function main(): Promise<void> {
             ui.notice("✘ " + (error instanceof Error ? error.message : "setup failed"));
           }
           return;
+        case "/brand":
+          try {
+            ui.openBrand(await getBrand());
+          } catch (error) {
+            ui.notice("✘ " + (error instanceof Error ? error.message : "brand failed"));
+          }
+          return;
         case "/stop":
           await chat.abort();
           ui.notice("· abort sent ·");
@@ -120,7 +129,8 @@ async function main(): Promise<void> {
           panel(tty, "help", C.gold, C.slate, [
             "enter send · / commands · tab cycle model",
             "esc stop turn / close menu · ctrl+c quit",
-            "/new session · /model picker · /providers keys · /stop abort",
+            "/new session · /model picker · /providers keys · /setup connect",
+            "/brand name & colors · /stop abort",
           ]);
           ui.show();
           return;
@@ -136,6 +146,11 @@ async function main(): Promise<void> {
       getProviders()
         .then((list) => ui?.openProviders(list))
         .catch(() => {});
+    };
+    const applyBrand = (name: string, colors: [string, string]): void => {
+      process.env.AGENT_NAME = name;
+      process.env.AGENT_COLORS = colors.join(",");
+      tui.refreshBrand();
     };
     const tui = new Tui(tty, {
       onSubmit: (t) => {
@@ -215,6 +230,33 @@ async function main(): Promise<void> {
           .then(() => ui?.notice("· setup skipped — using local Ollama ·"))
           .catch((error: Error) => ui?.notice("✘ " + error.message));
       },
+      onBrandName: (name) => {
+        putBrand({ name })
+          .then((result) => {
+            if (result["ok"] !== true) throw new Error(String(result["error"] ?? "brand failed"));
+            applyBrand(String(result["name"]), result["colors"] as [string, string]);
+            ui?.notice("✓ brand name set — " + String(result["name"]));
+          })
+          .catch((error: Error) => ui?.notice("✘ " + error.message));
+      },
+      onBrandColors: (first, second) => {
+        putBrand({ colors: [first, second] })
+          .then((result) => {
+            if (result["ok"] !== true) throw new Error(String(result["error"] ?? "brand failed"));
+            applyBrand(String(result["name"]), result["colors"] as [string, string]);
+            ui?.notice("✓ colors set — " + first + " + " + second);
+          })
+          .catch((error: Error) => ui?.notice("✘ " + error.message));
+      },
+      onBrandReset: () => {
+        putBrand({ reset: true })
+          .then((result) => {
+            if (result["ok"] !== true) throw new Error(String(result["error"] ?? "brand failed"));
+            applyBrand(String(result["name"]), result["colors"] as [string, string]);
+            ui?.notice("· brand reset to defaults ·");
+          })
+          .catch((error: Error) => ui?.notice("✘ " + error.message));
+      },
     });
     ui = tui;
     chat.permissionAsk = () => tui.permission();
@@ -257,7 +299,18 @@ async function main(): Promise<void> {
       [fileURLToPath(new URL("../src/engine/app/bootstrap.ts", import.meta.url))],
       { stdio: "ignore", cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
     );
-    process.on("exit", () => spawnedBackend?.kill());
+    const killBackend = (): void => {
+      spawnedBackend?.kill();
+    };
+    process.on("exit", killBackend);
+    process.on("SIGINT", () => {
+      killBackend();
+      exit(0);
+    });
+    process.on("SIGTERM", () => {
+      killBackend();
+      exit(0);
+    });
     let up = false;
     for (let i = 0; i < 30 && !up; i++) {
       await new Promise<void>((resolve) => setTimeout(resolve, 300));
@@ -281,6 +334,13 @@ async function main(): Promise<void> {
   await chat.connect();
   if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);
 
+  try {
+    const brand = await getBrand();
+    process.env.AGENT_NAME = brand.name;
+    process.env.AGENT_COLORS = brand.colors.join(",");
+  } catch {
+  }
+
   if (!interactive) {
     const { images, errors } = await loadImages(task);
     for (const message of errors) stdout.write(C.dim + "  · " + message + C.reset + "\n");
@@ -294,10 +354,11 @@ async function main(): Promise<void> {
 
   ui?.enableHero(PRODUCT_VERSION);
   ui?.show();
-  try {
-    if ((await getSetupStatus()).needsSetup) ui?.openWizard(await getProviders());
-  } catch {
-  }
+  void getSetupStatus()
+    .then((status) => {
+      if (status.needsSetup) ui?.notice("· no provider connected — /setup connects one · /brand makes it yours ·");
+    })
+    .catch(() => {});
   await new Promise<void>(() => {});
 }
 

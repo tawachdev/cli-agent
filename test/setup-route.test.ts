@@ -19,6 +19,7 @@ import { ProviderRegistry } from "../src/engine/models/registry";
 import { BindingsStore } from "../src/engine/models/bindings";
 import { ToolRegistry } from "../src/engine/tools/registry";
 import { StreamRegistry } from "../src/engine/api/ws/agent-stream";
+import { BrandStore } from "../src/engine/brand";
 
 function buildApp(options: { workspaceRoot: string; registry: ProviderRegistry }) {
   const db = openDb(":memory:");
@@ -56,6 +57,7 @@ function buildApp(options: { workspaceRoot: string; registry: ProviderRegistry }
     registry: options.registry,
     workspaceRoot: options.workspaceRoot,
     dataDir: options.workspaceRoot,
+    brand: new BrandStore(options.workspaceRoot, {}),
   });
   return { app, db, audit, bindings };
 }

@@ -17,15 +17,19 @@ bun run cli "read README.md and summarize it in one line"
 
 The CLI starts the local engine by itself (loopback-only, port `7800`). Interactive TUI: `bun run cli`. Engine alone: `bun run dev`.
 
-First interactive launch opens the setup wizard: pick a provider, paste the key, it is tested live and bound to all four model tiers — or pick **skip · use local Ollama**. Re-open any time with `/setup`.
+The terminal is the whole product and the `/` menu is its control panel: `/setup` connects a provider (pick one, paste the key, it is tested live and bound to all four tiers), `/brand` changes the name and colors, `/model` routes tiers. A quiet hint appears on first launch if no provider is connected — nothing takes over your screen.
 
 ## Make it yours
+
+Inside the TUI: type `/` and pick **/brand** — change the name (2–12 letters), pick two colors live from the palette, or reset. The choice is saved (`.agent/brand.json`) and every launch after that boots with your brand — no environment variables needed.
+
+Environment works too:
 
 ```sh
 AGENT_NAME=ANIR AGENT_COLORS=purple,gold bun run cli
 ```
 
-`AGENT_NAME` — 2–12 letters, spells your name in the pixel font (full A–Z, two sizes). `AGENT_COLORS` — two names from the palette: `teal gold cream green red slate purple blue cyan orange pink white gray dark`. Invalid values fall back to the defaults. Permanent rebrand: edit `DEFAULT_BRAND` / `DEFAULT_COLORS` in `src/shared/brand.ts` — one file owns the identity.
+`AGENT_NAME` — 2–12 letters, spells your name in the pixel font (full A–Z, two sizes). `AGENT_COLORS` — two names from the palette: `teal gold cream green red slate purple blue cyan orange pink white gray dark`. Invalid values fall back to the defaults. Permanent defaults live in `src/shared/brand.ts` (`DEFAULT_BRAND` / `DEFAULT_COLORS`) — one file owns the identity. A saved `/brand` choice wins over the environment.
 
 Technical identifiers (`AGENT_*` env vars, `.agent/` state folder, `agent` Keychain service, port `7800`) are stable on purpose so the product can coexist with any other agent on the same machine.
 

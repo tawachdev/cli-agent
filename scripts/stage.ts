@@ -39,6 +39,9 @@ function section(title: string, columns: number, drive: (tui: Tui) => void): voi
     onBindModel: () => {},
     onWizardKey: () => {},
     onWizardSkip: () => {},
+    onBrandName: () => {},
+    onBrandColors: () => {},
+    onBrandReset: () => {},
   });
   tui.show();
   drive(tui);
