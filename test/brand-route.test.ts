@@ -70,6 +70,15 @@ describe("brand route", () => {
     });
     expect(badColor.status).toBe(400);
 
+    const hex = await route.request("/", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ colors: ["#00FF88", "gold"] }),
+    });
+    const hexResult = (await hex.json()) as { ok: boolean; colors: string[] };
+    expect(hexResult.ok).toBe(true);
+    expect(hexResult.colors).toEqual(["#00ff88", "gold"]);
+
     const ok = await route.request("/", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -91,6 +100,6 @@ describe("brand route", () => {
     });
     const cleared = (await reset.json()) as Record<string, unknown>;
     expect(cleared["name"]).toBe("MIMON");
-    expect(rows.map((r) => r.type)).toEqual(["brand.updated", "brand.updated"]);
+    expect(rows.map((r) => r.type)).toEqual(["brand.updated", "brand.updated", "brand.updated"]);
   });
 });

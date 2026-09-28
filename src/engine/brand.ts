@@ -1,15 +1,15 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { BRAND_PALETTE, DEFAULT_BRAND, DEFAULT_COLORS, validColorList } from "../shared/brand";
+import { DEFAULT_BRAND, DEFAULT_COLORS, validColorEntry, validColorList } from "../shared/brand";
 
 const NAME_RE = /^[A-Za-z]{2,12}$/;
 
 const fileSchema = z.object({
   name: z.string().regex(NAME_RE),
   colors: z.array(z.string()).min(1).max(12).refine(
-    (colors) => colors.every((color) => color in BRAND_PALETTE),
-    "unknown color name",
+    (colors) => colors.every((color) => validColorEntry(color) !== null),
+    "colors must be palette names or #rrggbb hex",
   ),
 });
 

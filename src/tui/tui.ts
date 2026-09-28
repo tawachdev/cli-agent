@@ -1,5 +1,5 @@
 import { stdout } from "node:process";
-import { BRAND_PALETTE, brandColors, brandName, colorForLetter } from "../shared/brand";
+import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry } from "../shared/brand";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -266,7 +266,7 @@ export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
   private cursor = 0;
-  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "providerAdd" = "prompt";
+  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "brandCustomColor" | "providerAdd" = "prompt";
   private menuIndex = 0;
   private pickerIndex = 1;
   private shown = false;
@@ -299,6 +299,8 @@ export class Tui {
   private brandColorIndex = 0;
   private brandModeIndex = 0;
   private brandSingleColor = false;
+  private customColorBuffer = "";
+  private customColorError = "";
   private addFields: [string, string, string] = ["", "", ""];
   private addFieldIndex = 0;
   private addError = "";
@@ -550,6 +552,7 @@ export class Tui {
       : this.view === "brandName" ? this.brandNameLines()
       : this.view === "brandColors" ? this.brandColorsLines()
       : this.view === "brandColorMode" ? this.brandColorModeLines()
+      : this.view === "brandCustomColor" ? this.customColorLines()
       : this.view === "providerAdd" ? this.providerAddLines()
       : [];
     const hero = this.heroActive ? this.hero : [];
@@ -699,12 +702,12 @@ export class Tui {
   }
 
   private brandColorsLines(): string[] {
-    const names = Object.keys(BRAND_PALETTE);
-    const total = this.brandCurrent?.name.length ?? 1;
+    const names = [...Object.keys(BRAND_PALETTE), "custom hex…"];
+    const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
     const letter = this.brandCurrent?.name[this.brandPicks.length] ?? "?";
     const preview = (this.brandCurrent?.name ?? "")
       .split("")
-      .map((ch, i) => (i < this.brandPicks.length ? BRAND_PALETTE[this.brandPicks[i]!]! + C.bold + ch + C.reset : C.dim + ch + C.reset))
+      .map((ch, i) => (i < this.brandPicks.length ? entryColor(this.brandPicks[i]!) + C.bold + ch + C.reset : C.dim + ch + C.reset))
       .join(" ");
     const body: string[] = [
       C.bold + "preview:" + C.reset + "  " + preview,
@@ -719,7 +722,7 @@ export class Tui {
         if (index >= names.length) break;
         const name = names[index]!;
         const sel = index === this.brandColorIndex;
-        const swatch = BRAND_PALETTE[name] + "██" + C.reset;
+        const swatch = name === "custom hex…" ? "\x1b[38;5;80m" + "＃" + C.reset : BRAND_PALETTE[name] + "██" + C.reset;
         const cell = (sel ? C.teal + "❯ " + C.reset : "   ") + swatch + " " + (sel ? C.bold + C.teal + name : C.cream + name) + C.reset;
         cells.push(this.padCell(cell, cellWidth));
       }
@@ -730,6 +733,19 @@ export class Tui {
       : "picking for letter " + letter + " (" + (this.brandPicks.length + 1) + "/" + total + ")";
     body.push(C.dim + trunc(stage + " · enter pick · esc undo", Math.max(6, this.usable - 6)) + C.reset);
     return this.boxed("brand colors", body);
+  }
+
+  private customColorLines(): string[] {
+    const entry = validColorEntry(this.customColorBuffer);
+    const swatch = entry ? entryColor(entry) + "██" + C.reset : C.dim + "██" + C.reset;
+    const body = [
+      C.bold + "Hex color:" + C.reset + " " + C.cream + this.customColorBuffer + C.reset + C.inverse + " " + C.reset + "  " + swatch,
+    ];
+    if (this.customColorError) {
+      body.push(C.red + trunc(this.customColorError, this.usable - 6) + C.reset);
+    }
+    body.push(C.dim + trunc("#rrggbb — e.g. #7c3aed · enter apply · esc back", Math.max(6, this.usable - 6)) + C.reset);
+    return this.boxed("custom color", body);
   }
 
   private brandColorModeLines(): string[] {
@@ -853,6 +869,21 @@ export class Tui {
     this.setTier(t);
     this.hooks.onTierChange(t);
     this.notice("✓ model set to " + t.label);
+  }
+
+  private applyColorPick(entry: string): void {
+    this.brandPicks.push(entry);
+    const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
+    if (this.brandPicks.length >= total) {
+      const picks = this.brandPicks;
+      this.brandPicks = [];
+      this.view = "prompt";
+      this.refresh();
+      this.hooks.onBrandColors(picks);
+      return;
+    }
+    this.brandColorIndex = 0;
+    this.refresh();
   }
 
   private selectBrandItem(): void {
@@ -1053,7 +1084,7 @@ export class Tui {
       return;
     }
     if (this.view === "brandColors") {
-      const names = Object.keys(BRAND_PALETTE);
+      const names = [...Object.keys(BRAND_PALETTE), "custom"];
       const count = names.length;
       const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
       const move = (delta: number) => {
@@ -1065,17 +1096,15 @@ export class Tui {
       if (key.kind === "left") return move(-1);
       if (key.kind === "right") return move(1);
       if (key.kind === "enter") {
-        this.brandPicks.push(names[this.brandColorIndex]!);
-        if (this.brandPicks.length >= total) {
-          const picks = this.brandPicks;
-          this.brandPicks = [];
-          this.view = "prompt";
+        const picked = names[this.brandColorIndex]!;
+        if (picked === "custom") {
+          this.customColorBuffer = "";
+          this.customColorError = "";
+          this.view = "brandCustomColor";
           this.refresh();
-          this.hooks.onBrandColors(picks);
           return;
         }
-        this.brandColorIndex = 0;
-        this.refresh();
+        this.applyColorPick(picked);
         return;
       }
       if (key.kind === "escape") {
@@ -1086,6 +1115,34 @@ export class Tui {
           this.view = "brand";
           this.refresh();
         }
+      }
+      return;
+    }
+    if (this.view === "brandCustomColor") {
+      if (key.kind === "char" && this.customColorBuffer.length < 9) {
+        this.customColorBuffer += key.ch;
+        this.customColorError = "";
+        this.refresh();
+      } else if (key.kind === "backspace") {
+        this.customColorBuffer = this.customColorBuffer.slice(0, -1);
+        this.refresh();
+      } else if (key.kind === "enter") {
+        const entry = validColorEntry(this.customColorBuffer);
+        if (!entry) {
+          this.customColorError = "use #rrggbb — six hex digits";
+          this.refresh();
+          return;
+        }
+        this.customColorBuffer = "";
+        this.customColorError = "";
+        this.view = "brandColors";
+        this.applyColorPick(entry);
+        return;
+      } else if (key.kind === "escape") {
+        this.customColorBuffer = "";
+        this.customColorError = "";
+        this.view = "brandColors";
+        this.refresh();
       }
       return;
     }

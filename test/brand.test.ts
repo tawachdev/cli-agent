@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { brandName, DEFAULT_BRAND } from "../src/shared/brand";
+import { brandName, DEFAULT_BRAND, entryColor, validColorEntry } from "../src/shared/brand";
 import { glyphWord, MINI_GLYPHS, WIDE_GLYPHS } from "../src/shared/glyphs";
 import { splash, visibleLen, type Tty } from "../src/tui/tui";
 
@@ -104,5 +104,21 @@ describe("rebranded splash", () => {
     } finally {
       delete process.env.AGENT_NAME;
     }
+  });
+});
+
+describe("custom hex colors", () => {
+  it("accepts #rrggbb and normalizes it", () => {
+    expect(validColorEntry("#00FF88")).toBe("#00ff88");
+    expect(validColorEntry("00ff88")).toBe("#00ff88");
+    expect(validColorEntry("teal")).toBe("teal");
+    expect(validColorEntry("#00ff8")).toBeNull();
+    expect(validColorEntry("#zzzzzz")).toBeNull();
+    expect(validColorEntry("")).toBeNull();
+  });
+
+  it("renders hex as a truecolor escape", () => {
+    expect(entryColor("#ff8800")).toBe("\x1b[38;2;255;136;0m");
+    expect(entryColor("teal")).toBe("\x1b[38;5;37m");
   });
 });

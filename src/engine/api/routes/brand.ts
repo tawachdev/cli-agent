@@ -25,7 +25,7 @@ export function createBrandRoute(store: BrandStore, audit: AuditWriter): Hono {
       return c.json({ ok: false, error: "name must be 2-12 letters" }, 400);
     }
     if (colors !== undefined && !validColors(colors)) {
-      return c.json({ ok: false, error: "unknown color name — use the palette from GET /brand" }, 400);
+      return c.json({ ok: false, error: "colors must be palette names or #rrggbb hex — see GET /brand" }, 400);
     }
     if (reset) {
       await store.reset();

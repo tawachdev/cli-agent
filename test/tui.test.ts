@@ -645,6 +645,41 @@ describe("brand view", () => {
     expect(cap.brandColors).toEqual([["gold", "teal", "teal", "teal"]]);
   });
 
+  it("custom hex entry applies a hex color per letter", () => {
+    const { tui, tty, cap } = makeTui();
+    tui.openBrand({ name: "BLO", colors: ["teal", "gold"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    for (let i = 0; i < 14; i++) tui.handleKey({ kind: "right" });
+    tui.handleKey({ kind: "enter" });
+    expect(tty.text()).toContain("Hex color:");
+    type(tui, "#00ff88");
+    tui.handleKey({ kind: "enter" });
+    expect(tty.text()).toContain("letter L (2/3)");
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "enter" });
+    expect(cap.brandColors).toEqual([["#00ff88", "teal", "teal"]]);
+  });
+
+  it("custom hex rejects invalid input without firing", () => {
+    const { tui, tty, cap } = makeTui();
+    tui.openBrand({ name: "BLO", colors: ["teal", "gold"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    for (let i = 0; i < 14; i++) tui.handleKey({ kind: "right" });
+    tui.handleKey({ kind: "enter" });
+    type(tui, "#zzz");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.brandColors).toEqual([]);
+    expect(tty.text()).toContain("#rrggbb");
+  });
+
   it("esc undoes the last letter pick before leaving", () => {
     const { tui, tty, cap } = makeTui();
     tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
