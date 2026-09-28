@@ -1,6 +1,6 @@
 {
   "name": "mimon-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Personal terminal AI agent. Any model with your own API keys \u2014 local-first, no accounts, no telemetry.",
   "license": "UNLICENSED",
   "bin": {
@@ -10,9 +10,9 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@mohamed-taaouch/darwin-arm64": "0.1.1",
-    "@mohamed-taaouch/darwin-x64": "0.1.1",
-    "@mohamed-taaouch/linux-arm64": "0.1.1",
-    "@mohamed-taaouch/linux-x64": "0.1.1"
+    "@mohamed-taaouch/darwin-arm64": "0.1.2",
+    "@mohamed-taaouch/darwin-x64": "0.1.2",
+    "@mohamed-taaouch/linux-arm64": "0.1.2",
+    "@mohamed-taaouch/linux-x64": "0.1.2"
   }
 }
