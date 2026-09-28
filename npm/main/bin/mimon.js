@@ -5,7 +5,7 @@ const path = require("node:path");
 const platform = `${process.platform}-${process.arch}`;
 
 function binaryCandidates() {
-  const names = [`@mimon/${platform}`];
+  const names = [`@mohamed-taaouch/${platform}`];
   const entries = [];
   for (const name of names) {
     try {
@@ -14,7 +14,7 @@ function binaryCandidates() {
       continue;
     }
   }
-  entries.push(path.join(__dirname, "..", "node_modules", "@mimon", platform, "bin", "mimon"));
+  entries.push(path.join(__dirname, "..", "node_modules", "@tawachdev", platform, "bin", "mimon"));
   return entries;
 }
 
@@ -23,7 +23,7 @@ const binary = binaryCandidates().find((candidate) => fs.existsSync(candidate));
 
 if (!binary) {
   process.stderr.write(
-    `mimon: no binary for ${platform} — the platform package @mimon/${platform} did not install.\n` +
+    `mimon: no binary for ${platform} — the platform package @mohamed-taaouch/${platform} did not install.\n` +
       "try: npm i -g mimon --force  (or open an issue with your OS and arch)\n",
   );
   process.exit(1);
