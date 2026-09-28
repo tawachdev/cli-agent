@@ -1,0 +1,24 @@
+{
+  "name": "cli-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "mimon": "./bin/agent.ts"
+  },
+  "scripts": {
+    "cli": "bun run bin/agent.ts",
+    "dev": "bun run src/engine/app/bootstrap.ts",
+    "stage": "bun run scripts/stage.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hono": "^4.13.8",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,307 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { createInterface } from "node:readline/promises";
+import { exit, stdin, stdout } from "node:process";
+import { fileURLToPath } from "node:url";
+import { brandName } from "../src/shared/brand";
+import { C, decodeChunk, PRODUCT_VERSION, panel, splash, Tui, type Tty } from "../src/tui/tui";
+import {
+  backendOrigin,
+  Chat,
+  deleteProviderKey,
+  getBindings,
+  getProviders,
+  getSetupStatus,
+  putBinding,
+  putProviderKey,
+  skipSetup,
+  testProvider,
+} from "../src/tui/chat";
+import { loadImages } from "../src/tui/images";
+
+const tty: Tty = {
+  write: (data) => stdout.write(data),
+  get columns() {
+    return stdout.columns ?? 80;
+  },
+  get rows() {
+    return stdout.rows ?? 24;
+  },
+};
+
+let keyBuffer = "";
+
+function feedKeys(chunk: string, tui: Tui): void {
+  const { keys, rest } = decodeChunk(keyBuffer + chunk);
+  keyBuffer = rest;
+  for (const key of keys) tui.handleKey(key);
+}
+
+async function main(): Promise<void> {
+  const task = process.argv.slice(2).join(" ").trim();
+  const interactive = task === "";
+
+  if (interactive && !stdin.isTTY) {
+    stdout.write(C.red + "\n  interactive mode needs a terminal - pass a task instead:\n  bun run cli \"your task\"\n\n" + C.reset);
+    exit(1);
+  }
+
+  const chat = new Chat(tty, async () => "n");
+  let ui: Tui | null = null;
+  let cleanup: () => void = () => {};
+  let spawnedBackend: ChildProcess | null = null;
+
+  const bye = (): void => {
+    cleanup();
+    chat.close();
+    spawnedBackend?.kill();
+    stdout.write(C.reset + "\n" + C.gold + C.bold + "  ✦ take care\n\n" + C.reset);
+    exit(0);
+  };
+
+  if (interactive) {
+    stdin.setRawMode(true);
+    stdin.resume();
+    const handleTurn = async (t: string): Promise<void> => {
+      try {
+        const { images, errors } = await loadImages(t);
+        for (const message of errors) stdout.write(C.dim + "  · " + message + C.reset + "\n");
+        await chat.run(t, images);
+        if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);
+      } catch (error) {
+        stdout.write(C.red + "  ✘ " + (error instanceof Error ? error.message : "turn failed") + C.reset + "\n");
+      } finally {
+        ui?.endBusy();
+      }
+    };
+    const handleCommand = async (name: string): Promise<void> => {
+      if (!ui) return;
+      switch (name) {
+        case "/new":
+          try {
+            await chat.newSession();
+            await chat.connect();
+            chat.ctxPct = 0;
+            ui.setRuntime(chat.ctxPct, chat.sessionId);
+            ui.notice("✓ new session " + chat.sessionId.slice(0, 8));
+          } catch (error) {
+            ui.notice("✘ " + (error instanceof Error ? error.message : "session failed"));
+          }
+          return;
+        case "/model":
+          try {
+            const roles = await getBindings();
+            const map: Record<string, string> = {};
+            for (const role of roles) map[role.role] = role.model;
+            ui.openPicker(map);
+          } catch {
+            ui.openPicker();
+          }
+          return;
+        case "/providers":
+          try {
+            ui.openProviders(await getProviders());
+          } catch (error) {
+            ui.notice("✘ " + (error instanceof Error ? error.message : "providers failed"));
+          }
+          return;
+        case "/setup":
+          try {
+            ui.openWizard(await getProviders());
+          } catch (error) {
+            ui.notice("✘ " + (error instanceof Error ? error.message : "setup failed"));
+          }
+          return;
+        case "/stop":
+          await chat.abort();
+          ui.notice("· abort sent ·");
+          return;
+        case "/help":
+          ui.hide();
+          panel(tty, "help", C.gold, C.slate, [
+            "enter send · / commands · tab cycle model",
+            "esc stop turn / close menu · ctrl+c quit",
+            "/new session · /model picker · /providers keys · /stop abort",
+          ]);
+          ui.show();
+          return;
+        case "/exit":
+          bye();
+          return;
+        default:
+          return;
+      }
+    };
+    const refreshProviders = (): void => {
+      if (!ui) return;
+      getProviders()
+        .then((list) => ui?.openProviders(list))
+        .catch(() => {});
+    };
+    const tui = new Tui(tty, {
+      onSubmit: (t) => {
+        void handleTurn(t);
+      },
+      onCommand: (name) => {
+        void handleCommand(name);
+      },
+      onTierChange: (t) => {
+        chat.role = t.id;
+      },
+      onAbort: () => {
+        void chat.abort();
+      },
+      onExit: bye,
+      onSetKey: (name, key) => {
+        putProviderKey(name, key)
+          .then(() => {
+            ui?.notice("✓ key saved for " + name);
+            refreshProviders();
+          })
+          .catch((error: Error) => ui?.notice("✘ " + error.message));
+      },
+      onRemoveKey: (name) => {
+        deleteProviderKey(name)
+          .then(() => {
+            ui?.notice("✓ key removed from " + name);
+            refreshProviders();
+          })
+          .catch((error: Error) => ui?.notice("✘ " + error.message));
+      },
+      onTestProvider: (name, model) => {
+        ui?.notice("· testing " + name + "/" + model + "…");
+        testProvider(name, model)
+          .then((result) =>
+            result["ok"] === true
+              ? ui?.notice("✓ " + name + "/" + model + " answered")
+              : ui?.notice("✘ " + String(result["error"] ?? "test failed")),
+          )
+          .catch((error: Error) => ui?.notice("✘ " + error.message));
+      },
+      onBindModel: (role, binding) => {
+        putBinding(role, binding)
+          .then((result) =>
+            result["ok"] === true
+              ? ui?.notice("✓ " + role + " → " + binding)
+              : ui?.notice("✘ " + String(result["error"] ?? "bind failed")),
+          )
+          .catch((error: Error) => ui?.notice("✘ " + error.message));
+      },
+      onWizardKey: (name, key) => {
+        void (async () => {
+          try {
+            await putProviderKey(name, key);
+            const def = (await getProviders()).find((p) => p.name === name);
+            const model = def?.models[0] ?? "";
+            if (!model) throw new Error(name + " exposes no models to bind");
+            ui?.notice("· testing " + name + "/" + model + "…");
+            const result = await testProvider(name, model);
+            if (result["ok"] !== true) {
+              ui?.notice("✘ key saved but the test failed: " + String(result["error"] ?? "unknown") + " — recheck it in /providers");
+              refreshProviders();
+              return;
+            }
+            const binding = name + "/" + model;
+            for (const role of ["mimon1", "mimon2", "mimon3", "mimonMax"]) await putBinding(role, binding);
+            ui?.notice("✓ ready — " + binding + " now drives all " + brandName() + " tiers (change any time in /model)");
+            refreshProviders();
+          } catch (error) {
+            ui?.notice("✘ " + (error instanceof Error ? error.message : "setup failed"));
+            refreshProviders();
+          }
+        })();
+      },
+      onWizardSkip: () => {
+        skipSetup()
+          .then(() => ui?.notice("· setup skipped — using local Ollama ·"))
+          .catch((error: Error) => ui?.notice("✘ " + error.message));
+      },
+    });
+    ui = tui;
+    chat.permissionAsk = () => tui.permission();
+    stdin.on("data", (chunk) => feedKeys(String(chunk), tui));
+    stdout.on("resize", () => tui.onResize());
+    stdin.on("resize", () => tui.onResize());
+    let seenCols = stdout.columns ?? 0;
+    const widthWatch = setInterval(() => {
+      const cols = stdout.columns ?? 0;
+      if (cols !== seenCols) {
+        seenCols = cols;
+        tui.onResize();
+      }
+    }, 400);
+    cleanup = () => {
+      clearInterval(widthWatch);
+      stdin.setRawMode(false);
+      stdin.pause();
+    };
+  } else {
+    const rl = createInterface({ input: stdin, output: stdout, terminal: stdout.isTTY === true });
+    chat.permissionAsk = async () => {
+      try {
+        const answer = (await rl.question(C.gold + "  [a] once  [v] session  [n] deny › " + C.reset)).trim().toLowerCase();
+        return answer === "a" || answer === "v" ? (answer as "a" | "v") : "n";
+      } catch {
+        stdout.write(C.dim + "\n  · no terminal input - permission denied ·\n" + C.reset);
+        return "n";
+      }
+    };
+    cleanup = () => rl.close();
+  }
+
+  try {
+    await chat.healthCheck();
+  } catch {
+    stdout.write(C.dim + "\n  backend down - starting it for you..." + C.reset + "\n");
+    spawnedBackend = spawn(
+      process.execPath,
+      [fileURLToPath(new URL("../src/engine/app/bootstrap.ts", import.meta.url))],
+      { stdio: "ignore", cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
+    );
+    process.on("exit", () => spawnedBackend?.kill());
+    let up = false;
+    for (let i = 0; i < 30 && !up; i++) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 300));
+      try {
+        await chat.healthCheck();
+        up = true;
+      } catch {
+        up = false;
+      }
+    }
+    if (!up) {
+      stdout.write(C.red + "\n  backend did not come up at " + backendOrigin + "\n  start it manually with: bun run dev\n\n" + C.reset);
+      spawnedBackend?.kill();
+      cleanup();
+      exit(1);
+    }
+    stdout.write(C.dim + "  ✓ backend ready at " + backendOrigin + C.reset + "\n");
+  }
+
+  await chat.newSession();
+  await chat.connect();
+  if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);
+
+  if (!interactive) {
+    const { images, errors } = await loadImages(task);
+    for (const message of errors) stdout.write(C.dim + "  · " + message + C.reset + "\n");
+    splash(tty, PRODUCT_VERSION);
+    await chat.run(task, images);
+    chat.close();
+    spawnedBackend?.kill();
+    cleanup();
+    exit(0);
+  }
+
+  ui?.enableHero(PRODUCT_VERSION);
+  ui?.show();
+  try {
+    if ((await getSetupStatus()).needsSetup) ui?.openWizard(await getProviders());
+  } catch {
+  }
+  await new Promise<void>(() => {});
+}
+
+main().catch((error: Error) => {
+  stdout.write(C.red + error.message + "\n" + C.reset);
+  exit(1);
+});

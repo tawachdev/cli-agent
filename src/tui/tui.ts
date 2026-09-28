@@ -1,0 +1,914 @@
+import { stdout } from "node:process";
+import { brandColors, brandName } from "../shared/brand";
+import { glyphWord } from "../shared/glyphs";
+import { ANSI as C } from "../shared/tokens";
+import { PRODUCT_VERSION } from "../shared/version";
+
+export { C };
+export { PRODUCT_VERSION };
+
+export interface Tty {
+  write(data: string): void;
+  readonly columns: number;
+  readonly rows: number;
+}
+
+export function visibleLen(s: string): number {
+  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
+export function WIDTH(): number {
+  const cols = stdout.columns;
+  if (!cols || cols < 20) return 44;
+  return Math.min(cols - 2, 92);
+}
+
+export function fit(s: string): string {
+  const max = Math.max(20, stdout.columns || 44) - 1;
+  const plain = s.replace(/\x1b\[[0-9;]*m/g, "");
+  if (plain.length <= max) return s;
+  return plain.slice(0, max);
+}
+
+export function wrap(text: string, width: number): string[] {
+  const out: string[] = [];
+  for (const rawLine of text.split("\n")) {
+    let line = "";
+    for (const word of rawLine.replace(/\s+/g, " ").trim().split(" ")) {
+      if ((line + " " + word).trim().length > width) {
+        if (line) out.push(line);
+        line = word;
+      } else {
+        line = (line + " " + word).trim();
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+function trunc(s: string, max: number): string {
+  let out = "";
+  let n = 0;
+  for (const ch of s) {
+    if (n >= max) break;
+    out += ch;
+    n += 1;
+  }
+  return out;
+}
+
+export function panel(
+  out: Tty,
+  label: string,
+  labelColor: string,
+  border: string,
+  lines: string[],
+): void {
+  const w = WIDTH();
+  const dashes = Math.max(2, w - 5 - label.length);
+  out.write(border + "╭─ " + C.reset + labelColor + C.bold + label + C.reset + " " + border + "─".repeat(dashes) + "╮" + C.reset + "\n");
+  for (const line of lines) {
+    out.write(border + "│ " + C.reset + line.padEnd(w - 4) + " " + border + "│" + C.reset + "\n");
+  }
+  out.write(border + "╰" + "─".repeat(w - 2) + "╯" + C.reset + "\n");
+}
+
+export function chip(text: string, bg?: boolean): string {
+  return (bg ? C.inverse : "") + C.bold + " " + text + " " + C.reset;
+}
+
+export function meter(pct: number, width = 14): string {
+  const filled = Math.round((Math.min(100, pct) / 100) * width);
+  return C.green + "#".repeat(filled) + C.reset + C.dim + "-".repeat(width - filled) + C.reset;
+}
+
+export function fmtSecs(ms: number): string {
+  return (ms / 1000).toFixed(1) + "s";
+}
+
+function boxLines(cols: number, version: string): string[] {
+  const brand = brandName();
+  const [colorA, colorB] = brandColors();
+  const meta = "v" + version + " · fully local";
+  const wide = glyphWord(brand, false);
+  const mini = glyphWord(brand, true);
+  const single = (): string[] => {
+    const plain = trunc("✦ " + brand + " v" + version, Math.max(6, cols));
+    return [colorA + C.bold + plain.slice(0, brand.length + 2) + C.reset + C.dim + plain.slice(brand.length + 2) + C.reset];
+  };
+  if (!wide || !mini) return single();
+  const useMini = cols < wide.width + 13;
+  const art = useMini ? mini : wide;
+  const contentWidth = Math.max(art.width, meta.length);
+  if (cols < contentWidth + 5) return single();
+  const gap = useMini ? " " : "  ";
+  const lead = " ".repeat(Math.max(0, Math.floor((cols - contentWidth - 4) / 2)));
+  const edge = C.dim;
+  const open = lead + edge + "╭" + "─".repeat(contentWidth + 2) + "╮" + C.reset;
+  const blank = lead + edge + "│" + C.reset + " ".repeat(contentWidth + 2) + edge + "│" + C.reset;
+  const close = lead + edge + "╰" + "─".repeat(contentWidth + 2) + "╯" + C.reset;
+  const row = (colored: string, width: number): string => {
+    const l = Math.floor((contentWidth + 2 - width) / 2);
+    const r = contentWidth + 2 - width - l;
+    return lead + edge + "│" + C.reset + " ".repeat(l) + colored + " ".repeat(r) + edge + "│" + C.reset;
+  };
+  const lines: string[] = [open, blank];
+  for (const cells of art.cells) {
+    const colored = cells.map((cell, i) => (i % 2 === 0 ? colorA : colorB) + cell + C.reset).join(gap);
+    lines.push(row(colored, art.width));
+  }
+  lines.push(blank);
+  lines.push(row(C.dim + meta + C.reset, meta.length));
+  lines.push(close);
+  return lines;
+}
+
+export function splash(tty: Tty, version: string): void {
+  const cols = tty.columns > 0 ? tty.columns : 40;
+  tty.write("\n" + boxLines(cols, version).join("\n") + "\n\n");
+}
+
+export interface MimonTier {
+  id: "mimon1" | "mimon2" | "mimon3" | "mimonMax";
+  label: string;
+  blurb: string;
+  dot: string;
+}
+
+export interface ProviderEntry {
+  name: string;
+  models: string[];
+  keySet: boolean;
+}
+
+export interface BindTarget {
+  role: string;
+  label: string;
+}
+
+export const BIND_TARGETS: BindTarget[] = [
+  { role: "mimon1", label: brandName() + " 1" },
+  { role: "mimon2", label: brandName() + " 2" },
+  { role: "mimon3", label: brandName() + " 3" },
+  { role: "mimonMax", label: brandName() + " MAX" },
+  { role: "coder", label: "Coder" },
+  { role: "general", label: "General" },
+];
+
+export const TIERS: MimonTier[] = [
+  { id: "mimon1", label: brandName() + " 1", blurb: "fast · light tasks", dot: C.teal },
+  { id: "mimon2", label: brandName() + " 2", blurb: "balanced · code · default", dot: C.cream },
+  { id: "mimon3", label: brandName() + " 3", blurb: "deep reasoning", dot: C.green },
+  { id: "mimonMax", label: brandName() + " MAX", blurb: "maximum strength", dot: C.gold },
+];
+
+export interface SlashCommand {
+  name: string;
+  description: string;
+}
+
+const COMMANDS: SlashCommand[] = [
+  { name: "/new", description: "Start a fresh session" },
+  { name: "/model", description: "Settings · switch " + brandName() + " model" },
+  { name: "/providers", description: "Settings · cloud providers & keys" },
+  { name: "/setup", description: "First-time setup · provider & API key" },
+  { name: "/stop", description: "Abort the running turn" },
+  { name: "/help", description: "Show keyboard shortcuts" },
+  { name: "/exit", description: "Quit " + brandName().toLowerCase() },
+];
+
+const TIPS = [
+  "type / then enter opens the model settings",
+  "tab cycles " + brandName() + " 1 · 2 · 3 · MAX instantly",
+  "drag an image into the prompt to send it to the model",
+  "esc stops a running turn cold",
+  "/new starts a fresh session any time",
+];
+
+export type Key =
+  | { kind: "char"; ch: string }
+  | { kind: "enter" | "backspace" | "delete" | "up" | "down" | "left" | "right" | "home" | "end" | "escape" | "tab" | "ctrl-c" | "ctrl-p" | "unknown" };
+
+export function decodeChunk(chunk: string): { keys: Key[]; rest: string } {
+  const keys: Key[] = [];
+  let i = 0;
+  while (i < chunk.length) {
+    const ch = chunk.charAt(i);
+    if (ch === "\x1b") {
+      const next = chunk.charAt(i + 1);
+      if (next === "") return { keys, rest: "\x1b" };
+      if (next === "[") {
+        let j = i + 2;
+        while (j < chunk.length) {
+          const c = chunk.charAt(j);
+          if (c >= "@" && c <= "~") break;
+          j += 1;
+        }
+        if (j >= chunk.length) return { keys, rest: chunk.slice(i) };
+        const seq = chunk.slice(i, j + 1);
+        if (seq === "\x1b[A") keys.push({ kind: "up" });
+        else if (seq === "\x1b[B") keys.push({ kind: "down" });
+        else if (seq === "\x1b[C") keys.push({ kind: "right" });
+        else if (seq === "\x1b[D") keys.push({ kind: "left" });
+        else if (seq === "\x1b[H" || seq === "\x1b[1~") keys.push({ kind: "home" });
+        else if (seq === "\x1b[F" || seq === "\x1b[4~") keys.push({ kind: "end" });
+        else if (seq === "\x1b[3~") keys.push({ kind: "delete" });
+        i = j + 1;
+        continue;
+      }
+      keys.push({ kind: "escape" });
+      i += 1;
+      continue;
+    }
+    if (ch === "\r") { keys.push({ kind: "enter" }); i += 1; continue; }
+    if (ch === "\x7f") { keys.push({ kind: "backspace" }); i += 1; continue; }
+    if (ch === "\t") { keys.push({ kind: "tab" }); i += 1; continue; }
+    if (ch === "\x03") { keys.push({ kind: "ctrl-c" }); i += 1; continue; }
+    if (ch === "\x10") { keys.push({ kind: "ctrl-p" }); i += 1; continue; }
+    if (ch < " ") { keys.push({ kind: "unknown" }); i += 1; continue; }
+    keys.push({ kind: "char", ch });
+    i += 1;
+  }
+  return { keys, rest: "" };
+}
+
+export interface TuiHooks {
+  onSubmit(task: string): void;
+  onCommand(name: string): void;
+  onTierChange(tier: MimonTier): void;
+  onAbort(): void;
+  onExit(): void;
+  onSetKey(name: string, key: string): void;
+  onRemoveKey(name: string): void;
+  onTestProvider(name: string, model: string): void;
+  onBindModel(role: string, binding: string): void;
+  onWizardKey(name: string, key: string): void;
+  onWizardSkip(): void;
+}
+
+export class Tui {
+  tier: MimonTier = TIERS[1]!;
+  private input = "";
+  private cursor = 0;
+  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" = "prompt";
+  private menuIndex = 0;
+  private pickerIndex = 1;
+  private shown = false;
+  private busy = false;
+  private inputRow = 0;
+  private cursorCol = 0;
+  private history: string[] = [];
+  private historyIndex: number | null = null;
+  private draft = "";
+  private turns = 0;
+  private ctxPct = 0;
+  private sessionShort = "";
+  private permissionResolve: ((answer: "a" | "v" | "n") => void) | null = null;
+  private hero: string[] = [];
+  private heroActive = false;
+  private heroVersion = "";
+  private bindings: Record<string, string> | null = null;
+  private providers: ProviderEntry[] = [];
+  private providerIndex = 0;
+  private openProvider: ProviderEntry | null = null;
+  private providerItemIndex = 0;
+  private keyBuffer = "";
+  private bindModel = "";
+  private wizardMode = false;
+
+  constructor(
+    private readonly tty: Tty,
+    private readonly hooks: TuiHooks,
+  ) {}
+
+  private get cols(): number {
+    return this.tty.columns > 0 ? this.tty.columns : 40;
+  }
+
+  private get usable(): number {
+    return this.cols - 2;
+  }
+
+  private get rows(): number {
+    return this.tty.rows > 0 ? this.tty.rows : 24;
+  }
+
+  setRuntime(ctxPct: number, sessionId: string): void {
+    this.ctxPct = ctxPct;
+    this.sessionShort = sessionId.slice(0, 8);
+  }
+
+  enableHero(version: string): void {
+    this.heroVersion = version;
+    this.hero = boxLines(this.cols, version);
+    this.heroActive = true;
+  }
+
+  private regenerateHero(): void {
+    if (this.heroActive) this.hero = boxLines(this.cols, this.heroVersion);
+  }
+
+  private filtered(): SlashCommand[] {
+    const word = this.input.slice(1);
+    return COMMANDS.filter((c) => c.name.slice(1).startsWith(word));
+  }
+
+  private bar(): string {
+    return C.teal + "▌" + C.reset + " ";
+  }
+
+  private innerWidth(): number {
+    return Math.max(8, Math.min(this.usable - 4, 72));
+  }
+
+  private boxLead(): string {
+    return " ".repeat(Math.max(0, Math.floor((this.usable - this.innerWidth() - 4) / 2)));
+  }
+
+  private boxEdge(top: boolean): string {
+    const w = this.innerWidth() + 2;
+    return this.boxLead() + C.dim + (top ? "╭" : "╰") + "─".repeat(w) + (top ? "╮" : "╯") + C.reset;
+  }
+
+  private boxLine(content: string): string {
+    const pad = Math.max(0, this.innerWidth() - visibleLen(content));
+    return this.boxLead() + C.dim + "│" + C.reset + " " + content + " ".repeat(pad) + " " + C.dim + "│" + C.reset;
+  }
+
+  private renderInput(): string {
+    const maxText = this.innerWidth();
+    if (this.input === "") {
+      const ph = trunc('Ask anything… "fix the flaky test in auth"', maxText);
+      return C.dim + C.inverse + ph.slice(0, 1) + C.reset + C.dim + ph.slice(1) + C.reset;
+    }
+    const before = trunc(this.input.slice(0, this.cursor), maxText);
+    const at = this.input.slice(this.cursor, this.cursor + 1) || " ";
+    const restBudget = Math.max(0, maxText - before.length - 1);
+    const after = trunc(this.input.slice(this.cursor + 1), restBudget);
+    return C.cream + before + C.reset + C.inverse + at + C.reset + C.cream + after + C.reset;
+  }
+
+  private renderStatus(): string {
+    const label = trunc(this.tier.label, Math.max(3, Math.min(9, this.innerWidth() - 3)));
+    const meta = trunc(" · local · ctx " + this.ctxPct + "% · s " + this.sessionShort, Math.max(0, this.innerWidth() - 3 - label.length));
+    return C.teal + "●" + C.reset + " " + C.bold + C.cream + label + C.reset + C.dim + meta + C.reset;
+  }
+
+  private renderHints(): string {
+    const text = "enter send · / commands · tab model · esc stop · ctrl+c exit";
+    const line = C.dim + trunc(text, this.usable - 4) + C.reset;
+    const pad = " ".repeat(Math.max(0, this.usable - 2 - visibleLen(line)));
+    return pad + line;
+  }
+
+  private renderTip(): string {
+    const tip = TIPS[this.turns % TIPS.length]!;
+    return "  " + C.gold + "● tip " + C.reset + C.dim + trunc(tip, this.usable - 10) + C.reset;
+  }
+
+  private renderMenu(): string[] {
+    const items = this.filtered();
+    if (!this.input.startsWith("/") || items.length === 0) return [];
+    const maxVisible = Math.max(1, Math.min(this.rows - 6, items.length));
+    const first = Math.max(0, Math.min(this.menuIndex - maxVisible + 1, items.length - maxVisible));
+    const window = items.slice(first, first + maxVisible);
+    const menuW = Math.min(this.usable - 2, 64);
+    const lines: string[] = [];
+    for (let i = 0; i < window.length; i++) {
+      const item = window[i]!;
+      const plain = " " + item.name.padEnd(9) + trunc(item.description, menuW - 12);
+      if (first + i === this.menuIndex) {
+        lines.push("  " + C.bgTeal + C.dark + C.bold + plain.padEnd(menuW) + C.reset);
+      } else {
+        lines.push("  " + C.bold + item.name + C.reset + C.dim + " ".repeat(Math.max(0, 9 - item.name.length)) + trunc(item.description, menuW - 12) + C.reset);
+      }
+    }
+    return lines;
+  }
+
+  private renderPicker(): string[] {
+    const titleBody = this.usable >= 22 ? "── select model " + "─".repeat(Math.max(4, Math.min(this.usable - 22, 30))) : "── model ──";
+    const lines: string[] = ["  " + C.dim + trunc(titleBody, Math.max(6, this.usable - 2)) + C.reset];
+    const labelBudget = Math.min(9, Math.max(3, this.usable - 6));
+    const blurbBudget = this.usable - 22;
+    for (let i = 0; i < TIERS.length; i++) {
+      const t = TIERS[i]!;
+      const sel = i === this.pickerIndex;
+      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
+      const label = sel ? C.bold + C.teal + trunc(t.label, labelBudget) + C.reset : C.bold + C.cream + trunc(t.label, labelBudget) + C.reset;
+      const blurbText = this.bindings?.[t.id] ?? t.blurb;
+      const blurb = blurbBudget >= 6 ? C.dim + "  " + trunc(blurbText, blurbBudget) + C.reset : "";
+      lines.push("  " + cursorCell + t.dot + "● " + C.reset + label + blurb);
+    }
+    const footer = this.usable >= 42 ? "↑↓ move · enter select · esc cancel" : "↑↓ · enter · esc";
+    lines.push("  " + C.dim + trunc(footer, Math.max(6, this.usable - 2)) + C.reset);
+    return lines;
+  }
+
+  private providersLines(): string[] {
+    const titleBody = this.usable >= 22 ? "── cloud providers " + "─".repeat(Math.max(4, Math.min(this.usable - 24, 28))) : "── providers ──";
+    const lines: string[] = [];
+    if (this.wizardMode) {
+      lines.push("  " + C.gold + C.bold + "✦ welcome to " + brandName().toLowerCase() + C.reset);
+      lines.push("  " + C.dim + trunc("connect one provider — the key never leaves this machine", Math.max(6, this.usable - 2)) + C.reset);
+    }
+    lines.push("  " + C.dim + trunc(titleBody, Math.max(6, this.usable - 2)) + C.reset);
+    const statusBudget = 12;
+    const nameBudget = Math.max(8, this.usable - statusBudget - 8);
+    for (let i = 0; i < this.providers.length; i++) {
+      const p = this.providers[i]!;
+      const sel = i === this.providerIndex;
+      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
+      const name = (sel ? C.bold + C.teal : C.bold + C.cream) + trunc(p.name, nameBudget) + C.reset;
+      const status = p.keySet ? C.green + "key saved" + C.reset : C.dim + "no key" + C.reset;
+      lines.push("  " + cursorCell + name + "  " + status);
+    }
+    if (this.providers.length === 0) lines.push("  " + C.dim + "no providers" + C.reset);
+    if (this.wizardMode) {
+      const sel = this.providerIndex === this.providers.length;
+      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
+      const text = sel ? C.bold + C.teal + "skip · use local Ollama" + C.reset : C.dim + "skip · use local Ollama" + C.reset;
+      lines.push("  " + cursorCell + text);
+    }
+    const footer = this.usable >= 42 ? "↑↓ move · enter open · esc close" : "↑↓ · enter · esc";
+    lines.push("  " + C.dim + trunc(footer, Math.max(6, this.usable - 2)) + C.reset);
+    return lines;
+  }
+
+  private providerItems(): string[] {
+    const p = this.openProvider;
+    if (!p) return [];
+    const items: Array<{ text: string; kind: "model" | "action" }> = p.models.map((m) => ({ text: m, kind: "model" as const }));
+    items.push({ text: p.keySet ? "replace key" : "set key", kind: "action" });
+    if (p.keySet) items.push({ text: "remove key", kind: "action" });
+    items.push({ text: "test key", kind: "action" });
+    if (this.providerItemIndex >= items.length) this.providerItemIndex = Math.max(0, items.length - 1);
+    const lines: string[] = [
+      "  " + C.dim + trunc("── " + p.name + (p.keySet ? " · key saved" : " · no key") + " ", Math.max(6, this.usable - 2)) + C.reset,
+    ];
+    const budget = Math.max(8, this.usable - 6);
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]!;
+      const sel = i === this.providerItemIndex;
+      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
+      const text = sel ? C.bold + C.teal + trunc(item.text, budget) + C.reset : item.kind === "model" ? C.cream + trunc(item.text, budget) + C.reset : C.dim + trunc(item.text, budget) + C.reset;
+      lines.push("  " + cursorCell + text);
+    }
+    lines.push("  " + C.dim + trunc("↑↓ move · enter select · esc back", Math.max(6, this.usable - 2)) + C.reset);
+    return lines;
+  }
+
+  private keyInputLines(): string[] {
+    const masked = "●".repeat(Math.min(this.keyBuffer.length, Math.max(4, this.usable - 40)));
+    const prompt = "API key for " + (this.openProvider?.name ?? "") + ":";
+    return [
+      "  " + C.dim + trunc("── " + (this.openProvider?.name ?? ""), Math.max(6, this.usable - 2)) + C.reset,
+      this.bar() + C.bold + trunc(prompt, this.usable - 4) + C.reset,
+      this.bar() + C.cream + masked + C.reset + C.inverse + " " + C.reset,
+      "  " + C.dim + trunc("enter save · esc cancel", Math.max(6, this.usable - 2)) + C.reset,
+    ];
+  }
+
+  private bindToLines(): string[] {
+    const title = "── bind " + this.bindModel + " to ──";
+    const lines: string[] = ["  " + C.dim + trunc(title, Math.max(6, this.usable - 2)) + C.reset];
+    const budget = Math.max(8, this.usable - 6);
+    for (let i = 0; i < BIND_TARGETS.length; i++) {
+      const target = BIND_TARGETS[i]!;
+      const sel = i === this.providerItemIndex;
+      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
+      const text = sel ? C.bold + C.teal + trunc(target.label, budget) + C.reset : C.bold + C.cream + trunc(target.label, budget) + C.reset;
+      lines.push("  " + cursorCell + text);
+    }
+    lines.push("  " + C.dim + trunc("↑↓ move · enter bind · esc cancel", Math.max(6, this.usable - 2)) + C.reset);
+    return lines;
+  }
+
+  private buildLines(): string[] {
+    if (this.view === "permission") {
+      const lines = [
+        "  " + C.inverse + C.gold + C.bold + " ⛨ PERMISSION " + C.reset + C.dim + " approve to continue" + C.reset,
+        this.bar() + C.gold + C.bold + "a" + C.reset + C.dim + " once  " + C.reset + C.gold + C.bold + "v" + C.reset + C.dim + " session  " + C.reset + C.gold + C.bold + "n" + C.reset + C.dim + " deny · esc denies" + C.reset,
+      ];
+      this.inputRow = lines.length - 1;
+      return lines;
+    }
+    const menu = this.view === "picker" ? [] : this.renderMenu();
+    const overlay =
+      this.view === "picker" ? this.renderPicker()
+      : this.view === "providers" ? this.providersLines()
+      : this.view === "provider" ? this.providerItems()
+      : this.view === "keyInput" ? this.keyInputLines()
+      : this.view === "bindTo" ? this.bindToLines()
+      : [];
+    const hero = this.heroActive ? this.hero : [];
+    const prefix = hero.length + menu.length + overlay.length;
+    const lines = [...hero, ...menu, ...overlay];
+    if (this.rows >= 4) {
+      lines.push(this.boxEdge(true), this.boxLine(this.renderInput()), this.boxLine(this.renderStatus()), this.boxEdge(false));
+      this.inputRow = prefix + 1;
+    } else {
+      lines.push(this.bar() + this.renderInput());
+      this.inputRow = prefix;
+    }
+    if (this.rows >= 9) lines.push(this.renderHints());
+    if (this.rows >= 12) lines.push(this.renderTip());
+    return lines;
+  }
+
+  private render(): void {
+    const prevInputRow = this.inputRow;
+    const lines = this.buildLines();
+    if (this.shown && prevInputRow > 0) {
+      this.tty.write("\x1b[" + prevInputRow + "A");
+    }
+    this.tty.write("\r\x1b[J");
+    this.tty.write(lines.join("\r\n"));
+    const back = lines.length - 1 - this.inputRow;
+    if (back > 0) this.tty.write("\x1b[" + back + "A");
+    this.tty.write("\r");
+    if (this.cursorCol > 0) this.tty.write("\x1b[" + this.cursorCol + "C");
+  }
+
+  private cursorColumn(): number {
+    return 2 + trunc(this.input.slice(0, this.cursor), this.usable - 4).length;
+  }
+
+  private refresh(): void {
+    if (!this.shown || this.busy) return;
+    this.cursorCol = this.cursorColumn();
+    this.render();
+  }
+
+  show(): void {
+    if (this.busy && this.view !== "permission") return;
+    this.cursorCol = this.cursorColumn();
+    this.render();
+    this.shown = true;
+  }
+
+  hide(): void {
+    if (!this.shown) return;
+    if (this.inputRow > 0) this.tty.write("\x1b[" + this.inputRow + "A");
+    this.tty.write("\r\x1b[J");
+    this.shown = false;
+  }
+
+  notice(msg: string): void {
+    const wasShown = this.shown;
+    this.hide();
+    this.tty.write(C.dim + trunc(msg, Math.max(6, this.usable - 2)) + C.reset + "\n");
+    if (wasShown || !this.busy) this.show();
+  }
+
+  beginBusy(): void {
+    this.busy = true;
+    this.heroActive = false;
+    this.turns += 1;
+    this.hide();
+  }
+
+  endBusy(): void {
+    this.busy = false;
+    this.show();
+  }
+
+  openPicker(bindings?: Record<string, string>): void {
+    if (bindings) this.bindings = bindings;
+    this.view = "picker";
+    this.pickerIndex = Math.max(0, TIERS.findIndex((t) => t.id === this.tier.id));
+    this.refresh();
+  }
+
+  openProviders(providers: ProviderEntry[]): void {
+    this.providers = providers;
+    if (this.openProvider) {
+      this.openProvider = providers.find((p) => p.name === this.openProvider?.name) ?? null;
+    }
+    this.view = this.openProvider ? "provider" : "providers";
+    this.providerIndex = Math.min(this.providerIndex, Math.max(0, providers.length - 1));
+    this.refresh();
+  }
+
+  openWizard(providers: ProviderEntry[]): void {
+    this.providers = providers;
+    this.openProvider = null;
+    this.wizardMode = true;
+    this.view = "providers";
+    this.providerIndex = 0;
+    this.refresh();
+  }
+
+  exitWizard(): void {
+    this.wizardMode = false;
+    this.view = "prompt";
+    this.refresh();
+  }
+
+  onResize(): void {
+    if (this.busy && this.view !== "permission") return;
+    if (this.heroActive && this.shown) {
+      this.tty.write("\x1b[2J\x1b[H");
+      this.shown = false;
+      this.regenerateHero();
+      this.show();
+      return;
+    }
+    this.regenerateHero();
+    if (this.shown) this.show();
+  }
+
+  permission(): Promise<"a" | "v" | "n"> {
+    this.view = "permission";
+    this.show();
+    return new Promise((resolve) => {
+      this.permissionResolve = resolve;
+    });
+  }
+
+  private resolvePermission(answer: "a" | "v" | "n"): void {
+    const resolve = this.permissionResolve;
+    this.permissionResolve = null;
+    this.view = "prompt";
+    this.hide();
+    resolve?.(answer);
+  }
+
+  private insert(ch: string): void {
+    if (visibleLen(this.input) >= this.usable - 6) return;
+    this.input = this.input.slice(0, this.cursor) + ch + this.input.slice(this.cursor);
+    this.cursor += 1;
+    this.menuIndex = 0;
+    this.historyIndex = null;
+  }
+
+  private recall(direction: "up" | "down"): void {
+    if (this.history.length === 0) return;
+    if (direction === "up") {
+      if (this.historyIndex === null) {
+        this.draft = this.input;
+        this.historyIndex = this.history.length - 1;
+      } else if (this.historyIndex > 0) {
+        this.historyIndex -= 1;
+      }
+    } else {
+      if (this.historyIndex === null) return;
+      this.historyIndex += 1;
+      if (this.historyIndex >= this.history.length) {
+        this.historyIndex = null;
+        this.input = this.draft;
+        this.cursor = this.input.length;
+        return;
+      }
+    }
+    this.input = this.history[this.historyIndex] ?? "";
+    this.cursor = this.input.length;
+  }
+
+  cycleTier(): void {
+    const i = TIERS.findIndex((t) => t.id === this.tier.id);
+    const next = TIERS[(i + 1) % TIERS.length]!;
+    this.setTier(next);
+    this.hooks.onTierChange(next);
+    this.notice("✓ model set to " + next.label);
+  }
+
+  setTier(tier: MimonTier): void {
+    this.tier = tier;
+    this.refresh();
+  }
+
+  private pickTier(): void {
+    const t = TIERS[this.pickerIndex]!;
+    this.view = "prompt";
+    this.setTier(t);
+    this.hooks.onTierChange(t);
+    this.notice("✓ model set to " + t.label);
+  }
+
+  private selectProviderItem(): void {
+    if (this.view === "providers") {
+      if (this.wizardMode && this.providerIndex >= this.providers.length) {
+        this.exitWizard();
+        this.hooks.onWizardSkip();
+        return;
+      }
+      const p = this.providers[this.providerIndex];
+      if (!p) return;
+      this.openProvider = p;
+      this.providerItemIndex = 0;
+      this.view = this.wizardMode ? "keyInput" : "provider";
+      this.refresh();
+      return;
+    }
+    if (this.view === "provider") {
+      const p = this.openProvider;
+      if (!p) return;
+      if (this.providerItemIndex < p.models.length) {
+        this.bindModel = p.models[this.providerItemIndex] ?? "";
+        this.providerItemIndex = 0;
+        this.view = "bindTo";
+        this.refresh();
+        return;
+      }
+      const actions = p.keySet ? ["set", "remove", "test"] : ["set", "test"];
+      const action = actions[this.providerItemIndex - p.models.length];
+      if (action === "set") {
+        this.keyBuffer = "";
+        this.view = "keyInput";
+        this.refresh();
+      } else if (action === "remove") {
+        this.hooks.onRemoveKey(p.name);
+      } else if (action === "test") {
+        this.hooks.onTestProvider(p.name, p.models[0] ?? "");
+      }
+      return;
+    }
+    if (this.view === "bindTo") {
+      const target = BIND_TARGETS[this.providerItemIndex];
+      const p = this.openProvider;
+      if (!target || !p || !this.bindModel) return;
+      const binding = p.name + "/" + this.bindModel;
+      this.view = "prompt";
+      this.openProvider = null;
+      this.refresh();
+      this.hooks.onBindModel(target.role, binding);
+    }
+  }
+
+  handleKey(key: Key): void {
+    if (key.kind === "ctrl-c") {
+      this.hooks.onExit();
+      return;
+    }
+    if (this.view === "permission") {
+      if (key.kind === "char" && key.ch === "a") this.resolvePermission("a");
+      if (key.kind === "char" && key.ch === "v") this.resolvePermission("v");
+      if (key.kind === "char" && key.ch === "n") this.resolvePermission("n");
+      if (key.kind === "escape") this.resolvePermission("n");
+      return;
+    }
+    if (this.busy) {
+      if (key.kind === "escape") this.hooks.onAbort();
+      return;
+    }
+    if (this.view === "picker") {
+      if (key.kind === "up") {
+        this.pickerIndex = (this.pickerIndex + TIERS.length - 1) % TIERS.length;
+        this.refresh();
+      }
+      if (key.kind === "down") {
+        this.pickerIndex = (this.pickerIndex + 1) % TIERS.length;
+        this.refresh();
+      }
+      if (key.kind === "enter") this.pickTier();
+      if (key.kind === "escape") {
+        this.view = "prompt";
+        this.refresh();
+      }
+      return;
+    }
+    if (this.view === "keyInput") {
+      if (key.kind === "char") {
+        this.keyBuffer += key.ch;
+        this.refresh();
+      } else if (key.kind === "backspace") {
+        this.keyBuffer = this.keyBuffer.slice(0, -1);
+        this.refresh();
+      } else if (key.kind === "enter") {
+        const name = this.openProvider?.name ?? "";
+        const keyValue = this.keyBuffer;
+        this.keyBuffer = "";
+        if (this.wizardMode) this.openProvider = null;
+        this.view = this.wizardMode ? "providers" : "provider";
+        this.refresh();
+        if (name && keyValue) {
+          if (this.wizardMode) this.hooks.onWizardKey(name, keyValue);
+          else this.hooks.onSetKey(name, keyValue);
+        }
+      } else if (key.kind === "escape") {
+        this.keyBuffer = "";
+        if (this.wizardMode) this.openProvider = null;
+        this.view = this.wizardMode ? "providers" : "provider";
+        this.refresh();
+      }
+      return;
+    }
+    if (this.view === "providers" || this.view === "provider" || this.view === "bindTo") {
+      const count =
+        this.view === "providers" ? this.providers.length + (this.wizardMode ? 1 : 0)
+        : this.view === "bindTo" ? BIND_TARGETS.length
+        : (this.openProvider?.models.length ?? 0) + (this.openProvider?.keySet ? 3 : 2);
+      if (count === 0) return;
+      const move = (delta: number) => {
+        if (this.view === "providers") {
+          this.providerIndex = (this.providerIndex + delta + count) % count;
+        } else {
+          this.providerItemIndex = (this.providerItemIndex + delta + count) % count;
+        }
+        this.refresh();
+      };
+      if (key.kind === "escape") {
+        if (this.view === "provider") {
+          this.openProvider = null;
+          this.view = "providers";
+        } else if (this.view === "bindTo") {
+          this.view = "provider";
+        } else if (this.wizardMode) {
+          this.exitWizard();
+          return;
+        } else {
+          this.view = "prompt";
+        }
+        this.refresh();
+        return;
+      }
+      if (key.kind === "up") return move(-1);
+      if (key.kind === "down") return move(1);
+      if (key.kind === "enter") return this.selectProviderItem();
+      return;
+    }
+    this.handlePromptKey(key);
+  }
+
+  private handlePromptKey(key: Key): void {
+    const menuOpen = this.input.startsWith("/") && this.filtered().length > 0;
+    switch (key.kind) {
+      case "char":
+        this.insert(key.ch);
+        break;
+      case "backspace":
+        if (this.cursor > 0) {
+          this.input = this.input.slice(0, this.cursor - 1) + this.input.slice(this.cursor);
+          this.cursor -= 1;
+        }
+        break;
+      case "delete":
+        this.input = this.input.slice(0, this.cursor) + this.input.slice(this.cursor + 1);
+        break;
+      case "left":
+        this.cursor = Math.max(0, this.cursor - 1);
+        break;
+      case "right":
+        this.cursor = Math.min(this.input.length, this.cursor + 1);
+        break;
+      case "home":
+        this.cursor = 0;
+        break;
+      case "end":
+        this.cursor = this.input.length;
+        break;
+      case "up":
+        if (menuOpen) {
+          this.menuIndex = Math.max(0, this.menuIndex - 1);
+        } else {
+          this.recall("up");
+        }
+        break;
+      case "down":
+        if (menuOpen) {
+          this.menuIndex = Math.min(this.filtered().length - 1, this.menuIndex + 1);
+        } else {
+          this.recall("down");
+        }
+        break;
+      case "tab":
+        this.cycleTier();
+        return;
+      case "ctrl-p":
+        this.input = "/";
+        this.cursor = 1;
+        this.menuIndex = 0;
+        break;
+      case "escape":
+        this.input = "";
+        this.cursor = 0;
+        this.menuIndex = 0;
+        break;
+      case "enter": {
+        if (menuOpen) {
+          const cmd = this.filtered()[Math.min(this.menuIndex, this.filtered().length - 1)]!;
+          this.input = "";
+          this.cursor = 0;
+          this.menuIndex = 0;
+          this.refresh();
+          this.hooks.onCommand(cmd.name);
+          return;
+        }
+        const task = this.input.trim();
+        if (!task) return;
+        if (this.history[this.history.length - 1] !== task) this.history.push(task);
+        this.historyIndex = null;
+        this.input = "";
+        this.cursor = 0;
+        this.beginBusy();
+        this.hooks.onSubmit(task);
+        return;
+      }
+      case "unknown":
+        return;
+    }
+    this.refresh();
+  }
+}
