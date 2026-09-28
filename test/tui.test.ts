@@ -603,10 +603,35 @@ describe("brand view", () => {
     expect(tty.text()).toContain("2-12 letters");
   });
 
+  it("offers one-color and per-letter modes", () => {
+    const { tui, tty } = makeTui();
+    tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    const t = tty.text();
+    expect(t).toContain("one color for the whole name");
+    expect(t).toContain("a color for each letter");
+  });
+
+  it("one-color mode fires a single-entry color list", () => {
+    const { tui, tty, cap } = makeTui();
+    tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "enter" });
+    expect(tty.text()).toContain("one color for the whole name");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.brandColors).toEqual([["teal"]]);
+  });
+
   it("picks one color per letter and fires onBrandColors with the full list", () => {
     const { tui, tty, cap } = makeTui();
     tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
     tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
     tui.handleKey({ kind: "down" });
     tui.handleKey({ kind: "enter" });
     expect(tty.text()).toContain("letter A (1/4)");
@@ -624,6 +649,8 @@ describe("brand view", () => {
     const { tui, tty, cap } = makeTui();
     tui.openBrand({ name: "ANIR", colors: ["purple", "pink"] });
     tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
     tui.handleKey({ kind: "down" });
     tui.handleKey({ kind: "enter" });
     tui.handleKey({ kind: "enter" });

@@ -266,7 +266,7 @@ export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
   private cursor = 0;
-  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "providerAdd" = "prompt";
+  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "providerAdd" = "prompt";
   private menuIndex = 0;
   private pickerIndex = 1;
   private shown = false;
@@ -297,6 +297,8 @@ export class Tui {
   private brandPicks: string[] = [];
   private brandCurrent: { name: string; colors: string[] } | null = null;
   private brandColorIndex = 0;
+  private brandModeIndex = 0;
+  private brandSingleColor = false;
   private addFields: [string, string, string] = ["", "", ""];
   private addFieldIndex = 0;
   private addError = "";
@@ -547,6 +549,7 @@ export class Tui {
       : this.view === "brand" ? this.brandLines()
       : this.view === "brandName" ? this.brandNameLines()
       : this.view === "brandColors" ? this.brandColorsLines()
+      : this.view === "brandColorMode" ? this.brandColorModeLines()
       : this.view === "providerAdd" ? this.providerAddLines()
       : [];
     const hero = this.heroActive ? this.hero : [];
@@ -722,7 +725,23 @@ export class Tui {
       }
       body.push(cells.join(""));
     }
-    body.push(C.dim + trunc("picking for letter " + letter + " (" + (this.brandPicks.length + 1) + "/" + total + ") · enter pick · esc undo", Math.max(6, this.usable - 6)) + C.reset);
+    const stage = this.brandSingleColor
+      ? "one color for the whole name"
+      : "picking for letter " + letter + " (" + (this.brandPicks.length + 1) + "/" + total + ")";
+    body.push(C.dim + trunc(stage + " · enter pick · esc undo", Math.max(6, this.usable - 6)) + C.reset);
+    return this.boxed("brand colors", body);
+  }
+
+  private brandColorModeLines(): string[] {
+    const items = ["one color for the whole name", "a color for each letter"];
+    const body: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const sel = i === this.brandModeIndex;
+      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
+      const text = sel ? C.bold + C.teal + items[i]! + C.reset : C.bold + C.cream + items[i]! + C.reset;
+      body.push(cursorCell + text);
+    }
+    body.push(C.dim + trunc("↑↓ move · enter select · esc back", Math.max(6, this.usable - 6)) + C.reset);
     return this.boxed("brand colors", body);
   }
 
@@ -845,9 +864,8 @@ export class Tui {
       return;
     }
     if (this.brandIndex === 1) {
-      this.brandPicks = [];
-      this.brandColorIndex = 0;
-      this.view = "brandColors";
+      this.brandModeIndex = 0;
+      this.view = "brandColorMode";
       this.refresh();
       return;
     }
@@ -1016,10 +1034,28 @@ export class Tui {
       }
       return;
     }
+    if (this.view === "brandColorMode") {
+      if (key.kind === "up" || key.kind === "down") {
+        this.brandModeIndex = (this.brandModeIndex + 1) % 2;
+        this.refresh();
+      }
+      if (key.kind === "enter") {
+        this.brandSingleColor = this.brandModeIndex === 0;
+        this.brandPicks = [];
+        this.brandColorIndex = 0;
+        this.view = "brandColors";
+        this.refresh();
+      }
+      if (key.kind === "escape") {
+        this.view = "brand";
+        this.refresh();
+      }
+      return;
+    }
     if (this.view === "brandColors") {
       const names = Object.keys(BRAND_PALETTE);
       const count = names.length;
-      const total = this.brandCurrent?.name.length ?? 1;
+      const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
       const move = (delta: number) => {
         this.brandColorIndex = (this.brandColorIndex + delta + count) % count;
         this.refresh();

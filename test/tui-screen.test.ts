@@ -296,6 +296,9 @@ describe("brand picker under hero", () => {
     expect(vt.count("make it yours")).toBe(1);
     key(tui, "down");
     key(tui, "enter");
+    expect(vt.count("one color for the whole name")).toBe(1);
+    key(tui, "down");
+    key(tui, "enter");
     expect(vt.count("brand colors")).toBe(1);
     expect(vt.count("BLO")).toBeLessThanOrEqual(2);
     key(tui, "down");
