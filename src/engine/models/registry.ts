@@ -173,7 +173,7 @@ export class ProviderRegistry {
     }
     const apiKey = this.keystore.get(def.name);
     if (!apiKey) {
-      throw new Error(`no API key for "${def.name}" — add one in Settings → Connections or set ${envKeyName(def.name)}`);
+      throw new Error(`no API key for "${def.name}" — /providers → set key, or set ${envKeyName(def.name)}`);
     }
     return { provider: instantiate(def, apiKey), model };
   }

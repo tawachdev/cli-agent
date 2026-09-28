@@ -5,8 +5,8 @@ class VirtualTerminal {
   cols: number;
   rows: number;
   private grid: string[][] = [];
-  private row = 0;
-  private col = 0;
+  row = 0;
+  col = 0;
 
   constructor(rows: number, cols: number) {
     this.rows = rows;
@@ -345,6 +345,29 @@ describe("brand picker under hero", () => {
     for (const line of vt.screen().split("\n")) {
       expect(line.length).toBeLessThanOrEqual(200);
     }
+  });
+});
+
+describe("real cursor placement", () => {
+  it("sits at the text end inside the input box", () => {
+    const { vt, tui } = makeVt(40, 100);
+    tui.show();
+    tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
+    key(tui, "escape");
+    for (const ch of "fdfdf") tui.handleKey({ kind: "char", ch });
+    const lines = vt.screen().split("\n");
+    const inputLine = lines.findIndex((l) => l.includes("fdfdf"));
+    expect(inputLine).toBeGreaterThanOrEqual(0);
+    expect(vt.row).toBe(inputLine);
+    const textEnd = lines[inputLine]!.indexOf("fdfdf") + "fdfdf".length;
+    expect(vt.col).toBe(textEnd);
+  });
+
+  it("stays on the input row while typing more", () => {
+    const { vt, tui } = makeVt(40, 100);
+    tui.show();
+    for (const ch of "hello") tui.handleKey({ kind: "char", ch });
+    expect(vt.row).toBe(vt.screen().split("\n").findIndex((l) => l.includes("hello")));
   });
 });
 

@@ -388,14 +388,12 @@ export class Tui {
   private renderInput(): string {
     const maxText = this.innerWidth();
     if (this.input === "") {
-      const ph = trunc('Ask anything… "fix the flaky test in auth"', maxText);
-      return C.dim + C.inverse + ph.slice(0, 1) + C.reset + C.dim + ph.slice(1) + C.reset;
+      return C.dim + trunc('Ask anything… "fix the flaky test in auth"', maxText) + C.reset;
     }
     const before = trunc(this.input.slice(0, this.cursor), maxText);
-    const at = this.input.slice(this.cursor, this.cursor + 1) || " ";
-    const restBudget = Math.max(0, maxText - before.length - 1);
-    const after = trunc(this.input.slice(this.cursor + 1), restBudget);
-    return C.cream + before + C.reset + C.inverse + at + C.reset + C.cream + after + C.reset;
+    const restBudget = Math.max(0, maxText - before.length);
+    const after = trunc(this.input.slice(this.cursor), restBudget);
+    return C.cream + before + C.reset + C.cream + after + C.reset;
   }
 
   private renderStatus(): string {
@@ -633,7 +631,8 @@ export class Tui {
   }
 
   private cursorColumn(): number {
-    return 2 + trunc(this.input.slice(0, this.cursor), this.usable - 4).length;
+    const lead = this.boxLead().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").length;
+    return lead + 2 + trunc(this.input.slice(0, this.cursor), this.usable - 4).length;
   }
 
   private refresh(): void {
