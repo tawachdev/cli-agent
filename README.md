@@ -16,7 +16,7 @@ npm i -g mimon
 mimon
 ```
 
-No clone, no build step: the package carries a self-contained binary for your platform (macOS/Linux, arm64/x64 — the runtime is embedded). First launch opens the setup wizard in the terminal: bring any API key (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint) — or skip and use local Ollama. One-shot without installing: `npx mimon "summarize this folder"`.
+No clone, no build step: the package carries a self-contained binary for your platform (macOS/Linux, arm64/x64 — the runtime is embedded). First launch opens the setup wizard in the terminal: pick a provider (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint), paste its API key — the key is tested live and every tier routes to it. Your keys stay on your machine (macOS Keychain; a 0600 file elsewhere). One-shot without installing: `npx mimon-cli "summarize this folder"`.
 
 Prefer curl? Same binary from GitHub Releases:
 
@@ -31,9 +31,10 @@ From source instead (development):
 
 ```sh
 bun install
-ollama serve & ollama pull qwen2.5-coder:14b
-bun run cli "read README.md and summarize it in one line"
+bun run cli
 ```
+
+The wizard asks for your API key — nothing else is required. Optional: run fully local with Ollama via `/providers` → **+ add provider** → base URL `http://127.0.0.1:11434/v1` (loopback http is allowed) with any model name you pulled.
 
 The CLI starts the local engine by itself (loopback-only, port `7800`). Interactive TUI: `bun run cli`. Engine alone: `bun run dev`.
 

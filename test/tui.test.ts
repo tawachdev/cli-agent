@@ -46,7 +46,6 @@ interface Captured {
   tests: Array<{ name: string; model: string }>;
   binds: Array<{ role: string; binding: string }>;
   wizardKeys: Array<{ name: string; key: string }>;
-  wizardSkips: number;
   brandNames: string[];
   brandColors: string[][];
   brandResets: number;
@@ -68,7 +67,6 @@ function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captu
     tests: [],
     binds: [],
     wizardKeys: [],
-    wizardSkips: 0,
     brandNames: [],
     brandColors: [],
     brandResets: 0,
@@ -89,9 +87,6 @@ function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captu
     onTestProvider: (name, model) => cap.tests.push({ name, model }),
     onBindModel: (role, binding) => cap.binds.push({ role, binding }),
     onWizardKey: (name, key) => cap.wizardKeys.push({ name, key }),
-    onWizardSkip: () => {
-      cap.wizardSkips += 1;
-    },
       onBrandName: (name) => cap.brandNames.push(name),
       onBrandColors: (colors) => cap.brandColors.push(colors),
       onBrandReset: () => {
@@ -114,7 +109,7 @@ describe("splash", () => {
     const t = tty.text();
     expect(t).toContain("╭");
     expect(t).toContain("██ ██ ██");
-    expect(t).toContain("v0.2.0 · fully local");
+    
   });
 
   it("renders the boxed thick letters on narrow terminals", () => {
@@ -174,7 +169,7 @@ describe("splash", () => {
     tui.onResize();
     const t = tty.text();
     expect(t).toContain("██ ██ ██");
-    expect(t).toContain("v0.2.0 · fully local");
+    
     expect(t).toContain("Ask anything");
     expect(t.split("╭").length - 1).toBe(2);
     for (const line of tty.lines()) {
@@ -516,7 +511,7 @@ describe("setup wizard", () => {
     { name: "openai", models: ["gpt-5"], keySet: false },
   ];
 
-  it("shows the welcome header, providers and the skip row", () => {
+  it("shows the welcome header, providers and add provider — no Ollama anywhere", () => {
     const { tui, tty } = makeTui(100, 30);
     tui.openWizard(PROVIDERS);
     tui.show();
@@ -524,7 +519,8 @@ describe("setup wizard", () => {
     expect(t).toContain("welcome to mimon");
     expect(t).toContain("anthropic");
     expect(t).toContain("no key");
-    expect(t).toContain("skip · use local Ollama");
+    expect(t).toContain("+ add provider");
+    expect(t).not.toContain("Ollama");
   });
 
   it("takes a provider straight to the key prompt and fires onWizardKey", () => {
@@ -552,23 +548,22 @@ describe("setup wizard", () => {
     expect(cap.wizardKeys).toEqual([]);
   });
 
-  it("fires onWizardSkip from the skip row", () => {
-    const { tui, cap } = makeTui(100, 30);
-    tui.openWizard(PROVIDERS);
-    tui.show();
-    tui.handleKey({ kind: "down" });
-    tui.handleKey({ kind: "down" });
-    tui.handleKey({ kind: "enter" });
-    expect(cap.wizardSkips).toBe(1);
-  });
-
-  it("escape closes the wizard without skipping", () => {
-    const { tui, tty, cap } = makeTui(100, 30);
+  it("escape closes the wizard straight to the prompt", () => {
+    const { tui, tty } = makeTui(100, 30);
     tui.openWizard(PROVIDERS);
     tui.show();
     tui.handleKey({ kind: "escape" });
-    expect(cap.wizardSkips).toBe(0);
     expect(tty.text()).toContain("Ask anything");
+  });
+
+  it("the wizard offers no skip row — only providers and add provider", () => {
+    const { tui, tty } = makeTui(100, 30);
+    tui.openWizard(PROVIDERS);
+    tui.show();
+    const t = tty.text();
+    expect(t).toContain("welcome to mimon");
+    expect(t).toContain("+ add provider");
+    expect(t).not.toContain("Ollama");
   });
 });
 
@@ -784,7 +779,7 @@ describe("render byte budget", () => {
 
   it("typing one character rewrites a bounded number of bytes", () => {
     const tty = new CountingTty();
-    const tui = new Tui(tty, { onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {}, onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {}, onWizardSkip: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
+    const tui = new Tui(tty, { onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {}, onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
     tui.enableHero("0.1.0");
     tui.show();
     type(tui, "hello worl");
@@ -795,7 +790,7 @@ describe("render byte budget", () => {
 
   it("one grid arrow rewrites a bounded number of bytes", () => {
     const tty = new CountingTty();
-    const tui = new Tui(tty, { onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {}, onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {}, onWizardSkip: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
+    const tui = new Tui(tty, { onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {}, onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
     tui.show();
     tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
     tui.handleKey({ kind: "down" });

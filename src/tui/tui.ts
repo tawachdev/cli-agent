@@ -92,7 +92,7 @@ export function fmtSecs(ms: number): string {
 function boxLines(cols: number, version: string): string[] {
   const brand = brandName();
   const palette = brandColors();
-  const meta = "v" + version + " · fully local";
+  const meta = "v" + version + " · your keys · your machine";
   const wide = glyphWord(brand, false);
   const mini = glyphWord(brand, true);
   const single = (): string[] => {
@@ -257,7 +257,6 @@ export interface TuiHooks {
   onTestProvider(name: string, model: string): void;
   onBindModel(role: string, binding: string): void;
   onWizardKey(name: string, key: string): void;
-  onWizardSkip(): void;
   onBrandName(name: string): void;
   onBrandColors(colors: string[]): void;
   onBrandReset(): void;
@@ -402,7 +401,7 @@ export class Tui {
   private renderStatus(): string {
     const label = trunc(this.tier.label, Math.max(3, Math.min(9, this.innerWidth() - 3)));
     const images = this.pendingImages.length > 0 ? " · ▤" + this.pendingImages.length : "";
-    const meta = trunc(" · local · ctx " + this.ctxPct + "% · s " + this.sessionShort + images, Math.max(0, this.innerWidth() - 3 - label.length));
+    const meta = trunc(" · ctx " + this.ctxPct + "% · s " + this.sessionShort + images, Math.max(0, this.innerWidth() - 3 - label.length));
     return C.teal + "●" + C.reset + " " + C.bold + C.cream + label + C.reset + C.dim + meta + C.reset;
   }
 
@@ -462,7 +461,7 @@ export class Tui {
     const lines: string[] = [];
     if (this.wizardMode) {
       lines.push("  " + C.gold + C.bold + "✦ welcome to " + brandName().toLowerCase() + C.reset);
-      lines.push("  " + C.dim + trunc("connect one provider — the key never leaves this machine", Math.max(6, this.usable - 2)) + C.reset);
+      lines.push("  " + C.dim + trunc("pick a provider and paste its API key — it never leaves this machine", Math.max(6, this.usable - 2)) + C.reset);
     }
     lines.push("  " + C.dim + trunc(titleBody, Math.max(6, this.usable - 2)) + C.reset);
     const statusBudget = 12;
@@ -476,12 +475,7 @@ export class Tui {
       lines.push("  " + cursorCell + name + "  " + status);
     }
     if (this.providers.length === 0) lines.push("  " + C.dim + "no providers" + C.reset);
-    if (this.wizardMode) {
-      const sel = this.providerIndex === this.providers.length;
-      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
-      const text = sel ? C.bold + C.teal + "skip · use local Ollama" + C.reset : C.dim + "skip · use local Ollama" + C.reset;
-      lines.push("  " + cursorCell + text);
-    } else {
+    {
       const sel = this.providerIndex === this.providers.length;
       const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
       const text = sel ? C.bold + C.teal + "+ add provider (any OpenAI-compatible URL)" + C.reset : C.dim + "+ add provider" + C.reset;
@@ -1069,12 +1063,7 @@ export class Tui {
 
   private selectProviderItem(): void {
     if (this.view === "providers") {
-      if (this.wizardMode && this.providerIndex >= this.providers.length) {
-        this.exitWizard();
-        this.hooks.onWizardSkip();
-        return;
-      }
-      if (!this.wizardMode && this.providerIndex >= this.providers.length) {
+      if (this.providerIndex >= this.providers.length) {
         this.addFields = ["", "", ""];
         this.addFieldIndex = 0;
         this.addError = "";

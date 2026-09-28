@@ -8,7 +8,6 @@ import { join } from "node:path";
 import { openDb } from "../db/client";
 import { runMigrations } from "../db/migrate";
 import { migrations } from "../db/migrations";
-import { OllamaProvider } from "../models/provider";
 import { ModelRouter } from "../models/router";
 import { KeychainKeyStore } from "../models/keystore";
 import { loadExtraProviders, ProviderRegistry } from "../models/registry";
@@ -31,7 +30,6 @@ import { loadPolicy } from "../core/permissions/policy";
 import { loadPluginRoots } from "../plugins/loader";
 import { StreamRegistry, websocket } from "../api/ws/agent-stream";
 import { dirname } from "node:path";
-import { spawnOllamaIfEnabled } from "../core/services/state";
 import { BrandStore } from "../brand";
 
 const config = loadConfig();
@@ -44,11 +42,10 @@ const pending = new PendingPermissions();
 const policy = loadPolicy(config.workspaceRoot);
 const permissions = new PermissionEngine(policy, pending, audit);
 
-const provider = new OllamaProvider(config.ollamaUrl);
 const keystore = new KeychainKeyStore();
 const providersPath = join(config.workspaceRoot, ".agent", "providers.json");
 const extraProviders = await loadExtraProviders(providersPath);
-const registry = new ProviderRegistry(keystore, extraProviders, provider, providersPath);
+const registry = new ProviderRegistry(keystore, extraProviders, undefined, providersPath);
 const bindings = new BindingsStore(config.workspaceRoot, process.env, {
   coder: config.models.coder,
   general: config.models.general,
@@ -95,7 +92,6 @@ const agent = new Agent({
 });
 const streams = new StreamRegistry();
 const dataDir = dirname(config.dbPath);
-spawnOllamaIfEnabled(dataDir);
 const brandStore = new BrandStore(config.workspaceRoot, process.env);
 
 const server = Bun.serve({
@@ -106,7 +102,11 @@ const server = Bun.serve({
     streams,
     pending,
     audit,
-    info: { model: bindings.get("mimon2"), numCtx: config.numCtx, version: PRODUCT_VERSION },
+    info: {
+      model: registry.splitBinding(bindings.get("mimon2")).def ? bindings.get("mimon2") : "not connected (/setup)",
+      numCtx: config.numCtx,
+      version: PRODUCT_VERSION,
+    },
     bindings,
     registry,
     workspaceRoot: config.workspaceRoot,

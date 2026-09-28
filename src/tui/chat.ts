@@ -76,9 +76,6 @@ export const addProvider = (body: { name: string; kind: "openai"; baseUrl: strin
 export const getSetupStatus = (): Promise<{ needsSetup: boolean }> =>
   request("/setup").then((r) => ({ needsSetup: r["needsSetup"] === true }));
 
-export const skipSetup = (): Promise<Record<string, unknown>> =>
-  request("/setup/skip", {}, "POST");
-
 export interface BrandInfo {
   name: string;
   colors: string[];

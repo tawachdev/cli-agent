@@ -80,7 +80,7 @@ describe("rebranded splash", () => {
       splash(tty, "0.2.0");
       const t = tty.text();
       expect(t).toContain("╭");
-      expect(t).toContain("v0.2.0 · fully local");
+      expect(t).toContain("v0.2.0 · your keys · your machine");
       const word = glyphWord("ANIR", false)!;
       for (const row of word.rows) {
         expect(t).toContain(row);

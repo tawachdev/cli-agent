@@ -16,7 +16,6 @@ import {
   putBinding,
   putBrand,
   putProviderKey,
-  skipSetup,
   testProvider,
 } from "../src/tui/chat";
 import { loadImages } from "../src/tui/images";
@@ -232,11 +231,6 @@ async function main(): Promise<void> {
           }
         })();
       },
-      onWizardSkip: () => {
-        skipSetup()
-          .then(() => ui?.notice("· setup skipped — using local Ollama ·"))
-          .catch((error: Error) => ui?.notice("✘ " + error.message));
-      },
       onBrandName: (name) => {
         putBrand({ name })
           .then((result) => {
@@ -382,7 +376,7 @@ async function main(): Promise<void> {
   if (savedBrand) ui?.setBrandCustomColors(savedBrand.customColors);
   void getSetupStatus()
     .then((status) => {
-      if (status.needsSetup) ui?.notice("· no provider connected — /setup connects one · /brand makes it yours ·");
+      if (status.needsSetup) ui?.notice("· bring your API key — /setup connects it in seconds · /brand makes it yours ·");
     })
     .catch(() => {});
   await new Promise<void>(() => {});

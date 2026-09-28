@@ -167,7 +167,6 @@ function makeVt(rows: number, cols: number): { vt: VirtualTerminal; tui: Tui; ca
     onTestProvider: () => {},
     onBindModel: () => {},
     onWizardKey: () => {},
-    onWizardSkip: () => {},
     onBrandName: () => {},
     onBrandColors: () => {},
     onBrandReset: () => {},
