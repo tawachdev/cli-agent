@@ -669,6 +669,24 @@ describe("brand view", () => {
     expect(cap.brandColors).toEqual([["#00ff88", "teal", "teal"]]);
   });
 
+  it("all-256 grid picks a hex for the current letter", () => {
+    const { tui, tty, cap } = makeTui();
+    tui.openBrand({ name: "BLO", colors: ["teal", "gold"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    for (let i = 0; i < 15; i++) tui.handleKey({ kind: "right" });
+    tui.handleKey({ kind: "enter" });
+    expect(tty.text()).toContain("all 256 colors");
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "enter" });
+    expect(cap.brandColors).toEqual([["#00ff5f", "teal", "teal"]]);
+  });
+
   it("custom hex rejects invalid input without firing", () => {
     const { tui, tty, cap } = makeTui();
     tui.openBrand({ name: "BLO", colors: ["teal", "gold"] });

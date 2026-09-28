@@ -71,3 +71,30 @@ export function brandColors(env: Record<string, string | undefined> = process.en
 export function colorForLetter(index: number, colors: string[]): string {
   return colors[index % colors.length]!;
 }
+
+
+const XTERM16: Array<[number, number, number]> = [
+  [0, 0, 0], [205, 0, 0], [0, 205, 0], [205, 205, 0],
+  [0, 0, 238], [85, 85, 255], [205, 0, 205], [0, 205, 205],
+  [229, 229, 229], [127, 127, 127], [255, 0, 0], [0, 255, 0],
+  [255, 255, 0], [92, 92, 255], [255, 0, 255], [0, 255, 255],
+];
+const CUBE_LEVELS = [0, 95, 135, 175, 215, 255];
+
+export function xterm256Hex(index: number): string {
+  const i = Math.max(0, Math.min(255, Math.trunc(index)));
+  let r: number; let g: number; let b: number;
+  if (i < 16) {
+    [r, g, b] = XTERM16[i]!;
+  } else if (i < 232) {
+    const n = i - 16;
+    r = CUBE_LEVELS[Math.floor(n / 36)]!;
+    g = CUBE_LEVELS[Math.floor(n / 6) % 6]!;
+    b = CUBE_LEVELS[n % 6]!;
+  } else {
+    const v = 8 + (i - 232) * 10;
+    r = v; g = v; b = v;
+  }
+  const toHex = (c: number) => c.toString(16).padStart(2, "0");
+  return "#" + toHex(r) + toHex(g) + toHex(b);
+}

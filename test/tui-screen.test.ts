@@ -83,7 +83,9 @@ class VirtualTerminal {
     }
   }
 
+  fullClears = 0;
   feed(data: string): void {
+    this.fullClears += (data.match(/\x1b\[2J/g) ?? []).length;
     let i = 0;
     while (i < data.length) {
       const ch = data[i]!;
@@ -313,6 +315,30 @@ describe("brand picker under hero", () => {
     expect(vt.count("make it yours")).toBe(0);
     expect(vt.count("╭")).toBeLessThanOrEqual(2);
     expectClean(vt, 200);
+    for (const line of vt.screen().split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(200);
+    }
+  });
+
+  it("navigating the palette does not flash: full clears only on entry and height changes", () => {
+    const { vt, tui } = makeVt(30, 200);
+    tui.enableHero("0.1.0");
+    tui.show();
+    const before = vt.fullClears;
+    tui.openBrand({ name: "BLO", colors: ["teal", "gold"] });
+    const afterOpen = vt.fullClears;
+    key(tui, "down");
+    key(tui, "enter");
+    const afterPicker = vt.fullClears;
+    expect(afterOpen).toBeGreaterThan(before);
+    for (let i = 0; i < 6; i++) {
+      key(tui, "down");
+      key(tui, "right");
+    }
+    expect(vt.fullClears).toBe(afterPicker);
+    expect(vt.count("brand colors")).toBe(1);
+    expect(vt.count("╭")).toBeLessThanOrEqual(3);
+    expect(vt.count("▌")).toBeLessThanOrEqual(1);
     for (const line of vt.screen().split("\n")) {
       expect(line.length).toBeLessThanOrEqual(200);
     }

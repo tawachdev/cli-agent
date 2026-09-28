@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { brandName, DEFAULT_BRAND, entryColor, validColorEntry } from "../src/shared/brand";
+import { brandName, DEFAULT_BRAND, entryColor, validColorEntry, xterm256Hex } from "../src/shared/brand";
 import { glyphWord, MINI_GLYPHS, WIDE_GLYPHS } from "../src/shared/glyphs";
 import { splash, visibleLen, type Tty } from "../src/tui/tui";
 
@@ -120,5 +120,17 @@ describe("custom hex colors", () => {
   it("renders hex as a truecolor escape", () => {
     expect(entryColor("#ff8800")).toBe("\x1b[38;2;255;136;0m");
     expect(entryColor("teal")).toBe("\x1b[38;5;37m");
+  });
+});
+
+describe("xterm256Hex", () => {
+  it("maps cube, base and gray ramp indexes to hex", () => {
+    expect(xterm256Hex(16)).toBe("#000000");
+    expect(xterm256Hex(21)).toBe("#0000ff");
+    expect(xterm256Hex(201)).toBe("#ff00ff");
+    expect(xterm256Hex(244)).toBe("#808080");
+    expect(xterm256Hex(231)).toBe("#ffffff");
+    expect(xterm256Hex(255)).toBe("#eeeeee");
+    expect(xterm256Hex(300)).toBe("#eeeeee");
   });
 });

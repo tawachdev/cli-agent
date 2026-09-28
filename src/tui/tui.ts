@@ -1,5 +1,5 @@
 import { stdout } from "node:process";
-import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry } from "../shared/brand";
+import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
 import { existsSync } from "node:fs";
 import { imageChipName, loadImagesFromPaths, locateImagePaths, renderImage, type LoadedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
@@ -268,7 +268,7 @@ export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
   private cursor = 0;
-  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "brandCustomColor" | "providerAdd" = "prompt";
+  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "brandCustomColor" | "brandGrid256" | "providerAdd" = "prompt";
   private menuIndex = 0;
   private pickerIndex = 1;
   private shown = false;
@@ -304,11 +304,13 @@ export class Tui {
   private brandCustomColors: string[] = [];
   private customColorBuffer = "";
   private customColorError = "";
+  private gridIndex = 0;
   private addFields: [string, string, string] = ["", "", ""];
   private addFieldIndex = 0;
   private addError = "";
   private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null }> = [];
   private pendingPaths = new Set<string>();
+  private lastRenderLines = 0;
 
   constructor(
     private readonly tty: Tty,
@@ -559,6 +561,7 @@ export class Tui {
       : this.view === "brandColors" ? this.brandColorsLines()
       : this.view === "brandColorMode" ? this.brandColorModeLines()
       : this.view === "brandCustomColor" ? this.customColorLines()
+      : this.view === "brandGrid256" ? this.brandGridLines()
       : this.view === "providerAdd" ? this.providerAddLines()
       : [];
     const hero = this.heroActive ? this.hero : [];
@@ -579,15 +582,21 @@ export class Tui {
   private render(): void {
     const prevInputRow = this.inputRow;
     const lines = this.buildLines();
-    if (this.shown && prevInputRow > 0) {
+    const fullClear = this.shown && this.heroActive && lines.length !== this.lastRenderLines;
+    if (fullClear) {
+      this.tty.write("\x1b[2J\x1b[H");
+      this.shown = false;
+    } else if (this.shown && prevInputRow > 0) {
       this.tty.write("\x1b[" + prevInputRow + "A");
     }
     this.tty.write("\r\x1b[J");
+    this.lastRenderLines = lines.length;
     this.tty.write(lines.join("\r\n"));
     const back = lines.length - 1 - this.inputRow;
     if (back > 0) this.tty.write("\x1b[" + back + "A");
     this.tty.write("\r");
     if (this.cursorCol > 0) this.tty.write("\x1b[" + this.cursorCol + "C");
+    this.shown = true;
   }
 
   private cursorColumn(): number {
@@ -596,13 +605,6 @@ export class Tui {
 
   private refresh(): void {
     if (!this.shown || this.busy) return;
-    if (this.heroActive) {
-      this.tty.write("\x1b[2J\x1b[H");
-      this.shown = false;
-      this.regenerateHero();
-      this.show();
-      return;
-    }
     this.cursorCol = this.cursorColumn();
     this.render();
   }
@@ -708,7 +710,7 @@ export class Tui {
   }
 
   private paletteEntries(): string[] {
-    return [...Object.keys(BRAND_PALETTE), ...this.brandCustomColors, "custom hex…"];
+    return [...Object.keys(BRAND_PALETTE), ...this.brandCustomColors, "custom hex…", "all 256 colors…"];
   }
 
   private brandColorsLines(): string[] {
@@ -735,9 +737,11 @@ export class Tui {
         const isCustom = this.brandCustomColors.includes(name);
         const swatch = name === "custom hex…"
           ? "\x1b[38;5;80m" + "＃" + C.reset
-          : isCustom
-            ? entryColor(name) + "██" + C.reset
-            : BRAND_PALETTE[name] + "██" + C.reset;
+          : name === "all 256 colors…"
+            ? "\x1b[38;5;220m" + "▤" + C.reset
+            : isCustom
+              ? entryColor(name) + "██" + C.reset
+              : BRAND_PALETTE[name] + "██" + C.reset;
         const cell = (sel ? C.teal + "❯ " + C.reset : "   ") + swatch + " " + (sel ? C.bold + C.teal + name : C.cream + name) + C.reset;
         cells.push(this.padCell(cell, cellWidth));
       }
@@ -761,6 +765,33 @@ export class Tui {
     }
     body.push(C.dim + trunc("#rrggbb — e.g. #7c3aed · enter apply · esc back", Math.max(6, this.usable - 6)) + C.reset);
     return this.boxed("custom color", body);
+  }
+
+  private brandGridLines(): string[] {
+    const letter = this.brandSingleColor ? "" : this.brandCurrent?.name[this.brandPicks.length] ?? "?";
+    const stage = this.brandSingleColor
+      ? "one color for the whole name"
+      : "picking for letter " + letter + " (" + (this.brandPicks.length + 1) + "/" + (this.brandCurrent?.name.length ?? 1) + ")";
+    const picked = xterm256Hex(this.gridIndex);
+    const body: string[] = [
+      C.bold + "preview:" + C.reset + "  " + entryColor(picked) + "████████" + C.reset + "  " + C.dim + picked + C.reset,
+      "",
+    ];
+    const cell = "██";
+    const perRow = Math.max(8, Math.floor((this.usable - 4) / 3));
+    for (let row = 0; row < 256; row += perRow) {
+      const cells: string[] = [];
+      for (let col = 0; col < perRow; col++) {
+        const index = row + col;
+        if (index >= 256) break;
+        const color = "\x1b[48;5;" + index + "m" + cell + C.reset;
+        const marker = index === this.gridIndex ? C.teal + "❯" + C.reset : C.dim + " " + C.reset;
+        cells.push(marker + color);
+      }
+      body.push(cells.join(""));
+    }
+    body.push(C.dim + trunc(stage + " · ↑↓←→ move · enter pick · esc back", Math.max(6, this.usable - 6)) + C.reset);
+    return this.boxed("all 256 colors", body);
   }
 
   private brandColorModeLines(): string[] {
@@ -813,6 +844,7 @@ export class Tui {
 
   onResize(): void {
     if (this.busy && this.view !== "permission") return;
+    this.lastRenderLines = 0;
     if (this.heroActive && this.shown) {
       this.tty.write("\x1b[2J\x1b[H");
       this.shown = false;
@@ -1159,7 +1191,7 @@ export class Tui {
       return;
     }
     if (this.view === "brandColors") {
-      const names = [...this.paletteEntries().slice(0, -1), "custom"];
+      const names = this.paletteEntries();
       const count = names.length;
       const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
       const move = (delta: number) => {
@@ -1172,10 +1204,16 @@ export class Tui {
       if (key.kind === "right") return move(1);
       if (key.kind === "enter") {
         const picked = names[this.brandColorIndex]!;
-        if (picked === "custom") {
+        if (picked === "custom hex…") {
           this.customColorBuffer = "";
           this.customColorError = "";
           this.view = "brandCustomColor";
+          this.refresh();
+          return;
+        }
+        if (picked === "all 256 colors…") {
+          this.gridIndex = 16;
+          this.view = "brandGrid256";
           this.refresh();
           return;
         }
@@ -1216,6 +1254,28 @@ export class Tui {
       } else if (key.kind === "escape") {
         this.customColorBuffer = "";
         this.customColorError = "";
+        this.view = "brandColors";
+        this.refresh();
+      }
+      return;
+    }
+    if (this.view === "brandGrid256") {
+      const perRow = Math.max(8, Math.floor((this.usable - 4) / 3));
+      const move = (delta: number) => {
+        this.gridIndex = Math.max(0, Math.min(255, this.gridIndex + delta));
+        this.refresh();
+      };
+      if (key.kind === "up") return move(-perRow);
+      if (key.kind === "down") return move(perRow);
+      if (key.kind === "left") return move(-1);
+      if (key.kind === "right") return move(1);
+      if (key.kind === "enter") {
+        const hex = xterm256Hex(this.gridIndex);
+        this.view = "brandColors";
+        this.applyColorPick(hex);
+        return;
+      }
+      if (key.kind === "escape") {
         this.view = "brandColors";
         this.refresh();
       }
