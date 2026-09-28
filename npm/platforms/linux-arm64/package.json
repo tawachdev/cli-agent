@@ -1,6 +1,6 @@
 {
   "name": "@mohamed-taaouch/linux-arm64",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "mimon CLI binary for linux-arm64",
   "license": "UNLICENSED",
   "os": [
