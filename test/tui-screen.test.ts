@@ -427,6 +427,38 @@ describe("full chat flow in box", () => {
   });
 });
 
+describe("double-send repro", () => {
+  it("two failed sends: one box, each error exactly once, no stacked duplicates", async () => {
+    const { vt, tui } = makeVt(40, 100);
+    const chat = new Chat({ write: () => {}, columns: 100, rows: 40 }, async () => "n");
+    chat.uiHandlesErrors = true;
+    chat.onError = (m) => tui.showError(m);
+    chat.ui = {
+      printAbove: (ls) => tui.printAbove(ls),
+      stream: (t) => tui.stream(t),
+      streamStart: () => tui.streamStart(),
+      streamEnd: () => tui.streamEnd(),
+    };
+    tui.show();
+    const type = (s: string) => { for (const ch of s) tui.handleKey({ kind: "char", ch }); };
+    const send = async (msg: string) => {
+      type(msg);
+      key(tui, "enter");
+      tui.beginBusy();
+      chat.ui.printAbove([" YOU " + msg]);
+      await chat.onEvent({ type: "turn.failed", payload: { reason: "no API key for gemini" } });
+      chat.onError("failed: no API key for gemini");
+      tui.endBusy();
+    };
+    await send("hi");
+    await send("slm");
+    const screen = vt.screen();
+    expect((screen.match(/╭/g) ?? []).length).toBe(1);
+    expect((screen.split("no API key").length - 1)).toBe(2);
+    expect((screen.split(" YOU ").length - 1)).toBe(2);
+  });
+});
+
 describe("in-box errors", () => {
   it("renders the error inside the box, wrapped, and clears on send", () => {
     const { vt, tui } = makeVt(24, 80);
