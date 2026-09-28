@@ -121,6 +121,10 @@ export class Chat {
   private lastTool = "";
   private lastToolMs = 0;
   private stateLabel = "IDLE";
+  private lastFailure = "";
+  onError: (message: string) => void = (message) => {
+    this.tty.write(C.red + "  ✘ " + message + "\n" + C.reset);
+  };
 
   constructor(
     private readonly tty: Tty,
@@ -259,7 +263,8 @@ export class Chat {
         break;
       case "turn.failed":
         this.chipClose();
-        this.tty.write(C.red + "  ✘ failed: " + (p["reason"] ?? "") + "\n" + C.reset);
+        this.lastFailure = String(p["reason"] ?? "");
+        this.onError("failed: " + (p["reason"] ?? ""));
         break;
       case "turn.aborted":
         this.chipClose();

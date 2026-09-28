@@ -389,3 +389,23 @@ describe("form bounds", () => {
     expect(screen).not.toContain("very-long-domain");
   });
 });
+
+describe("in-box errors", () => {
+  it("renders the error inside the box, wrapped, and clears on send", () => {
+    const { vt, tui } = makeVt(24, 80);
+    tui.show();
+    tui.showError('no API key for "gemini" — /providers → set key, or set AGENT_KEY_GEMINI');
+    const errorScreen = vt.screen();
+    expect(errorScreen).toContain("no API key");
+    for (const line of errorScreen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(80);
+    }
+    for (const ch of "hi") tui.handleKey({ kind: "char", ch });
+    key(tui, "enter");
+    tui.endBusy();
+    const screen = vt.screen();
+    expect(screen.split("AGENT_KEY_GEMINI").length - 1).toBe(1);
+    const boxes = screen.split("╭─");
+    expect(boxes[boxes.length - 1]).not.toContain("no API key");
+  });
+});

@@ -275,6 +275,7 @@ async function main(): Promise<void> {
     });
     ui = tui;
     chat.permissionAsk = () => tui.permission();
+    chat.onError = (message) => tui.showError(message);
     stdin.on("data", (chunk) => feedKeys(String(chunk), tui));
     stdout.on("resize", () => tui.onResize());
     stdin.on("resize", () => tui.onResize());

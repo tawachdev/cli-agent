@@ -309,6 +309,7 @@ export class Tui {
   private addError = "";
   private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null }> = [];
   private pendingPaths = new Set<string>();
+  private errorLines: string[] = [];
   private lastLines: string[] = [];
   private cursorLine = 0;
 
@@ -561,7 +562,11 @@ export class Tui {
     const prefix = hero.length + menu.length + overlay.length;
     const lines = [...hero, ...menu, ...overlay];
     if (this.rows >= 4) {
-      lines.push(this.boxEdge(true), this.boxLine(this.renderInput()), this.boxLine(this.renderStatus()), this.boxEdge(false));
+      lines.push(this.boxEdge(true), this.boxLine(this.renderInput()));
+      for (const line of this.errorLines) {
+        lines.push(this.boxLine(C.red + trunc(line, this.usable - 4) + C.reset));
+      }
+      lines.push(this.boxLine(this.renderStatus()), this.boxEdge(false));
       this.inputRow = prefix + 1;
     } else {
       lines.push(this.bar() + this.renderInput());
@@ -969,6 +974,19 @@ export class Tui {
     renderImage(this.tty, image, 24);
     this.tty.write(C.dim + "  ▤ " + image.name + " attached — sent with your next message" + C.reset + "\n");
     if (wasShown || !this.busy) this.show();
+  }
+
+  showError(message: string): void {
+    const width = Math.max(10, this.innerWidth() - 4);
+    this.errorLines = wrap(message.replace(/\s+/g, " ").trim(), width).slice(0, 4);
+    this.refresh();
+  }
+
+  clearError(): void {
+    if (this.errorLines.length > 0) {
+      this.errorLines = [];
+      this.refresh();
+    }
   }
 
   takePendingImages(): LoadedImage[] {
@@ -1475,6 +1493,7 @@ export class Tui {
         this.input = "";
         this.cursor = 0;
         this.menuIndex = 0;
+        this.errorLines = [];
         if (this.pendingImages.length > 0) {
           this.clearPendingImages();
           this.notice("· attachments cleared ·");
@@ -1493,6 +1512,7 @@ export class Tui {
         }
         const task = this.input.trim();
         if (!task) return;
+        this.errorLines = [];
         if (this.history[this.history.length - 1] !== task) this.history.push(task);
         this.historyIndex = null;
         this.input = "";
