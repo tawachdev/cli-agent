@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { imageDims, toDataUrl } from "../src/shared/images";
 import {
   extractImagePaths,
+  locateImagePaths,
   imageSupport,
   itermImagePayload,
   kittyImagePayload,
@@ -57,6 +58,22 @@ describe("shared image sniffing", () => {
     expect(imageDims(base64(gifBytes(5, 7)))).toEqual({ width: 5, height: 7 });
     expect(imageDims(base64(bmpBytes(3, 2)))).toEqual({ width: 3, height: 2 });
     expect(imageDims("bm90IGFuIGltYWdl")).toBeNull();
+  });
+});
+
+describe("locateImagePaths", () => {
+  it("returns raw-text spans ready for stripping", () => {
+    const text = "look at /tmp/shot.png please";
+    const located = locateImagePaths(text);
+    expect(located).toHaveLength(1);
+    expect(text.slice(located[0]!.start, located[0]!.end)).toBe("/tmp/shot.png");
+  });
+
+  it("spans cover the escaped region; path is unescaped", () => {
+    const text = "/Users/mo/my\\ cat.png";
+    const located = locateImagePaths(text);
+    expect(text.slice(located[0]!.start, located[0]!.end)).toBe("/Users/mo/my\\ cat.png");
+    expect(located[0]!.path).toBe("/Users/mo/my cat.png");
   });
 });
 

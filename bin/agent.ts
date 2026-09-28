@@ -66,7 +66,9 @@ async function main(): Promise<void> {
     stdin.resume();
     const handleTurn = async (t: string): Promise<void> => {
       try {
-        const { images, errors } = await loadImages(t);
+        const attached = tui.takePendingImages();
+        const { images: fromText, errors } = await loadImages(t);
+        const images = [...attached, ...fromText.filter((image) => !attached.some((a) => a.path === image.path))];
         for (const message of errors) stdout.write(C.dim + "  · " + message + C.reset + "\n");
         await chat.run(t, images);
         if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);

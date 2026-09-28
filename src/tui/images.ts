@@ -18,20 +18,47 @@ export interface LoadedImage {
   height: number | null;
 }
 
-export function extractImagePaths(text: string): string[] {
-  const found: string[] = [];
+export interface LocatedImage {
+  start: number;
+  end: number;
+  path: string;
+}
+
+export function locateImagePaths(text: string): LocatedImage[] {
+  const found: LocatedImage[] = [];
   for (const match of text.matchAll(IMAGE_EXT_RE)) {
-    const raw = match[0].replace(/\\(.)/g, "$1").replace(/^[("']+/, "").replace(/[),.;:!?]+"?$/, "");
+    const original = match[0];
+    const raw = original.replace(/\\(.)/g, "$1").replace(/^[("']+/, "").replace(/[),.;:!?]+"?$/, "");
+    if (!raw) continue;
+    let cursor = 0;
+    while (cursor < original.length && /[("']/.test(original[cursor]!)) cursor++;
+    const start = match.index + cursor;
+    let rawIndex = 0;
+    let end = start;
+    while (cursor < original.length && rawIndex < raw.length) {
+      cursor += original[cursor] === "\\" && cursor + 1 < original.length ? 2 : 1;
+      rawIndex += 1;
+      end = match.index + cursor;
+    }
     const expanded = raw.startsWith("~") ? homedir() + raw.slice(1) : raw;
-    if (!found.includes(expanded)) found.push(expanded);
+    if (!found.some((f) => f.path === expanded)) found.push({ start, end, path: expanded });
   }
   return found;
 }
 
-export async function loadImages(text: string): Promise<{ images: LoadedImage[]; errors: string[] }> {
+export function extractImagePaths(text: string): string[] {
+  return locateImagePaths(text).map((located) => located.path);
+}
+
+export function imageChipName(path: string): string {
+  return path.replace(/\/+$/, "").split("/").pop() ?? path;
+}
+
+export async function loadImagesFromPaths(paths: string[]): Promise<{ images: LoadedImage[]; errors: string[] }> {
   const images: LoadedImage[] = [];
   const errors: string[] = [];
-  for (const path of extractImagePaths(text)) {
+  for (const path of paths) {
+    if (images.some((image) => image.path === path)) continue;
     if (images.length >= MAX_IMAGES) {
       errors.push(path + " — skipped, max " + MAX_IMAGES + " images per message");
       continue;
@@ -67,6 +94,10 @@ export async function loadImages(text: string): Promise<{ images: LoadedImage[];
     }
   }
   return { images, errors };
+}
+
+export async function loadImages(text: string): Promise<{ images: LoadedImage[]; errors: string[] }> {
+  return loadImagesFromPaths(extractImagePaths(text));
 }
 
 export type ImageSupport = "iterm" | "kitty" | "none";

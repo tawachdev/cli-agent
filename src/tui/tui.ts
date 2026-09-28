@@ -1,5 +1,7 @@
 import { stdout } from "node:process";
 import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry } from "../shared/brand";
+import { existsSync } from "node:fs";
+import { imageChipName, loadImagesFromPaths, locateImagePaths, renderImage, type LoadedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -305,6 +307,8 @@ export class Tui {
   private addFields: [string, string, string] = ["", "", ""];
   private addFieldIndex = 0;
   private addError = "";
+  private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null }> = [];
+  private pendingPaths = new Set<string>();
 
   constructor(
     private readonly tty: Tty,
@@ -394,7 +398,8 @@ export class Tui {
 
   private renderStatus(): string {
     const label = trunc(this.tier.label, Math.max(3, Math.min(9, this.innerWidth() - 3)));
-    const meta = trunc(" · local · ctx " + this.ctxPct + "% · s " + this.sessionShort, Math.max(0, this.innerWidth() - 3 - label.length));
+    const images = this.pendingImages.length > 0 ? " · ▤" + this.pendingImages.length : "";
+    const meta = trunc(" · local · ctx " + this.ctxPct + "% · s " + this.sessionShort + images, Math.max(0, this.innerWidth() - 3 - label.length));
     return C.teal + "●" + C.reset + " " + C.bold + C.cream + label + C.reset + C.dim + meta + C.reset;
   }
 
@@ -841,6 +846,60 @@ export class Tui {
     this.cursor += 1;
     this.menuIndex = 0;
     this.historyIndex = null;
+    this.detectAttachments();
+  }
+
+  private detectAttachments(): void {
+    const located = locateImagePaths(this.input);
+    for (const hit of located.reverse()) {
+      if (this.pendingPaths.has(hit.path)) continue;
+      if (!existsSync(hit.path)) continue;
+      this.input = this.input.slice(0, hit.start) + this.input.slice(hit.end);
+      this.cursor = Math.min(this.cursor, this.input.length);
+      this.pendingPaths.add(hit.path);
+      this.pendingImages.push({ path: hit.path, name: imageChipName(hit.path), image: null });
+      void this.loadPending(hit.path);
+    }
+    if (located.length > 0) this.refresh();
+  }
+
+  private async loadPending(path: string): Promise<void> {
+    const { images, errors } = await loadImagesFromPaths([path]);
+    const entry = this.pendingImages.find((p) => p.path === path);
+    if (entry && images[0]) {
+      entry.image = images[0]!;
+      this.previewImage(images[0]!);
+    } else if (entry && errors[0]) {
+      this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
+      this.pendingPaths.delete(path);
+      this.notice("✘ " + errors[0]!);
+    }
+  }
+
+  private previewImage(image: LoadedImage): void {
+    const wasShown = this.shown;
+    this.hide();
+    renderImage(this.tty, image, 24);
+    this.tty.write(C.dim + "  ▤ " + image.name + " attached — sent with your next message" + C.reset + "\n");
+    if (wasShown || !this.busy) this.show();
+  }
+
+  takePendingImages(): LoadedImage[] {
+    const taken = this.pendingImages.flatMap((p) => (p.image ? [p.image] : []));
+    const missing = this.pendingImages.filter((p) => !p.image).map((p) => p.path);
+    this.pendingImages = [];
+    this.pendingPaths.clear();
+    for (const path of missing) this.notice("✘ " + path + " — could not be loaded, skipped");
+    return taken;
+  }
+
+  hasPendingImages(): boolean {
+    return this.pendingImages.length > 0;
+  }
+
+  clearPendingImages(): void {
+    this.pendingImages = [];
+    this.pendingPaths.clear();
   }
 
   private recall(direction: "up" | "down"): void {
@@ -1306,6 +1365,11 @@ export class Tui {
         this.input = "";
         this.cursor = 0;
         this.menuIndex = 0;
+        if (this.pendingImages.length > 0) {
+          this.clearPendingImages();
+          this.notice("· attachments cleared ·");
+          return;
+        }
         break;
       case "enter": {
         if (menuOpen) {

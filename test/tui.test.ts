@@ -1,4 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+const PNG_1X1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   decodeChunk,
   splash,
@@ -703,6 +708,48 @@ describe("brand view", () => {
     tui.handleKey({ kind: "down" });
     tui.handleKey({ kind: "enter" });
     expect(cap.brandResets).toBe(1);
+  });
+});
+
+describe("image attachments", () => {
+  it("detects a dropped image path, strips it and previews it", async () => {
+    const dir = join(tmpdir(), "mimon-attach-");
+    mkdirSync(dir, { recursive: true });
+    const pngPath = join(dir, "dropped.png");
+    writeFileSync(pngPath, Buffer.from(PNG_1X1, "base64"));
+    const { tui, tty, cap } = makeTui();
+    tui.show();
+    type(tui, "look at " + pngPath);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const t = tty.text();
+    expect(t).toContain("attached");
+    expect(t).toContain("▤1");
+    expect(t).toContain("dropped.png");
+    expect(cap.submitted).toEqual([]);
+    type(tui, " describe it");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.submitted).toEqual(["look at  describe it"]);
+    const taken = tui.takePendingImages();
+    expect(taken).toHaveLength(1);
+    expect(taken[0]!.mime).toBe("image/png");
+    expect(tui.hasPendingImages()).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("esc clears pending attachments when the input is empty", async () => {
+    const dir = join(tmpdir(), "mimon-attach2-");
+    mkdirSync(dir, { recursive: true });
+    const pngPath = join(dir, "pic.png");
+    writeFileSync(pngPath, Buffer.from(PNG_1X1, "base64"));
+    const { tui, tty } = makeTui();
+    tui.show();
+    type(tui, pngPath);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(tui.hasPendingImages()).toBe(true);
+    tui.handleKey({ kind: "escape" });
+    expect(tui.hasPendingImages()).toBe(false);
+    expect(tty.text()).toContain("attachments cleared");
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 
