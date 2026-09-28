@@ -34,7 +34,7 @@ bun install
 bun run cli
 ```
 
-The wizard asks for your API key — nothing else is required. Optional: run fully local with Ollama via `/providers` → **+ add provider** → base URL `http://127.0.0.1:11434/v1` (loopback http is allowed) with any model name you pulled.
+The wizard asks for your API key — nothing else is required. Optional: run fully local with Ollama via `/providers` → **+ add provider** → base URL `http://127.0.0.1:11434/v1` (loopback http is allowed) with any model name you pulled. If a tier is ever bound to a provider without a key, the boot notice tells you exactly which one to fix.
 
 The CLI starts the local engine by itself (loopback-only, port `7800`). Interactive TUI: `bun run cli`. Engine alone: `bun run dev`.
 

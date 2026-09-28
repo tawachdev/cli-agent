@@ -52,6 +52,21 @@ export interface RoleBinding {
   source: "env" | "file" | "default";
 }
 
+export function keylessProviderBindings(
+  roles: RoleBinding[],
+  providers: ProviderInfo[],
+): Array<{ role: string; provider: string }> {
+  const noKey = new Set(providers.filter((p) => !p.keySet).map((p) => p.name));
+  const out: Array<{ role: string; provider: string }> = [];
+  for (const role of roles) {
+    const slash = role.model.indexOf("/");
+    if (slash <= 0) continue;
+    const provider = role.model.slice(0, slash);
+    if (noKey.has(provider)) out.push({ role: role.role, provider });
+  }
+  return out;
+}
+
 export const getProviders = (): Promise<ProviderInfo[]> =>
   request("/providers").then((r) => r["providers"] as ProviderInfo[]);
 
@@ -122,6 +137,7 @@ export class Chat {
   private lastToolMs = 0;
   private stateLabel = "IDLE";
   private lastFailure = "";
+  private awaitingRun = false;
   onError: (message: string) => void = (message) => {
     this.tty.write(C.red + "  ✘ " + message + "\n" + C.reset);
   };
@@ -184,7 +200,7 @@ export class Chat {
     }
   }
 
-  private async onEvent(event: StreamEvent): Promise<void> {
+  async onEvent(event: StreamEvent): Promise<void> {
     const p = event.payload;
     switch (event.type) {
       case "plan.updated": {
@@ -264,7 +280,7 @@ export class Chat {
       case "turn.failed":
         this.chipClose();
         this.lastFailure = String(p["reason"] ?? "");
-        this.onError("failed: " + (p["reason"] ?? ""));
+        if (!this.awaitingRun) this.onError("failed: " + (p["reason"] ?? ""));
         break;
       case "turn.aborted":
         this.chipClose();
@@ -317,6 +333,16 @@ export class Chat {
   }
 
   async run(task: string, images: LoadedImage[] = []): Promise<void> {
+    this.lastTool = "";
+    this.awaitingRun = true;
+    try {
+      await this.runOnce(task, images);
+    } finally {
+      this.awaitingRun = false;
+    }
+  }
+
+  private async runOnce(task: string, images: LoadedImage[]): Promise<void> {
     this.lastTool = "";
     const tag = images.length > 0 ? C.dim + "  +" + images.length + " image" + (images.length > 1 ? "s" : "") + C.reset : "";
     this.tty.write(C.inverse + C.bold + " YOU " + C.reset + " " + task + tag + "\n");

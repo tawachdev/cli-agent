@@ -7,6 +7,7 @@ import { C, decodeChunk, PRODUCT_VERSION, panel, splash, Tui, type Tty } from ".
 import {
   addProvider,
   backendOrigin,
+  keylessProviderBindings,
   Chat,
   deleteProviderKey,
   getBindings,
@@ -375,9 +376,15 @@ async function main(): Promise<void> {
   ui?.enableHero(PRODUCT_VERSION);
   ui?.show();
   if (savedBrand) ui?.setBrandCustomColors(savedBrand.customColors);
-  void getSetupStatus()
-    .then((status) => {
-      if (status.needsSetup) ui?.notice("· bring your API key — /setup connects it in seconds · /brand makes it yours ·");
+  void Promise.all([getSetupStatus(), getBindings(), getProviders()])
+    .then(([status, roles, providers]) => {
+      const stale = keylessProviderBindings(roles, providers);
+      if (stale.length > 0) {
+        const list = stale.map((s) => s.role + " → " + s.provider).join(", ");
+        ui?.notice("⚠ bound without key: " + list + " — /providers → set key, wla /model → rebind");
+      } else if (status.needsSetup) {
+        ui?.notice("· bring your API key — /setup connects it in seconds · /brand makes it yours ·");
+      }
     })
     .catch(() => {});
   await new Promise<void>(() => {});

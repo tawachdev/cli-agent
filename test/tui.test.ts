@@ -4,6 +4,7 @@ const PNG_1X1 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Chat, keylessProviderBindings } from "../src/tui/chat";
 import {
   decodeChunk,
   splash,
@@ -802,6 +803,48 @@ describe("render byte budget", () => {
     const mark = tty.chunks.length;
     tui.handleKey({ kind: "right" });
     expect(tty.bytesSince(mark)).toBeLessThan(2000);
+  });
+});
+
+describe("failure print channel", () => {
+  const chunks: string[] = [];
+  function makeChat() {
+    chunks.length = 0;
+    let errors: string[] = [];
+    const tty = { write: (d: string) => chunks.push(d), columns: 100, rows: 40 };
+    const chat = new Chat(tty, async () => "n");
+    chat.onError = (m: string) => errors.push(m);
+    return { chat, errors };
+  }
+
+  it("turn.failed during a run is recorded, not printed (POST response prints it)", () => {
+    const { chat, errors } = makeChat();
+    (chat as unknown as { awaitingRun: boolean }).awaitingRun = true;
+    chat.onEvent({ type: "turn.failed", payload: { reason: "boom" } });
+    expect(errors).toEqual([]);
+  });
+
+  it("turn.failed outside a run prints immediately", () => {
+    const { chat, errors } = makeChat();
+    chat.onEvent({ type: "turn.failed", payload: { reason: "boom" } });
+    expect(errors).toEqual(["failed: boom"]);
+  });
+});
+
+describe("keylessProviderBindings", () => {
+  it("flags roles bound to providers without keys", () => {
+    const roles = [
+      { role: "mimon1", model: "gemini/gemini-2.5-pro", source: "file" },
+      { role: "mimon2", model: "openai/gpt-5", source: "file" },
+      { role: "mimon3", model: "qwen3:14b", source: "default" },
+    ];
+    const providers = [
+      { name: "gemini", keySet: false },
+      { name: "openai", keySet: true },
+    ];
+    expect(keylessProviderBindings(roles as never, providers as never)).toEqual([
+      { role: "mimon1", provider: "gemini" },
+    ]);
   });
 });
 
