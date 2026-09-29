@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
+import { existsSync } from "node:fs";
 import { imageDims, sniffImageMime, type ImageMime } from "../shared/images";
 import { C, type Tty } from "./tui";
+import { decodePng } from "./png";
 
 const IMAGE_EXT_RE = /(?:[^\s\\]|\\.)+\.(?:png|jpe?g|gif|webp|bmp)/gi;
 const KITTY_CHUNK = 4096;
@@ -24,24 +26,45 @@ export interface LocatedImage {
   path: string;
 }
 
+function expandHome(p: string): string {
+  return p.startsWith("~") ? homedir() + p.slice(1) : p;
+}
+
 export function locateImagePaths(text: string): LocatedImage[] {
   const found: LocatedImage[] = [];
   for (const match of text.matchAll(IMAGE_EXT_RE)) {
-    const original = match[0];
+    let start = match.index;
+    let original = match[0];
+    let scanStart = match.index;
+    for (let guard = 0; guard < 8; guard++) {
+      if (scanStart === 0 || text[scanStart - 1] !== " ") break;
+      let w = scanStart - 1;
+      while (w > 0 && /\S/.test(text[w - 1]!)) w--;
+      const candidate = text.slice(w, match.index + match[0].length);
+      if (
+        (candidate.startsWith("/") || candidate.startsWith("~/") || candidate.startsWith("./")) &&
+        existsSync(expandHome(candidate))
+      ) {
+        start = w;
+        original = candidate;
+      }
+      scanStart = w;
+    }
     const raw = original.replace(/\\(.)/g, "$1").replace(/^[("']+/, "").replace(/[),.;:!?]+"?$/, "");
     if (!raw) continue;
     let cursor = 0;
     while (cursor < original.length && /[("']/.test(original[cursor]!)) cursor++;
-    const start = match.index + cursor;
+    const locatedStart = start + cursor;
     let rawIndex = 0;
-    let end = start;
-    while (cursor < original.length && rawIndex < raw.length) {
-      cursor += original[cursor] === "\\" && cursor + 1 < original.length ? 2 : 1;
+    let end = locatedStart;
+    let scan = cursor;
+    while (scan < original.length && rawIndex < raw.length) {
+      scan += original[scan] === "\\" && scan + 1 < original.length ? 2 : 1;
       rawIndex += 1;
-      end = match.index + cursor;
+      end = start + scan;
     }
-    const expanded = raw.startsWith("~") ? homedir() + raw.slice(1) : raw;
-    if (!found.some((f) => f.path === expanded)) found.push({ start, end, path: expanded });
+    const expanded = expandHome(raw);
+    if (!found.some((f) => f.path === expanded)) found.push({ start: locatedStart, end, path: expanded });
   }
   return found;
 }
@@ -170,4 +193,33 @@ export function renderImage(tty: Tty, image: LoadedImage, maxWidthCells = 60): v
   } else {
     tty.write(fallbackPanel(image, tty.columns > 0 ? tty.columns : 80));
   }
+}
+
+export function pixelPreviewLines(image: LoadedImage, maxCols = 40, maxRows = 12): string[] {
+  if (image.mime !== "image/png") return [];
+  const pixels = decodePng(image.base64);
+  if (!pixels) return [];
+  const ratio = pixels.width / pixels.height;
+  let cols = Math.min(maxCols, Math.max(8, Math.round(maxRows * 2 * ratio)));
+  let rows = Math.max(2, Math.round(cols / (2 * ratio)));
+  if (rows > maxRows) {
+    rows = maxRows;
+    cols = Math.max(8, Math.round(rows * 2 * ratio));
+  }
+  const lines: string[] = [];
+  for (let ry = 0; ry < rows; ry++) {
+    let line = "";
+    for (let cx = 0; cx < cols; cx++) {
+      const px = Math.min(pixels.width - 1, Math.floor((cx + 0.5) * pixels.width / cols));
+      const pyTop = Math.min(pixels.height - 1, Math.floor((ry * 2 + 0.5) * pixels.height / (rows * 2)));
+      const pyBot = Math.min(pixels.height - 1, Math.floor((ry * 2 + 1.5) * pixels.height / (rows * 2)));
+      const top = (pyTop * pixels.width + px) * 4;
+      const bot = (pyBot * pixels.width + px) * 4;
+      line +=
+        "\x1b[38;2;" + pixels.data[top]! + ";" + pixels.data[top + 1]! + ";" + pixels.data[top + 2]! +
+        ";48;2;" + pixels.data[bot]! + ";" + pixels.data[bot + 1]! + ";" + pixels.data[bot + 2]! + "m▀";
+    }
+    lines.push(line + C.reset);
+  }
+  return lines;
 }

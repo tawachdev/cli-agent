@@ -1,7 +1,7 @@
 import { stdout } from "node:process";
 import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
 import { existsSync } from "node:fs";
-import { imageChipName, loadImagesFromPaths, locateImagePaths, renderImage, type LoadedImage } from "./images";
+import { imageChipName, loadImagesFromPaths, locateImagePaths, pixelPreviewLines, renderImage, type LoadedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -342,7 +342,7 @@ export class Tui {
   private addFields: [string, string, string] = ["", "", ""];
   private addFieldIndex = 0;
   private addError = "";
-  private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null }> = [];
+  private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null; preview: string[] }> = [];
   private pendingPaths = new Set<string>();
   private history: string[] = [];
   private workingLine = "";
@@ -661,6 +661,11 @@ export class Tui {
       }
       for (const visual of visuals) lines.push(this.boxLine("  " + visual));
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
+      for (const pending of this.pendingImages) {
+        if (pending.preview.length === 0) continue;
+        lines.push(this.boxLine("  " + C.teal + "▤ " + C.reset + C.bold + pending.name + C.reset + C.dim + "  attached — sent with your next message" + C.reset));
+        for (const row of pending.preview) lines.push(this.boxLine(row));
+      }
       const contentBudget = Math.max(4, this.innerWidth() - 4);
       const blockLead = (block: string[]): string => {
         const wide = Math.max(0, ...block.map((l) => visibleLen(l)));
@@ -1073,11 +1078,16 @@ export class Tui {
     const located = locateImagePaths(this.input);
     for (const hit of located.reverse()) {
       if (this.pendingPaths.has(hit.path)) continue;
-      if (!existsSync(hit.path)) continue;
+      if (!existsSync(hit.path)) {
+        if (hit.path.includes("NSIRD_")) {
+          this.notice("✘ screenshot temp file is gone — take it again with Cmd+Shift+4 (saves to Desktop) and drag the file here");
+        }
+        continue;
+      }
       this.input = this.input.slice(0, hit.start) + this.input.slice(hit.end);
       this.cursor = Math.min(this.cursor, this.input.length);
       this.pendingPaths.add(hit.path);
-      this.pendingImages.push({ path: hit.path, name: imageChipName(hit.path), image: null });
+      this.pendingImages.push({ path: hit.path, name: imageChipName(hit.path), image: null, preview: [] });
       void this.loadPending(hit.path);
     }
     if (located.length > 0) this.refresh();
@@ -1088,20 +1098,13 @@ export class Tui {
     const entry = this.pendingImages.find((p) => p.path === path);
     if (entry && images[0]) {
       entry.image = images[0]!;
-      this.previewImage(images[0]!);
+      entry.preview = pixelPreviewLines(images[0]!, Math.min(40, Math.max(12, this.innerWidth() - 8)), 12);
+      this.refresh();
     } else if (entry && errors[0]) {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
       this.pendingPaths.delete(path);
       this.notice("✘ " + errors[0]!);
     }
-  }
-
-  private previewImage(image: LoadedImage): void {
-    const wasShown = this.shown;
-    this.hide();
-    renderImage(this.tty, image, 24);
-    this.tty.write(C.dim + "  ▤ " + image.name + " attached — sent with your next message" + C.reset + "\n");
-    if (wasShown || !this.busy) this.show();
   }
 
   showError(message: string): void {
