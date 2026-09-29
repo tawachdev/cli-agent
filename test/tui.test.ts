@@ -160,7 +160,7 @@ describe("splash", () => {
     }
   });
 
-  it("prints the hero banner once and it survives resizes", () => {
+  it("prints the hero banner once and it survives resizes", async () => {
     const { tui, tty } = makeTui(100, 40);
     tui.enableHero("0.1.4");
     tui.show();
@@ -168,18 +168,18 @@ describe("splash", () => {
     expect(tty.text()).toContain("v0.1.4 · your keys · your machine");
     tty.clear();
     tty.columns = 90;
-    tui.onResize();
+    await tui.onResizeAsync();
     expect(tty.text()).toContain("Ask anything");
   });
 
-  it("never duplicates the box across resize sweeps", () => {
+  it("never duplicates the box across resize sweeps", async () => {
     const { tui, tty } = makeTui(40, 40);
     tui.enableHero("0.1.4");
     tui.show();
     for (const cols of [40, 60, 90, 60, 90, 40]) {
       tty.clear();
       tty.columns = cols;
-      tui.onResize();
+      await tui.onResizeAsync();
       expect(tty.text().split("╭").length - 1).toBe(1);
       for (const line of tty.lines()) {
         expect(visibleLen(line)).toBeLessThanOrEqual(Math.max(20, cols));

@@ -157,7 +157,7 @@ function makeVt(rows: number, cols: number): { vt: VirtualTerminal; tui: Tui; ca
     onSubmit: (t) => cap.submitted.push(t),
     onCommand: (c) => cap.commands.push(c),
     onTierChange: (t) => cap.tiers.push(t.id),
-    onAbort: () => {
+    onAbort: async () => {
       cap.aborted += 1;
     },
     onExit: () => {
@@ -175,6 +175,8 @@ function makeVt(rows: number, cols: number): { vt: VirtualTerminal; tui: Tui; ca
   });
   return { vt, tui, cap };
 }
+
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
 
 function type(tui: Tui, s: string): void {
   for (const ch of s) tui.handleKey({ kind: "char", ch });
@@ -195,44 +197,44 @@ function expectClean(vt: VirtualTerminal, cols: number): void {
 }
 
 describe("virtual terminal resize storm", () => {
-  it("survives rapid width dragging with zero residue", () => {
+  it("survives rapid width dragging with zero residue", async () => {
     const { vt, tui } = makeVt(24, 0);
     tui.show();
     for (let round = 0; round < 3; round++) {
       for (const cols of [90, 40, 18, 60, 24, 90, 30, 25, 12, 90]) {
         vt.resize(cols, 24);
-        tui.onResize();
+        await tui.onResizeAsync();
         expectClean(vt, cols);
       }
     }
   });
 
-  it("survives resizes with typing, menus and picker open", () => {
+  it("survives resizes with typing, menus and picker open", async () => {
     const { vt, tui } = makeVt(40, 80);
     tui.show();
     type(tui, "fix the flaky test");
     vt.resize(40, 24);
-    tui.onResize();
+    await tui.onResizeAsync();
     expectClean(vt, 40);
     key(tui, "enter");
     tui.endBusy();
     vt.resize(90, 24);
-    tui.onResize();
+    await tui.onResizeAsync();
     console.log("DUMP:\n" + vt.screen());
     expect(vt.count("╭")).toBe(1);
     type(tui, "/");
     vt.resize(30, 24);
-    tui.onResize();
+    await tui.onResizeAsync();
     expect(vt.count("/model")).toBeLessThanOrEqual(1);
     expect(vt.count("╭")).toBe(1);
     key(tui, "escape");
     tui.openPicker();
     vt.resize(70, 24);
-    tui.onResize();
+    await tui.onResizeAsync();
     expect(vt.count("select model")).toBe(1);
     key(tui, "down");
     vt.resize(26, 24);
-    tui.onResize();
+    await tui.onResizeAsync();
     key(tui, "enter");
     expect(vt.screen()).toContain("set to MIMON");
     for (const line of vt.screen().split("\n")) {
@@ -240,30 +242,30 @@ describe("virtual terminal resize storm", () => {
     }
   });
 
-  it("survives resizes at tiny pane heights without stacking", () => {
+  it("survives resizes at tiny pane heights without stacking", async () => {
     const { vt, tui } = makeVt(24, 80);
     tui.show();
     for (const [cols, rows] of [[80, 8], [80, 6], [80, 4], [80, 24], [40, 5], [40, 24]] as Array<[number, number]>) {
       vt.resize(cols, rows);
-      tui.onResize();
+      await tui.onResizeAsync();
       expect(vt.count("Ask anything")).toBe(1);
       expect(vt.count("●")).toBeLessThanOrEqual(3);
     }
   });
 
-  it("survives notices and tier cycles during a drag", () => {
+  it("survives notices and tier cycles during a drag", async () => {
     const { vt, tui } = makeVt(24, 80);
     tui.show();
     for (const cols of [80, 45, 80, 28, 80]) {
       vt.resize(cols, 24);
-      tui.onResize();
+      await tui.onResizeAsync();
       key(tui, "tab");
       expectClean(vt, cols);
     }
     expect(tui.tier.id).toBe("mimon3");
   });
 
-  it("keeps the screen clean through a full session lifecycle", () => {
+  it("keeps the screen clean through a full session lifecycle", async () => {
     const { vt, tui, cap } = makeVt(24, 80);
     tui.show();
     type(tui, "task one");
@@ -272,7 +274,7 @@ describe("virtual terminal resize storm", () => {
     tui.endBusy();
     for (const cols of [90, 40, 90]) {
       vt.resize(cols, 24);
-      tui.onResize();
+      await tui.onResizeAsync();
       expect(vt.count("Ask anything")).toBe(1);
     }
     type(tui, "task two");
@@ -317,7 +319,7 @@ describe("brand picker under hero", () => {
     }
   });
 
-  it("navigating the palette does not flash: full clears only on entry and height changes", () => {
+  it("navigating the palette does not flash: full clears only on entry and height changes", async () => {
     const { vt, tui } = makeVt(30, 200);
     tui.enableHero("0.1.0");
     tui.show();
@@ -344,7 +346,7 @@ describe("brand picker under hero", () => {
 });
 
 describe("resize never overflows the screen", () => {
-  it("box always fits the viewport at every size in a live drag sweep", () => {
+  it("box always fits the viewport at every size in a live drag sweep", async () => {
     const { vt, tui } = makeVt(40, 120);
     tui.enableHero("0.1.4");
     tui.show();
@@ -354,7 +356,7 @@ describe("resize never overflows the screen", () => {
     ];
     for (const [cols, rows] of sizes) {
       vt.resize(cols, rows);
-      tui.onResize();
+      await tui.onResizeAsync();
       const screen = vt.screen();
       const lines = screen.split("\n");
       for (const line of lines) {
@@ -365,28 +367,41 @@ describe("resize never overflows the screen", () => {
     }
   });
 
-  it("banner degrades instead of overflowing: art on tall, one-line on medium, gone on tiny", () => {
+  it("banner degrades instead of overflowing: art on tall, one-line on medium, gone on tiny", async () => {
     const { vt, tui } = makeVt(30, 120);
     tui.enableHero("0.1.4");
     tui.show();
     vt.resize(120, 30);
-    tui.onResize();
+    await tui.onResizeAsync();
     expect(vt.screen()).toContain("██");
     vt.resize(120, 18);
-    tui.onResize();
+    await tui.onResizeAsync();
     const medium = vt.screen();
     expect(medium).toContain("✦");
     expect(medium).not.toContain("██");
     vt.resize(120, 12);
-    tui.onResize();
+    await tui.onResizeAsync();
     const tiny = vt.screen();
     expect(tiny).not.toContain("██");
     expect(tiny).toContain("Ask anything");
   });
 });
 
+describe("resize coalescing", () => {
+  it("a burst of resize signals in one tick produces a single repaint", async () => {
+    const { vt, tui } = makeVt(40, 120);
+    tui.enableHero("0.1.4");
+    tui.show();
+    vt.fullClears = 0;
+    for (let i = 0; i < 8; i++) tui.onResize();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(vt.fullClears).toBe(1);
+    expect((vt.screen().match(/╭/g) ?? []).length).toBe(1);
+  });
+});
+
 describe("cursor drift on resize", () => {
-  it("a plain refresh after width change repaints from home — one box, no stacking", () => {
+  it("a plain refresh after width change repaints from home — one box, no stacking", async () => {
     const { vt, tui } = makeVt(40, 120);
     tui.enableHero("0.1.4");
     tui.show();
@@ -404,13 +419,13 @@ describe("cursor drift on resize", () => {
 });
 
 describe("centered single box", () => {
-  it("box is centered at wide sizes and appears exactly once through a drag sweep", () => {
+  it("box is centered at wide sizes and appears exactly once through a drag sweep", async () => {
     const { vt, tui } = makeVt(40, 120);
     tui.enableHero("0.1.4");
     tui.show();
     for (const [cols, rows] of [[120, 40], [90, 30], [70, 24], [55, 16], [120, 40], [60, 20]] as Array<[number, number]>) {
       vt.resize(cols, rows);
-      tui.onResize();
+      await tui.onResizeAsync();
       const lines = vt.screen().split("\n");
       const topIdx = lines.findIndex((l) => l.includes("╭"));
       expect(topIdx).toBeGreaterThanOrEqual(0);

@@ -316,6 +316,7 @@ export class Tui {
   private cursorLine = 0;
   private lastCols = 0;
   private lastRows = 0;
+  private resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
 
   constructor(
@@ -955,13 +956,22 @@ export class Tui {
     this.refresh();
   }
 
+  async onResizeAsync(): Promise<void> {
+    this.onResize();
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  }
+
   onResize(): void {
-    if (this.busy && this.view !== "permission") return;
-    this.tty.write("\x1b[2J\x1b[H");
-    this.lastLines = [];
-    this.cursorLine = 0;
-    this.shown = false;
-    this.show();
+    if (this.resizeTimer !== null) return;
+    this.resizeTimer = setTimeout(() => {
+      this.resizeTimer = null;
+      if (this.busy && this.view !== "permission") return;
+      this.tty.write("\x1b[2J\x1b[H");
+      this.lastLines = [];
+      this.cursorLine = 0;
+      this.shown = false;
+      this.show();
+    }, 0);
   }
 
   permission(): Promise<"a" | "v" | "n"> {
