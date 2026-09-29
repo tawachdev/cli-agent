@@ -280,9 +280,6 @@ export class Tui {
   private ctxPct = 0;
   private sessionShort = "";
   private permissionResolve: ((answer: "a" | "v" | "n") => void) | null = null;
-  private hero: string[] = [];
-  private heroActive = false;
-  private heroVersion = "";
   private bindings: Record<string, string> | null = null;
   private providers: ProviderEntry[] = [];
   private providerIndex = 0;
@@ -354,11 +351,11 @@ export class Tui {
   }
 
   private innerWidth(): number {
-    return Math.max(8, Math.min(this.usable - 4, 72));
+    return Math.max(8, this.usable - 4);
   }
 
   private boxLead(): string {
-    return " ".repeat(Math.max(0, Math.floor((this.usable - this.innerWidth() - 4) / 2)));
+    return "";
   }
 
   private boxEdge(top: boolean): string {
@@ -409,13 +406,15 @@ export class Tui {
   private renderHints(): string {
     const text = "enter send · / commands · tab model · esc stop · ctrl+c exit";
     const line = C.dim + trunc(text, this.usable - 4) + C.reset;
-    const pad = " ".repeat(Math.max(0, this.usable - 2 - visibleLen(line)));
+    const pad = " ".repeat(Math.max(0, Math.floor((this.usable - visibleLen(line)) / 2)));
     return pad + line;
   }
 
   private renderTip(): string {
     const tip = tipsList()[this.turns % 5]!;
-    return "  " + C.gold + "● tip " + C.reset + C.dim + trunc(tip, this.usable - 10) + C.reset;
+    const line = C.gold + "● tip " + C.reset + C.dim + trunc(tip, this.usable - 10) + C.reset;
+    const pad = " ".repeat(Math.max(0, Math.floor((this.usable - visibleLen(line)) / 2)));
+    return pad + line;
   }
 
   private renderMenu(): string[] {
@@ -560,9 +559,8 @@ export class Tui {
       : this.view === "brandGrid256" ? this.brandGridLines()
       : this.view === "providerAdd" ? this.providerAddLines()
       : [];
-    const hero = this.heroActive ? this.hero : [];
-    const prefix = hero.length + menu.length + overlay.length;
-    const lines = [...hero, ...menu, ...overlay];
+    const prefix = menu.length + overlay.length;
+    const lines = [...menu, ...overlay];
     if (this.rows >= 4) {
       lines.push(this.boxEdge(true));
       lines.push(this.boxLine(""));
@@ -693,9 +691,8 @@ export class Tui {
 
   beginBusy(): void {
     this.busy = true;
-    this.heroActive = false;
     this.turns += 1;
-    this.hide();
+    this.refresh();
   }
 
   endBusy(): void {
