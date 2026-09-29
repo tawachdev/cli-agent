@@ -137,6 +137,7 @@ export class Chat {
   private lastToolMs = 0;
   private stateLabel = "IDLE";
   private lastFailure = "";
+  private failureShown = false;
   private awaitingRun = false;
   uiHandlesErrors = false;
   lastWasStream = false;
@@ -145,6 +146,7 @@ export class Chat {
     stream(text: string): void;
     streamStart(): void;
     streamEnd(): void;
+    setStatus(state: string, steps: number): void;
   } | null = null;
   onError: (message: string) => void = (message) => {
     if (!this.uiHandlesErrors) this.tty.write(C.red + "  ✘ " + message + "\n" + C.reset);
@@ -197,8 +199,9 @@ export class Chat {
       "● " + this.stateLabel + " · steps " + this.steps + " · ctx " + this.ctxPct + "%" +
       (this.tokensPerSec !== null ? " · " + this.tokensPerSec.toFixed(1) + " tok/s" : "") +
       (this.lastTool ? " · " + this.lastTool : "");
-    if (this.ui) this.ui.printAbove([C.dim + dashboard + C.reset]);
-    else this.tty.write(fit(
+    if (this.ui) {
+      this.ui.setStatus(this.stateLabel, this.steps);
+    } else this.tty.write(fit(
       "  " + chip(this.stateLabel, this.stateLabel === "DONE") + " " +
       C.dim + "steps " + C.reset + this.steps + "  " +
       C.dim + "ctx " + C.reset + ctx + " " + this.ctxPct + "%  " +
@@ -322,7 +325,11 @@ export class Chat {
       case "turn.failed":
         this.chipClose();
         this.lastFailure = String(p["reason"] ?? "");
-        if (!this.awaitingRun) this.onError("failed: " + (p["reason"] ?? ""));
+        this.failureShown = false;
+        if (!this.awaitingRun) {
+          this.onError("failed: " + (p["reason"] ?? ""));
+          this.failureShown = true;
+        }
         break;
       case "turn.aborted":
         this.chipClose();
@@ -414,9 +421,11 @@ export class Chat {
     const result = await request("/agent/run", payload);
     if (!result["ok"]) {
       const message = String(result["error"] ?? "unknown");
-      if (!message.includes("aborted")) {
-        this.tty.write(C.red + "  ✘ " + message + "\n" + C.reset);
+      if (!message.includes("aborted") && (message !== this.lastFailure || !this.failureShown)) {
+        this.onError(message);
       }
+      this.lastFailure = "";
+      this.failureShown = false;
       this.printDashboard();
     }
   }

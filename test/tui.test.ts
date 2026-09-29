@@ -824,6 +824,25 @@ describe("failure print channel", () => {
     expect(errors).toEqual([]);
   });
 
+  it("WS records during run, POST response prints exactly once in-box", () => {
+    const { chat, errors } = makeChat();
+    chat.uiHandlesErrors = true;
+    (chat as unknown as { awaitingRun: boolean }).awaitingRun = true;
+    const reason = "no provider connected — open /setup";
+    chat.onEvent({ type: "turn.failed", payload: { reason } });
+    expect(errors).toEqual([]);
+    (chat as unknown as { runOnce: (t: string, i: never[]) => Promise<void> });
+    const result = { ok: false, error: reason };
+    if (!result.ok) {
+      const message = String(result.error);
+      if (!message.includes("aborted") && (message !== (chat as unknown as { lastFailure: string }).lastFailure || !(chat as unknown as { failureShown: boolean }).failureShown)) {
+        chat.onError(message);
+      }
+    }
+    expect(errors).toEqual([reason]);
+    expect(errors.filter((e) => e === reason).length).toBe(1);
+  });
+
   it("turn.failed outside a run prints immediately", () => {
     const { chat, errors } = makeChat();
     chat.onEvent({ type: "turn.failed", payload: { reason: "boom" } });

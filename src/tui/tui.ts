@@ -301,6 +301,7 @@ export class Tui {
   private brandModeIndex = 0;
   private brandSingleColor = false;
   private brandCustomColors: string[] = [];
+  private statusExtra = "";
   private customColorBuffer = "";
   private customColorError = "";
   private gridIndex = 0;
@@ -404,7 +405,7 @@ export class Tui {
   private renderStatus(): string {
     const label = trunc(this.tier.label, Math.max(3, Math.min(9, this.innerWidth() - 3)));
     const images = this.pendingImages.length > 0 ? " · ▤" + this.pendingImages.length : "";
-    const meta = trunc(" · ctx " + this.ctxPct + "% · s " + this.sessionShort + images, Math.max(0, this.innerWidth() - 3 - label.length));
+    const meta = trunc(this.statusExtra + " · ctx " + this.ctxPct + "% · s " + this.sessionShort + images, Math.max(0, this.innerWidth() - 3 - label.length));
     return C.teal + "●" + C.reset + " " + C.bold + C.cream + label + C.reset + C.dim + meta + C.reset;
   }
 
@@ -887,6 +888,11 @@ export class Tui {
     this.brandPicks = [];
     this.view = "brand";
     this.brandIndex = 0;
+    this.refresh();
+  }
+
+  setChatStatus(state: string, steps: number): void {
+    this.statusExtra = state === "IDLE" && steps === 0 ? "" : " · " + state + " · steps " + steps;
     this.refresh();
   }
 

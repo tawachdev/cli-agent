@@ -401,18 +401,19 @@ describe("full chat flow in box", () => {
       stream: (t) => tui.stream(t),
       streamStart: () => tui.streamStart(),
       streamEnd: () => tui.streamEnd(),
+      setStatus: () => {},
     };
     const type = (s: string) => { for (const ch of s) tui.handleKey({ kind: "char", ch }); };
     type("hi");
     key(tui, "enter");
     tui.beginBusy();
-    chat.ui.printAbove(["\x1b[7m YOU \x1b[0m hi"]);
+    chat.ui?.printAbove(["\x1b[7m YOU \x1b[0m hi"]);
     await chat.onEvent({ type: "token.delta", payload: { text: "Salam! Kifach " } });
     await chat.onEvent({ type: "token.delta", payload: { text: "n3awnek?" } });
     await chat.onEvent({ type: "message.completed", payload: {} });
     await chat.onEvent({ type: "tool.requested", payload: { name: "fs.read", arguments: { path: "a.ts" } } });
     await chat.onEvent({ type: "tool.result", payload: { ok: true, name: "fs.read" } });
-    chat.ui.printAbove(["\x1b[7m YOU \x1b[0m ok"]);
+    chat.ui?.printAbove(["\x1b[7m YOU \x1b[0m ok"]);
     await chat.onEvent({ type: "turn.failed", payload: { reason: "no API key" } });
     chat.onError("failed: no API key");
     const screen = vt.screen();
@@ -438,6 +439,7 @@ describe("double-send repro", () => {
       stream: (t) => tui.stream(t),
       streamStart: () => tui.streamStart(),
       streamEnd: () => tui.streamEnd(),
+      setStatus: () => {},
     };
     tui.show();
     const type = (s: string) => { for (const ch of s) tui.handleKey({ kind: "char", ch }); };
@@ -465,8 +467,12 @@ describe("in-box errors", () => {
     const { vt, tui } = makeVt(24, 80);
     tui.show();
     tui.showError('no API key for "gemini" — /providers → set key, or set AGENT_KEY_GEMINI');
+    tui.setChatStatus("IDLE", 0);
     const errorScreen = vt.screen();
     expect(errorScreen).toContain("no API key");
+    expect(errorScreen).toContain("MIMON 2");
+    tui.setChatStatus("RESPONDING", 2);
+    expect(vt.screen()).toContain("RESPONDING · steps 2");
     for (const line of errorScreen.split("\n")) {
       expect(line.length).toBeLessThanOrEqual(80);
     }
