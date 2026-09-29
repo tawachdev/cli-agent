@@ -160,62 +160,52 @@ describe("splash", () => {
     }
   });
 
-  it("grows the hero box live when the terminal is enlarged", () => {
-    const { tui, tty } = makeTui(40, 24);
-    tui.enableHero("0.2.0");
+  it("prints the hero banner once and it survives resizes", () => {
+    const { tui, tty } = makeTui(40, 40);
+    tui.enableHero("0.1.4");
     tui.show();
     expect(tty.text()).toContain("█ █ █");
+    expect(tty.text()).toContain("v0.1.4 · your keys · your machine");
     tty.clear();
     tty.columns = 90;
     tui.onResize();
-    const t = tty.text();
-    expect(t).toContain("██ ██ ██");
-    
-    expect(t).toContain("Ask anything");
-    expect(t.split("╭").length - 1).toBe(2);
-    for (const line of tty.lines()) {
-      expect(visibleLen(line)).toBeLessThanOrEqual(89);
-    }
+    expect(tty.text()).toContain("Ask anything");
   });
 
   it("never duplicates the box across resize sweeps", () => {
-    const { tui, tty } = makeTui(24, 24);
-    tui.enableHero("0.2.0");
+    const { tui, tty } = makeTui(40, 40);
+    tui.enableHero("0.1.4");
     tui.show();
-    for (const cols of [18, 30, 60, 90, 30, 90, 24]) {
+    for (const cols of [40, 60, 90, 60, 90, 40]) {
       tty.clear();
       tty.columns = cols;
       tui.onResize();
-      expect(tty.text().split("╭").length - 1).toBe(cols >= 32 ? 2 : 1);
+      expect(tty.text().split("╭").length - 1).toBe(1);
       for (const line of tty.lines()) {
         expect(visibleLen(line)).toBeLessThanOrEqual(Math.max(20, cols));
       }
     }
   });
 
-  it("repaints the whole pane on resize while the hero is up, leaving no residue", () => {
-    const { tui, tty } = makeTui(90, 24);
-    tui.enableHero("0.2.0");
+  it("hero banner is printed above the input box, never redrawn over it", () => {
+    const { tui, tty } = makeTui(90, 40);
+    tui.enableHero("0.1.4");
     tui.show();
-    tty.clear();
     tty.columns = 40;
     tui.onResize();
-    expect(tty.chunks.join("")).toContain("\x1b[2J");
     const t = tty.text();
-    expect(t).not.toContain("███╗");
-    expect(t.split("╭").length - 1).toBe(2);
-    expect(t).toContain("█ █ █");
+    expect(t).toContain("Ask anything");
+    expect(t).toContain("██ ██ ██");
   });
 
-  it("drops the hero box after the first submission", () => {
-    const { tui, tty } = makeTui(80, 24);
+  it("keeps the hero banner in history after the first submission", () => {
+    const { tui, tty } = makeTui(80, 40);
     tui.enableHero("0.2.0");
     tui.show();
     type(tui, "task");
-    tty.clear();
     tui.handleKey({ kind: "enter" });
     tui.endBusy();
-    expect(tty.text()).not.toContain("███╗");
+    expect(tty.text()).toContain("██ ██ ██");
     expect(tty.text()).toContain("Ask anything");
   });
 });

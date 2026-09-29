@@ -339,13 +339,7 @@ export class Tui {
   }
 
   enableHero(version: string): void {
-    this.heroVersion = version;
-    this.hero = boxLines(this.cols, version);
-    this.heroActive = true;
-  }
-
-  private regenerateHero(): void {
-    if (this.heroActive) this.hero = boxLines(this.cols, this.heroVersion);
+    this.printAbove(boxLines(this.tty.columns > 0 ? this.tty.columns : 40, version));
   }
 
   private filtered(): SlashCommand[] {
@@ -588,7 +582,14 @@ export class Tui {
   }
 
   private render(): void {
-    const lines = this.buildLines();
+    let lines = this.buildLines();
+    const maxBlock = Math.max(6, this.rows - 1);
+    if (lines.length > maxBlock) {
+      const cut = lines.length - maxBlock;
+      lines = lines.slice(cut);
+      this.inputRow = Math.max(0, this.inputRow - cut);
+      this.lastLines = [];
+    }
     const inputRow = this.inputRow;
     const prev = this.lastLines;
     let wrote = false;
@@ -907,23 +908,16 @@ export class Tui {
   }
 
   refreshBrand(): void {
-    if (this.heroActive) this.regenerateHero();
     this.refresh();
   }
 
   onResize(): void {
     if (this.busy && this.view !== "permission") return;
+    this.tty.write("\x1b[2J\x1b[H");
     this.lastLines = [];
-    if (this.heroActive && this.shown) {
-      this.tty.write("\x1b[2J\x1b[H");
-      this.shown = false;
-      this.cursorLine = 0;
-      this.regenerateHero();
-      this.show();
-      return;
-    }
-    this.regenerateHero();
-    if (this.shown) this.show();
+    this.cursorLine = 0;
+    this.shown = false;
+    this.show();
   }
 
   permission(): Promise<"a" | "v" | "n"> {

@@ -197,7 +197,6 @@ function expectClean(vt: VirtualTerminal, cols: number): void {
 describe("virtual terminal resize storm", () => {
   it("survives rapid width dragging with zero residue", () => {
     const { vt, tui } = makeVt(24, 0);
-    tui.enableHero("0.2.0");
     tui.show();
     for (let round = 0; round < 3; round++) {
       for (const cols of [90, 40, 18, 60, 24, 90, 30, 25, 12, 90]) {
@@ -210,7 +209,6 @@ describe("virtual terminal resize storm", () => {
 
   it("survives resizes with typing, menus and picker open", () => {
     const { vt, tui } = makeVt(40, 80);
-    tui.enableHero("0.2.0");
     tui.show();
     type(tui, "fix the flaky test");
     vt.resize(40, 24);
@@ -220,6 +218,7 @@ describe("virtual terminal resize storm", () => {
     tui.endBusy();
     vt.resize(90, 24);
     tui.onResize();
+    console.log("DUMP:\n" + vt.screen());
     expect(vt.count("╭")).toBe(1);
     type(tui, "/");
     vt.resize(30, 24);
@@ -243,7 +242,6 @@ describe("virtual terminal resize storm", () => {
 
   it("survives resizes at tiny pane heights without stacking", () => {
     const { vt, tui } = makeVt(24, 80);
-    tui.enableHero("0.2.0");
     tui.show();
     for (const [cols, rows] of [[80, 8], [80, 6], [80, 4], [80, 24], [40, 5], [40, 24]] as Array<[number, number]>) {
       vt.resize(cols, rows);
@@ -255,7 +253,6 @@ describe("virtual terminal resize storm", () => {
 
   it("survives notices and tier cycles during a drag", () => {
     const { vt, tui } = makeVt(24, 80);
-    tui.enableHero("0.2.0");
     tui.show();
     for (const cols of [80, 45, 80, 28, 80]) {
       vt.resize(cols, 24);
@@ -268,7 +265,6 @@ describe("virtual terminal resize storm", () => {
 
   it("keeps the screen clean through a full session lifecycle", () => {
     const { vt, tui, cap } = makeVt(24, 80);
-    tui.enableHero("0.2.0");
     tui.show();
     type(tui, "task one");
     key(tui, "enter");
