@@ -578,14 +578,19 @@ export class Tui {
       lines.push(this.boxEdge(true));
       lines.push(this.boxLine(""));
       if (this.bannerActive) {
-        for (const bannerLine of this.bannerInnerLines()) {
-          lines.push(this.boxLine("  " + bannerLine));
+        if (this.rows >= 24) {
+          for (const bannerLine of this.bannerInnerLines()) {
+            lines.push(this.boxLine("  " + bannerLine));
+          }
+        } else if (this.rows >= 16) {
+          const brand = brandName();
+          lines.push(this.boxLine("  " + C.teal + C.bold + "✦ " + brand + C.reset + C.dim + "  v" + this.bannerVersion + C.reset));
         }
         lines.push(this.boxLine(""));
       }
       const inner = Math.max(10, this.innerWidth() - 6);
       const fixedCount = lines.length + 6;
-      const allow = Math.max(0, (this.rows - 1) - fixedCount);
+      const allow = Math.max(0, (this.rows - 1) - fixedCount - 1);
       const shown = this.chatLines.slice(-allow * 2);
       for (const logical of shown) {
         for (const visual of wrap(logical, inner)) {

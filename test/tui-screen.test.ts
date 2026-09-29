@@ -343,6 +343,48 @@ describe("brand picker under hero", () => {
   });
 });
 
+describe("resize never overflows the screen", () => {
+  it("box always fits the viewport at every size in a live drag sweep", () => {
+    const { vt, tui } = makeVt(40, 120);
+    tui.enableHero("0.1.4");
+    tui.show();
+    const sizes: Array<[number, number]> = [
+      [120, 40], [90, 30], [70, 24], [60, 20], [52, 16], [50, 14],
+      [50, 12], [60, 20], [50, 12], [120, 40], [80, 18], [50, 12], [120, 40],
+    ];
+    for (const [cols, rows] of sizes) {
+      vt.resize(cols, rows);
+      tui.onResize();
+      const screen = vt.screen();
+      const lines = screen.split("\n");
+      for (const line of lines) {
+        expect(line.length).toBeLessThanOrEqual(cols);
+      }
+      expect((screen.match(/╭/g) ?? []).length).toBe(1);
+      expect(screen).toContain("Ask anything");
+    }
+  });
+
+  it("banner degrades instead of overflowing: art on tall, one-line on medium, gone on tiny", () => {
+    const { vt, tui } = makeVt(30, 120);
+    tui.enableHero("0.1.4");
+    tui.show();
+    vt.resize(120, 30);
+    tui.onResize();
+    expect(vt.screen()).toContain("██");
+    vt.resize(120, 18);
+    tui.onResize();
+    const medium = vt.screen();
+    expect(medium).toContain("✦");
+    expect(medium).not.toContain("██");
+    vt.resize(120, 12);
+    tui.onResize();
+    const tiny = vt.screen();
+    expect(tiny).not.toContain("██");
+    expect(tiny).toContain("Ask anything");
+  });
+});
+
 describe("real cursor placement", () => {
   it("sits at the text end inside the input box", () => {
     const { vt, tui } = makeVt(40, 100);
