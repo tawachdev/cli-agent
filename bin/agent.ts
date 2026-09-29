@@ -356,6 +356,7 @@ async function main(): Promise<void> {
       }
     }
     if (!up) {
+      stdout.write("\x1b[?1049l");
       stdout.write(C.red + "\n  backend did not come up at " + backendOrigin + "\n  start it manually with: bun run dev\n\n" + C.reset);
       spawnedBackend?.kill();
       cleanup();
