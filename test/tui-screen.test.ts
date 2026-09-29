@@ -396,7 +396,7 @@ describe("full-height box", () => {
     expect(lines[0]!.includes("╭")).toBe(true);
     const bottomIdx = lines.findIndex((l) => l.includes("╰"));
     expect(bottomIdx).toBe(27);
-    expect(lines[lines.length - 3] ?? "").toContain("enter send");
+    expect(lines[bottomIdx + 1] ?? "").toContain("enter send");
   });
 });
 
