@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Chat } from "../src/tui/chat";
+import { brandName } from "../src/shared/brand";
+import { glyphWord } from "../src/shared/glyphs";
 import { Tui, type Key, type Tty } from "../src/tui/tui";
 
 class VirtualTerminal {
@@ -387,16 +389,72 @@ describe("resize never overflows the screen", () => {
   });
 });
 
-describe("full-height box", () => {
-  it("box fills the viewport — top edge at row 0, bottom edge above the footer", async () => {
+describe("compact bottom-anchored box", () => {
+  it("box hugs its content, floats mid-screen with the void split around it, footer pinned", () => {
     const { vt, tui } = makeVt(30, 100);
     tui.enableHero("0.1.4");
     tui.show();
     const lines = vt.screen().split("\n");
-    expect(lines[0]!.includes("╭")).toBe(true);
+    const topIdx = lines.findIndex((l) => l.includes("╭"));
     const bottomIdx = lines.findIndex((l) => l.includes("╰"));
-    expect(bottomIdx).toBe(27);
-    expect(lines[bottomIdx + 1] ?? "").toContain("enter send");
+    expect(topIdx).toBeGreaterThan(0);
+    expect(lines[0]!.trim()).toBe("");
+    expect(bottomIdx).toBeGreaterThan(topIdx);
+    expect(bottomIdx).toBeLessThan(28);
+    expect(lines[28] ?? "").toContain("enter send");
+    expect(lines[29] ?? "").toContain("tip");
+    expect(vt.count("╭")).toBe(1);
+  });
+
+  it("keeps the brand name readable when the width cannot fit the block art — borderless minimal", () => {
+    const mini = glyphWord(brandName(), true);
+    const cols = mini!.width + 8;
+    const { vt, tui } = makeVt(30, cols);
+    tui.enableHero("0.1.4");
+    tui.show();
+    const screen = vt.screen();
+    expect(screen).toContain("✦ " + brandName());
+    expect(vt.count("╭")).toBe(1);
+    for (const line of screen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(cols);
+    }
+  });
+
+  it("at ultra-narrow width there is no broken border — a complete minimal prompt", () => {
+    const { vt, tui } = makeVt(30, 12);
+    tui.enableHero("0.1.4");
+    tui.show();
+    const screen = vt.screen();
+    expect(screen).not.toContain("╭");
+    expect(screen).not.toContain("╰");
+    expect(screen).not.toContain("├");
+    expect(screen).toContain("Ask");
+    for (const line of screen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(12);
+    }
+  });
+
+  it("hero art is centered inside the box, not glued to the left edge", () => {
+    const { vt, tui } = makeVt(30, 100);
+    tui.enableHero("0.1.4");
+    tui.show();
+    const artLine = vt.screen().split("\n").find((l) => l.includes("█"));
+    expect(artLine).toBeDefined();
+    const indent = artLine!.indexOf("█");
+    expect(indent).toBeGreaterThan(10);
+  });
+
+  it("box grows upward as chat fills and caps at the viewport without overflow", () => {
+    const { vt, tui } = makeVt(30, 100);
+    tui.show();
+    for (let i = 0; i < 80; i++) tui.historyPush("chat line " + i);
+    tui.refresh();
+    const lines = vt.screen().split("\n");
+    const topIdx = lines.findIndex((l) => l.includes("╭"));
+    expect(topIdx).toBe(0);
+    expect(lines.length).toBeLessThanOrEqual(30);
+    expect((vt.screen().match(/╭/g) ?? []).length).toBe(1);
+    expect(vt.screen()).toContain("Ask anything");
   });
 });
 
@@ -474,6 +532,84 @@ describe("real cursor placement", () => {
     tui.show();
     for (const ch of "hello") tui.handleKey({ kind: "char", ch });
     expect(vt.row).toBe(vt.screen().split("\n").findIndex((l) => l.includes("hello")));
+  });
+});
+
+describe("long chat never scrolls the screen", () => {
+  it("200 chat lines at 24 rows stay clipped to one viewport with the newest visible", () => {
+    const { vt, tui } = makeVt(24, 80);
+    tui.show();
+    for (let i = 0; i < 200; i++) tui.historyPush("chat line " + i + " padding text so some lines wrap around");
+    tui.refresh();
+    const screen = vt.screen();
+    expect(vt.screen().split("\n").length).toBeLessThanOrEqual(24);
+    expect((screen.match(/╭/g) ?? []).length).toBe(1);
+    expect(screen).toContain("chat line 199");
+    expect(screen).toContain("Ask anything");
+  });
+
+  it("streaming into a full history keeps one box and the newest text on screen", () => {
+    const { vt, tui } = makeVt(24, 80);
+    tui.show();
+    for (let i = 0; i < 200; i++) tui.historyPush("old line " + i);
+    type(tui, "task");
+    key(tui, "enter");
+    tui.historyStream("fresh answer tokens");
+    const screen = vt.screen();
+    expect((screen.match(/╭/g) ?? []).length).toBe(1);
+    expect(screen).toContain("fresh answer tokens");
+    expect(vt.screen().split("\n").length).toBeLessThanOrEqual(24);
+  });
+});
+
+describe("resize during a running turn", () => {
+  it("repaints exactly one box while busy instead of freezing the old frame", async () => {
+    const { vt, tui } = makeVt(24, 80);
+    tui.show();
+    type(tui, "long task");
+    key(tui, "enter");
+    vt.resize(120, 40);
+    await tui.onResizeAsync();
+    const screen = vt.screen();
+    expect((screen.match(/╭/g) ?? []).length).toBe(1);
+    expect(screen).toContain("working");
+    for (const line of screen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(120);
+    }
+  });
+});
+
+describe("displaced cursor after terminal reflow", () => {
+  it("keeps one box when the terminal leaves the cursor anywhere mid-screen", () => {
+    const { vt, tui } = makeVt(24, 120);
+    tui.show();
+    vt.resize(60, 20);
+    vt.row = 7;
+    vt.col = 43;
+    type(tui, "abc");
+    const screen = vt.screen();
+    expect((screen.match(/╭/g) ?? []).length).toBe(1);
+    expect(screen).toContain("abc");
+    expect(vt.screen().split("\n").length).toBeLessThanOrEqual(20);
+  });
+});
+
+describe("stale frames coming back from scrollback", () => {
+  it("a resize wipes old-frame rows the terminal pulls back into view", async () => {
+    const { vt, tui } = makeVt(24, 80);
+    tui.show();
+    vt.resize(90, 30);
+    const grid = (vt as unknown as { grid: string[][] }).grid;
+    grid[0] = "╭─ old frame from scrollback".padEnd(90).split("");
+    grid[5] = "╰─ old frame bottom".padEnd(90).split("");
+    await tui.onResizeAsync();
+    const screen = vt.screen();
+    expect((screen.match(/╭/g) ?? []).length).toBe(1);
+    expect(screen).not.toContain("old frame");
+    expect(screen).toContain("Ask anything");
+    for (const line of screen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(90);
+    }
   });
 });
 

@@ -15,8 +15,31 @@ export interface Tty {
   readonly rows: number;
 }
 
+const WIDE_CHAR = /[\u1100-\u115F\u2329\u232A\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF01-\uFF60\uFFE0-\uFFE6\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F7E0}-\u{1F7EB}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{20000}-\u{2FFFD}\u{30000}-\u{3FFFD}]/u;
+const ZERO_WIDTH = /[\p{M}\u200B\u200C\u200D\u2060\uFEFF]/u;
+
+function charWidth(ch: string): number {
+  if (ZERO_WIDTH.test(ch)) return 0;
+  if (WIDE_CHAR.test(ch)) return 2;
+  return 1;
+}
+
 export function visibleLen(s: string): number {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
+  let n = 0;
+  for (const ch of s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")) n += charWidth(ch);
+  return n;
+}
+
+export function plainClip(s: string, max: number): string {
+  let out = "";
+  let n = 0;
+  for (const ch of s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")) {
+    const w = charWidth(ch);
+    if (n + w > max) break;
+    out += ch;
+    n += w;
+  }
+  return out;
 }
 
 export function WIDTH(): number {
@@ -53,9 +76,10 @@ function trunc(s: string, max: number): string {
   let out = "";
   let n = 0;
   for (const ch of s) {
-    if (n >= max) break;
+    const w = charWidth(ch);
+    if (n + w > max) break;
     out += ch;
-    n += 1;
+    n += w;
   }
   return out;
 }
@@ -267,7 +291,7 @@ export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
   private cursor = 0;
-  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "brandCustomColor" | "brandGrid256" | "providerAdd" = "prompt";
+  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "brandCustomColor" | "brandGrid256" | "providerAdd" | "help" = "prompt";
   private menuIndex = 0;
   private pickerIndex = 1;
   private shown = false;
@@ -309,11 +333,11 @@ export class Tui {
   private history: string[] = [];
   private workingLine = "";
   private chatLines: string[] = [];
+  private helpLines: string[] = [];
   private bannerActive = false;
   private bannerVersion = "";
   private chatStreamOpen = false;
   private lastLines: string[] = [];
-  private cursorLine = 0;
   private lastCols = 0;
   private lastRows = 0;
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -373,12 +397,7 @@ export class Tui {
     const budget = Math.max(4, this.innerWidth() - 4);
     let out = content;
     if (visibleLen(out) > budget) {
-      let plain = "";
-      for (const ch of out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")) {
-        if (plain.length >= budget) break;
-        plain += ch;
-      }
-      out = C.reset + plain;
+      out = C.reset + plainClip(out, budget);
     }
     const pad = Math.max(0, this.innerWidth() - 2 - visibleLen(out));
     return this.boxLead() + C.dim + "│" + C.reset + "  " + out + " ".repeat(pad) + "  " + C.dim + "│" + C.reset;
@@ -399,7 +418,7 @@ export class Tui {
   }
 
   private renderInput(): string {
-    const maxText = this.innerWidth() - 4;
+    const maxText = this.usable < 22 ? this.usable - 2 : this.innerWidth() - 4;
     if (this.busy) {
       return C.dim + trunc("▌ working — esc to stop", maxText) + C.reset;
     }
@@ -551,6 +570,12 @@ export class Tui {
     return lines;
   }
 
+  private centered(content: string): string {
+    const budget = Math.max(4, this.innerWidth() - 4);
+    const lead = Math.max(0, Math.floor((budget - visibleLen(content)) / 2));
+    return " ".repeat(lead) + content;
+  }
+
   private buildLines(): string[] {
     if (this.view === "permission") {
       const lines = [
@@ -562,7 +587,8 @@ export class Tui {
     }
     const menu = this.view === "picker" ? [] : this.renderMenu();
     const overlay =
-      this.view === "picker" ? this.renderPicker()
+      this.view === "help" ? this.helpLines
+      : this.view === "picker" ? this.renderPicker()
       : this.view === "providers" ? this.providersLines()
       : this.view === "provider" ? this.providerItems()
       : this.view === "keyInput" ? this.keyInputLines()
@@ -575,50 +601,64 @@ export class Tui {
       : this.view === "brandGrid256" ? this.brandGridLines()
       : this.view === "providerAdd" ? this.providerAddLines()
       : [];
-    const prefix = menu.length + overlay.length;
     const lines = [...menu, ...overlay];
-    if (this.rows >= 4) {
+    if (this.rows >= 7 && this.usable >= 22) {
       lines.push(this.boxEdge(true));
       lines.push(this.boxLine(""));
       if (this.bannerActive) {
         if (this.rows >= 24) {
           for (const bannerLine of this.bannerInnerLines()) {
-            lines.push(this.boxLine("  " + bannerLine));
+            lines.push(this.boxLine(this.centered(bannerLine)));
           }
         } else if (this.rows >= 16) {
           const brand = brandName();
-          lines.push(this.boxLine("  " + C.teal + C.bold + "✦ " + brand + C.reset + C.dim + "  v" + this.bannerVersion + C.reset));
+          lines.push(this.boxLine(this.centered(C.teal + C.bold + "✦ " + brand + C.reset + C.dim + "  v" + this.bannerVersion + C.reset)));
         }
         lines.push(this.boxLine(""));
       }
       const inner = Math.max(10, this.innerWidth() - 6);
-      const fixedCount = lines.length + 6;
-      const allow = Math.max(0, (this.rows - 1) - fixedCount - 1);
-      const shown = this.chatLines.slice(-allow * 2);
-      for (const logical of shown) {
-        for (const visual of wrap(logical, inner)) {
-          lines.push(this.boxLine("  " + visual));
+      const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
+      const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0);
+      const budget = Math.max(1, this.rows - footerLines - fixedCount);
+      const visuals: string[] = [];
+      for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < budget; i--) {
+        const wrapped = wrap(this.chatLines[i]!, inner);
+        for (let j = wrapped.length - 1; j >= 0 && visuals.length < budget; j--) {
+          visuals.unshift(wrapped[j]!);
         }
       }
+      for (const visual of visuals) lines.push(this.boxLine("  " + visual));
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
       lines.push(this.boxLine(""));
-      const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
-      const boxTarget = Math.max(8, this.rows - footerLines);
-      const bottomCount = 4;
-      const fill = Math.max(0, boxTarget - lines.length - bottomCount - this.chatLines.length);
-      for (let i = 0; i < fill; i++) lines.push(this.boxLine(""));
       lines.push(C.dim + this.boxLead() + "├" + "─".repeat(this.innerWidth() + 2) + "┤" + C.reset);
       this.inputRow = lines.length;
       lines.push(this.boxLine(this.renderInput()));
       lines.push(this.boxLine(this.renderStatus()));
       lines.push(this.boxEdge(false));
-      this.inputRow = this.inputRow;
     } else {
+      if (this.bannerActive && this.rows >= 7 && this.usable >= 16) {
+        lines.push(C.teal + C.bold + "✦ " + brandName() + C.reset + C.dim + "  v" + this.bannerVersion + C.reset);
+        lines.push("");
+      }
+      this.inputRow = lines.length;
       lines.push(this.bar() + this.renderInput());
-      this.inputRow = prefix;
+      if (this.usable >= 16 && this.rows >= 5) lines.push(this.renderStatus());
     }
-    if (this.rows >= 9) lines.push(this.renderHints());
-    if (this.rows >= 12) lines.push(this.renderTip());
+    const footerAllowed = this.usable >= 22;
+    if (this.rows >= 9 && footerAllowed) lines.push(this.renderHints());
+    if (this.rows >= 12 && footerAllowed) lines.push(this.renderTip());
+    const footer = ((this.rows >= 9 && footerAllowed) ? 1 : 0) + ((this.rows >= 12 && footerAllowed) ? 1 : 0);
+    const pad = Math.max(0, this.rows - lines.length);
+    if (pad > 0) {
+      const body = lines.slice(0, lines.length - footer);
+      const foot = lines.slice(lines.length - footer);
+      const below = Math.floor(pad / 2);
+      const above = pad - below;
+      for (let i = 0; i < above; i++) body.unshift("");
+      for (let i = 0; i < below; i++) body.push("");
+      this.inputRow += above;
+      return [...body, ...foot];
+    }
     return lines;
   }
 
@@ -626,81 +666,40 @@ export class Tui {
     const cols = this.tty.columns > 0 ? this.tty.columns : 80;
     const rowsNow = this.tty.rows > 0 ? this.tty.rows : 24;
     if (this.lastCols > 0 && (cols !== this.lastCols || rowsNow !== this.lastRows)) {
-      this.tty.write("\x1b[2J\x1b[H");
+      this.tty.write("\x1b[2J\x1b[3J");
       this.lastLines = [];
-      this.cursorLine = 0;
-      this.shown = false;
     }
     this.lastCols = cols;
     this.lastRows = rowsNow;
-    const lines = this.buildLines().map((line) => {
-      if (visibleLen(line) <= cols) return line;
-      let plain = "";
-      for (const ch of line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")) {
-        if (plain.length >= cols) break;
-        plain += ch;
-      }
-      return C.reset + plain;
-    });
-    const inputRow = this.inputRow;
+    const frame = this.buildLines();
+    const dropped = Math.max(0, frame.length - rowsNow);
+    const budget = Math.max(8, cols - 1);
+    const view = frame.slice(dropped).map((line) => (visibleLen(line) <= budget ? line : C.reset + plainClip(line, budget)));
+    const inputRow = Math.max(0, Math.min(this.inputRow - dropped, view.length - 1));
+    const cursorCol = Math.max(0, Math.min(this.cursorCol, cols - 1));
     const prev = this.lastLines;
-    let wrote = false;
-    let endLine = this.cursorLine;
-    if (!this.shown || prev.length === 0) {
-      if (this.shown && this.cursorLine > 0) {
-        this.tty.write("\x1b[" + this.cursorLine + "A");
+    const parts: string[] = ["\x1b[H"];
+    if (prev.length > 0 && prev.length === view.length) {
+      for (let i = 0; i < view.length; i++) {
+        if (prev[i] === view[i]) continue;
+        parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
       }
-      this.tty.write("\r\x1b[J");
-      this.tty.write(lines.join("\r\n"));
-      wrote = true;
-      endLine = lines.length - 1;
     } else {
-      const total = Math.max(prev.length, lines.length);
-      const changed: number[] = [];
-      for (let i = 0; i < total; i++) {
-        if (prev[i] !== lines[i]) changed.push(i);
+      for (let i = 0; i < view.length; i++) {
+        parts.push(view[i]! + "\x1b[K" + (i < view.length - 1 ? "\r\n" : ""));
       }
-      if (changed.length > 0) {
-        const move = (from: number, to: number): void => {
-          if (to < from) this.tty.write("\x1b[" + (from - to) + "A");
-          else if (to > from) this.tty.write("\x1b[" + (to - from) + "B");
-        };
-        if (changed.length * 3 > lines.length) {
-          const d = changed[0]!;
-          move(this.cursorLine, d);
-          this.tty.write("\r\x1b[J");
-          this.tty.write(lines.slice(d).join("\r\n"));
-          endLine = lines.length - 1;
-        } else {
-          let cur = this.cursorLine;
-          for (const idx of changed) {
-            move(cur, idx);
-            this.tty.write("\r\x1b[K");
-            if (idx < lines.length) this.tty.write(lines[idx]!);
-            cur = idx;
-          }
-          endLine = changed[changed.length - 1]!;
-        }
-        wrote = true;
-      }
+      parts.push("\x1b[J");
     }
-    if (wrote) {
-      if (endLine > inputRow) this.tty.write("\x1b[" + (endLine - inputRow) + "A");
-      else if (endLine < inputRow) this.tty.write("\x1b[" + (inputRow - endLine) + "B");
-    } else if (this.cursorLine !== inputRow) {
-      const delta = this.cursorLine - inputRow;
-      this.tty.write(delta > 0 ? "\x1b[" + delta + "A" : "\x1b[" + -delta + "B");
-    }
-    this.tty.write("\r");
-    if (this.cursorCol > 0) this.tty.write("\x1b[" + this.cursorCol + "C");
-    this.lastLines = lines;
-    this.cursorLine = inputRow;
+    parts.push("\x1b[" + (inputRow + 1) + ";" + (cursorCol + 1) + "H");
+    this.tty.write(parts.join(""));
+    this.lastLines = view;
     this.shown = true;
   }
 
   private cursorColumn(): number {
+    if (this.usable < 22) return 2 + visibleLen(trunc(this.input.slice(0, this.cursor), this.usable - 4));
     const lead = this.boxLead().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").length;
-    return lead + 3 + trunc(this.input.slice(0, this.cursor), this.usable - 6).length;
+    return lead + 3 + visibleLen(trunc(this.input.slice(0, this.cursor), this.usable - 6));
   }
 
   refresh(): void {
@@ -715,16 +714,13 @@ export class Tui {
   show(): void {
     this.cursorCol = this.cursorColumn();
     this.render();
-    this.shown = true;
   }
 
   hide(): void {
     if (!this.shown) return;
-    if (this.inputRow > 0) this.tty.write("\x1b[" + this.inputRow + "A");
-    this.tty.write("\r\x1b[J");
+    this.tty.write("\x1b[H\x1b[2J");
     this.shown = false;
     this.lastLines = [];
-    this.cursorLine = 0;
   }
 
   notice(msg: string): void {
@@ -970,10 +966,8 @@ export class Tui {
     if (this.resizeTimer !== null) return;
     this.resizeTimer = setTimeout(() => {
       this.resizeTimer = null;
-      if (this.busy && this.view !== "permission") return;
-      this.tty.write("\x1b[2J\x1b[H");
+      this.tty.write("\x1b[2J\x1b[3J");
       this.lastLines = [];
-      this.cursorLine = 0;
       this.shown = false;
       this.show();
     }, 0);
@@ -1069,7 +1063,10 @@ export class Tui {
     const palette = brandColors();
     const wide = glyphWord(brand, false);
     const mini = glyphWord(brand, true);
-    if (!wide || !mini) return [];
+    const version = "v" + this.bannerVersion;
+    if (!wide || !mini || this.innerWidth() < mini.width + 4) {
+      return [C.teal + C.bold + "✦ " + brand + C.reset + C.dim + "  " + version + C.reset];
+    }
     const useMini = this.innerWidth() < wide.width + 8;
     const art = useMini ? mini : wide;
     const gap = useMini ? " " : "  ";
@@ -1079,8 +1076,8 @@ export class Tui {
       lines.push(colored);
     }
     const meta = this.innerWidth() < 46
-      ? "v" + this.bannerVersion
-      : "v" + this.bannerVersion + " · your keys · your machine";
+      ? version
+      : version + " · your keys · your machine";
     lines.push(C.dim + meta + C.reset);
     return lines;
   }
@@ -1095,30 +1092,10 @@ export class Tui {
     this.refresh();
   }
 
-  printAbove(lines: string[]): void {
-    if (lines.length === 0) return;
-    if (this.shown && this.inputRow > 0) {
-      this.tty.write("\x1b[" + this.inputRow + "A");
-    }
-    this.tty.write("\r\x1b[J");
-    for (const line of lines) this.tty.write(line + "\n");
-    this.lastLines = [];
-    this.cursorLine = 0;
-    this.shown = false;
-    this.show();
-  }
-
-  streamStart(): void {
-    if (this.shown) this.hide();
-  }
-
-  stream(text: string): void {
-    this.tty.write(text);
-  }
-
-  streamEnd(): void {
-    this.tty.write(C.reset + "\n");
-    this.show();
+  showHelp(lines: string[]): void {
+    this.helpLines = lines;
+    this.view = "help";
+    this.refresh();
   }
 
   takePendingImages(): LoadedImage[] {
@@ -1284,6 +1261,12 @@ export class Tui {
     }
     if (this.busy) {
       if (key.kind === "escape") this.hooks.onAbort();
+      return;
+    }
+    if (this.view === "help") {
+      this.view = "prompt";
+      this.helpLines = [];
+      this.refresh();
       return;
     }
     if (this.view === "picker") {

@@ -675,7 +675,7 @@ describe("brand view", () => {
     expect(cap.brandColors).toEqual([["#00d700", "teal", "teal"]]);
   });
 
-  it("grid rows never exceed the box width and use foreground colors", () => {
+  it("grid rows never exceed the box width and use foreground colors", async () => {
     const { tui, tty } = makeTui(140, 30);
     tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
     tui.show();
@@ -685,16 +685,17 @@ describe("brand view", () => {
     tui.handleKey({ kind: "enter" });
     for (let i = 0; i < 15; i++) tui.handleKey({ kind: "right" });
     tui.handleKey({ kind: "enter" });
+    await tui.onResizeAsync();
     const raw = tty.chunks.join("");
-    const last = raw.slice(raw.lastIndexOf("\x1b[J") + 3).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "");
+    const last = raw.slice(raw.lastIndexOf("\x1b[H") + 3).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "");
     for (const line of last.split("\n")) {
       expect(line.replace(/\x1b\[[0-9;?]*m/g, "").length).toBeLessThanOrEqual(138);
     }
-    expect(raw.slice(raw.lastIndexOf("\x1b[J"))).toContain("\x1b[38;5;");
-    expect(raw.slice(raw.lastIndexOf("\x1b[J"))).not.toContain("\x1b[48;5;");
+    expect(raw.slice(raw.lastIndexOf("\x1b[H"))).toContain("\x1b[38;5;");
+    expect(raw.slice(raw.lastIndexOf("\x1b[H"))).not.toContain("\x1b[48;5;");
   });
 
-  it("grid window stays inside a short terminal and scrolls with the cursor", () => {
+  it("grid window stays inside a short terminal and scrolls with the cursor", async () => {
     const { tui, tty } = makeTui(100, 22);
     tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
     tui.show();
@@ -704,12 +705,14 @@ describe("brand view", () => {
     tui.handleKey({ kind: "enter" });
     for (let i = 0; i < 15; i++) tui.handleKey({ kind: "right" });
     tui.handleKey({ kind: "enter" });
+    await tui.onResizeAsync();
     const lastFrame = (): string => {
       const raw = tty.chunks.join("");
-      return raw.slice(raw.lastIndexOf("\x1b[J") + 3).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "");
+      return raw.slice(raw.lastIndexOf("\x1b[H") + 3).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "");
     };
     expect(lastFrame().split("\n").length).toBeLessThanOrEqual(22);
     for (let i = 0; i < 8; i++) tui.handleKey({ kind: "down" });
+    await tui.onResizeAsync();
     const frame = lastFrame();
     expect(frame).toContain("more");
     expect(frame.split("\n").length).toBeLessThanOrEqual(22);

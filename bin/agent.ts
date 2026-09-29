@@ -3,7 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { exit, stdin, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
 import { brandName } from "../src/shared/brand";
-import { C, decodeChunk, PRODUCT_VERSION, panel, splash, Tui, type Tty } from "../src/tui/tui";
+import { C, decodeChunk, PRODUCT_VERSION, splash, Tui, type Tty } from "../src/tui/tui";
 import {
   addProvider,
   backendOrigin,
@@ -134,14 +134,12 @@ async function main(): Promise<void> {
           ui.notice("· abort sent ·");
           return;
         case "/help":
-          ui.hide();
-          panel(tty, "help", C.gold, C.slate, [
+          ui?.showHelp([
             "enter send · / commands · tab cycle model",
             "esc stop turn / close menu · ctrl+c quit",
             "/new session · /model picker · /providers keys · /setup connect",
             "/brand name & colors · /stop abort",
           ]);
-          ui.show();
           return;
         case "/exit":
           bye();

@@ -26,7 +26,7 @@ def drain(t):
 
 drain(3.0)
 alt = b"\x1b[?1049h" in buf
-for cols, rows in [(120, 40), (90, 30), (70, 24), (55, 18), (90, 30), (120, 40)]:
+for cols, rows in [(120, 40), (90, 30), (70, 24), (55, 18), (90, 30), (120, 40), (50, 12), (40, 8), (120, 40)]:
     set_size(master, cols, rows)
     drain(1.0)
 try:
