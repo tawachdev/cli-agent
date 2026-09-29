@@ -114,6 +114,10 @@ export class AnthropicProvider implements ModelProvider {
         buffer = buffer.slice(newline + 1);
         if (line.startsWith("data:")) {
           const event = JSON.parse(line.slice(5).trim()) as AnthropicEvent;
+          if (event.type === "error") {
+            const err = (event as { error?: { message?: string } }).error;
+            throw new Error(`${this.label} stream error: ${err?.message ?? "unknown"}`);
+          }
           if (event.type === "message_start") {
             promptTokens = event.message?.usage?.input_tokens ?? 0;
           } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {

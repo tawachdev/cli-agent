@@ -69,6 +69,10 @@ export class ToolRegistry {
     } else if (tool.permissionClass !== "read") {
       return { ok: false, error: "permission denied: no permission engine configured, read-only mode" };
     }
-    return tool.invoke(parsed.data, ctx);
+    try {
+      return await tool.invoke(parsed.data, ctx);
+    } catch (error) {
+      return { ok: false, error: tool.name + " failed: " + (error as Error).message };
+    }
   }
 }

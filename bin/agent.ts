@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { exit, stdin, stdout } from "node:process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brandName } from "../src/shared/brand";
 import { C, decodeChunk, PRODUCT_VERSION, splash, Tui, type Tty } from "../src/tui/tui";
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
   let ui: Tui | null = null;
   let cleanup: () => void = () => {};
   let spawnedBackend: ChildProcess | null = null;
+  let taskFailed = false;
 
   const bye = (): void => {
     stdout.write("\x1b[?1049l");
@@ -306,6 +309,10 @@ async function main(): Promise<void> {
     };
   } else {
     const rl = createInterface({ input: stdin, output: stdout, terminal: stdout.isTTY === true });
+    chat.onError = (message) => {
+      taskFailed = true;
+      stdout.write(C.red + "  ✘ " + message + "\n" + C.reset);
+    };
     chat.permissionAsk = async () => {
       try {
         const answer = (await rl.question(C.gold + "  [a] once  [v] session  [n] deny › " + C.reset)).trim().toLowerCase();
@@ -323,12 +330,17 @@ async function main(): Promise<void> {
   } catch {
 
     const compiled = !process.execPath.endsWith("bun") && !process.execPath.includes("/bun-");
+    const backendEnv = {
+      ...process.env,
+      AGENT_WORKSPACE_ROOT: process.cwd(),
+      AGENT_DB_PATH: join(homedir(), ".agent", "agent.db"),
+    };
     spawnedBackend = compiled
-      ? spawn(process.execPath, ["serve"], { stdio: "ignore" })
+      ? spawn(process.execPath, ["serve"], { stdio: "ignore", env: backendEnv })
       : spawn(
           process.execPath,
           [fileURLToPath(new URL("../src/engine/app/bootstrap.ts", import.meta.url))],
-          { stdio: "ignore", cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
+          { stdio: "ignore", env: backendEnv, cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
         );
     const killBackend = (): void => {
       spawnedBackend?.kill();
@@ -375,7 +387,7 @@ async function main(): Promise<void> {
     chat.close();
     spawnedBackend?.kill();
     cleanup();
-    exit(0);
+    exit(taskFailed ? 1 : 0);
   }
 
   let savedBrand: { name: string; colors: string[]; customColors: string[] } | null = null;
@@ -394,7 +406,7 @@ async function main(): Promise<void> {
       const stale = keylessProviderBindings(roles, providers);
       if (stale.length > 0) {
         const list = stale.map((s) => s.role + " → " + s.provider).join(", ");
-        ui?.notice("⚠ bound without key: " + list + " — /providers → set key, wla /model → rebind");
+        ui?.notice("⚠ bound without key: " + list + " — /providers → set key, or /model → rebind");
       } else if (status.needsSetup) {
         ui?.notice("· bring your API key — /setup connects it in seconds · /brand makes it yours ·");
       }
