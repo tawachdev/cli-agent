@@ -237,6 +237,15 @@ describe("prompt chrome", () => {
 });
 
 describe("slash menu", () => {
+  it("keeps the selected-row highlight at narrow widths — truncation never strips it", () => {
+    const { tui, tty } = makeTui(66, 30);
+    tui.show();
+    type(tui, "/");
+    const raw = tty.chunks.join("");
+    const lastFrame = raw.slice(raw.lastIndexOf("\x1b[H"));
+    expect(lastFrame).toContain("\x1b[48;5;37m");
+  });
+
   it("filters commands as the user types", () => {
     const { tui, tty } = makeTui();
     tui.show();
@@ -657,6 +666,18 @@ describe("brand view", () => {
     expect(cap.brandColors).toEqual([["#00ff88", "teal", "teal"]]);
   });
 
+  it("selected-row color survives truncation at narrow widths", () => {
+    const { tui, tty } = makeTui(40, 30);
+    tui.openBrand({ name: "ANA", colors: ["teal"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    const raw = tty.chunks.join("");
+    const frame = raw.slice(raw.lastIndexOf("\x1b[H"));
+    expect(frame).toContain("\x1b[38;5;37m");
+    expect(frame).toContain("❯");
+  });
+
   it("all-256 grid picks a hex for the current letter", () => {
     const { tui, tty, cap } = makeTui();
     tui.openBrand({ name: "BLO", colors: ["teal", "gold"] });
@@ -672,7 +693,7 @@ describe("brand view", () => {
     tui.handleKey({ kind: "enter" });
     tui.handleKey({ kind: "enter" });
     tui.handleKey({ kind: "enter" });
-    expect(cap.brandColors).toEqual([["#00d700", "teal", "teal"]]);
+    expect(cap.brandColors).toEqual([["#00afd7", "teal", "teal"]]);
   });
 
   it("grid rows never exceed the box width and use foreground colors", async () => {
@@ -693,6 +714,75 @@ describe("brand view", () => {
     }
     expect(raw.slice(raw.lastIndexOf("\x1b[H"))).toContain("\x1b[38;5;");
     expect(raw.slice(raw.lastIndexOf("\x1b[H"))).not.toContain("\x1b[48;5;");
+  });
+
+  it("grid keeps its colors and its width at every terminal size", async () => {
+    for (const cols of [40, 55, 70, 100]) {
+      const { tui, tty } = makeTui(cols, 30);
+      tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
+      tui.show();
+      tui.handleKey({ kind: "down" });
+      tui.handleKey({ kind: "enter" });
+      tui.handleKey({ kind: "down" });
+      tui.handleKey({ kind: "enter" });
+      for (let i = 0; i < 15; i++) tui.handleKey({ kind: "right" });
+      tui.handleKey({ kind: "enter" });
+      await tui.onResizeAsync();
+      const raw = tty.chunks.join("");
+      const lastFrame = raw.slice(raw.lastIndexOf("\x1b[H"));
+      expect(lastFrame).toContain("\x1b[38;5;");
+      for (const line of lastFrame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "").split("\n")) {
+        expect(line.replace(/\x1b\[[0-9;?]*m/g, "").length).toBeLessThanOrEqual(cols);
+      }
+    }
+  });
+
+  it("the grid panel lives inside the main box — one outer border, nothing floating above", async () => {
+    const { tui, tty } = makeTui(100, 30);
+    tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    for (let i = 0; i < 15; i++) tui.handleKey({ kind: "right" });
+    tui.handleKey({ kind: "enter" });
+    await tui.onResizeAsync();
+    const raw = tty.chunks.join("");
+    const frame = raw.slice(raw.lastIndexOf("\x1b[H")).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "\n");
+    const mainTop = frame.indexOf("╭");
+    const panelTop = frame.indexOf("╭", mainTop + 1);
+    expect(mainTop).toBeGreaterThanOrEqual(0);
+    expect(panelTop).toBeGreaterThan(mainTop);
+    expect(frame.split("╭").length - 1).toBe(2);
+    expect(frame.indexOf("├")).toBeGreaterThan(panelTop);
+  });
+
+  it("nested panel edges align: top, body and bottom share exactly one width", async () => {
+    const { tui, tty } = makeTui(100, 30);
+    tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
+    tui.show();
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    for (let i = 0; i < 15; i++) tui.handleKey({ kind: "right" });
+    tui.handleKey({ kind: "enter" });
+    await tui.onResizeAsync();
+    const raw = tty.chunks.join("");
+    const plain = raw.slice(raw.lastIndexOf("\x1b[H")).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "\n");
+    const lines = plain.split("\n");
+    const top = lines.findIndex((l) => l.includes("╭─ all 256 colors"));
+    expect(top).toBeGreaterThan(0);
+    const bottom = lines.findIndex((l, i) => i > top && l.includes("╰") && l.includes("╯"));
+    expect(bottom).toBeGreaterThan(top);
+    const widths = new Set(lines.slice(top, bottom + 1).filter((l) => l.length > 0).map((l) => l.length));
+    expect(widths.size).toBe(1);
+    expect(lines[top]!).toContain("╮");
+    expect(lines[bottom]!).toContain("╯");
+    const panelLine = lines[top]!;
+    const leadGap = panelLine.indexOf("╭") - panelLine.indexOf("│") - 1 - 2;
+    expect(leadGap).toBeGreaterThanOrEqual(1);
   });
 
   it("grid window stays inside a short terminal and scrolls with the cursor", async () => {

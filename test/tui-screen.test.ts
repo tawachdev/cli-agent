@@ -369,7 +369,7 @@ describe("resize never overflows the screen", () => {
     }
   });
 
-  it("banner degrades instead of overflowing: art on tall, one-line on medium, gone on tiny", async () => {
+  it("banner scales with the height: art down to 17 rows, gone below 14", async () => {
     const { vt, tui } = makeVt(30, 120);
     tui.enableHero("0.1.4");
     tui.show();
@@ -378,13 +378,17 @@ describe("resize never overflows the screen", () => {
     expect(vt.screen()).toContain("██");
     vt.resize(120, 18);
     await tui.onResizeAsync();
-    const medium = vt.screen();
-    expect(medium).toContain("✦");
-    expect(medium).not.toContain("██");
+    expect(vt.screen()).toContain("█");
+    expect(vt.screen()).toContain("Ask anything");
+    vt.resize(120, 14);
+    await tui.onResizeAsync();
+    expect(vt.screen()).toContain("█");
+    expect(vt.screen()).toContain("Ask anything");
     vt.resize(120, 12);
     await tui.onResizeAsync();
     const tiny = vt.screen();
-    expect(tiny).not.toContain("██");
+    expect(tiny).not.toContain("█");
+    expect(tiny).toContain("✦ MIMON");
     expect(tiny).toContain("Ask anything");
   });
 });
@@ -420,6 +424,36 @@ describe("compact bottom-anchored box", () => {
     }
   });
 
+  it("at ultra-narrow width the conversation still shows above the input", () => {
+    const { vt, tui } = makeVt(30, 20);
+    tui.enableHero("0.1.4");
+    tui.show();
+    tui.historyPush("\x1b[7m YOU \x1b[0m slm");
+    tui.showError("failed: no provider connected — open /setup");
+    const screen = vt.screen();
+    expect(screen).toContain("✦ MIMON");
+    expect(screen).toContain("slm");
+    expect(screen).toContain("failed");
+    expect(screen).toContain("Ask");
+    for (const line of screen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it("at absurd width the bare name still shows above the chat", () => {
+    const { vt, tui } = makeVt(30, 10);
+    tui.enableHero("0.1.4");
+    tui.show();
+    tui.historyPush(" YOU slm");
+    const screen = vt.screen();
+    expect(screen).toContain("✦");
+    expect(screen).toContain("MIMON");
+    expect(screen).toContain("slm");
+    for (const line of screen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(10);
+    }
+  });
+
   it("at ultra-narrow width there is no broken border — a complete minimal prompt", () => {
     const { vt, tui } = makeVt(30, 12);
     tui.enableHero("0.1.4");
@@ -442,6 +476,46 @@ describe("compact bottom-anchored box", () => {
     expect(artLine).toBeDefined();
     const indent = artLine!.indexOf("█");
     expect(indent).toBeGreaterThan(10);
+  });
+
+  it("slash menu opens inside the box, right above the input divider — never above the banner", () => {
+    const { vt, tui } = makeVt(30, 100);
+    tui.enableHero("0.1.4");
+    tui.show();
+    type(tui, "/");
+    const lines = vt.screen().split("\n");
+    const topIdx = lines.findIndex((l) => l.includes("╭"));
+    const dividerIdx = lines.findIndex((l) => l.includes("├"));
+    expect(topIdx).toBeGreaterThan(0);
+    expect(dividerIdx).toBeGreaterThan(topIdx + 8);
+    expect(lines[dividerIdx - 2]!).toContain("/exit");
+    expect(lines[dividerIdx - 9]!).toContain("/new");
+    const bannerIdx = lines.findIndex((l) => l.includes("█") || l.includes("✦"));
+    expect(bannerIdx).toBeGreaterThan(topIdx);
+    expect(bannerIdx).toBeLessThan(dividerIdx - 9);
+    expect(vt.count("╭")).toBe(1);
+  });
+
+  it("at tiny sizes the palette panel fits: nothing cut from the top, input intact", () => {
+    const { vt, tui } = makeVt(22, 40);
+    tui.enableHero("0.1.4");
+    tui.show();
+    expect(vt.screen()).toContain("█");
+    tui.openBrand({ name: "MIMON", colors: ["teal", "gold"] });
+    key(tui, "down");
+    key(tui, "enter");
+    key(tui, "down");
+    key(tui, "enter");
+    const screen = vt.screen();
+    expect(vt.screen().split("\n").length).toBeLessThanOrEqual(22);
+    expect(screen).toContain("brand colors");
+    expect(screen).toContain("Ask anything");
+    expect(screen).toContain("├");
+    expect((screen.match(/╭/g) ?? []).length).toBe(2);
+    const lines = screen.split("\n");
+    const mainTop = lines.findIndex((l) => l.includes("╭"));
+    expect(lines[mainTop]!.includes("╮")).toBe(true);
+    expect(screen).not.toContain("↑ more");
   });
 
   it("box grows upward as chat fills and caps at the viewport without overflow", () => {

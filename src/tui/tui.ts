@@ -33,13 +33,27 @@ export function visibleLen(s: string): number {
 export function plainClip(s: string, max: number): string {
   let out = "";
   let n = 0;
-  for (const ch of s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")) {
+  let i = 0;
+  let sawEscape = false;
+  while (i < s.length) {
+    if (s[i] === "\x1b") {
+      const m = /^\x1b\[[0-9;?]*[A-Za-z]/.exec(s.slice(i));
+      if (m) {
+        out += m[0];
+        sawEscape = true;
+        i += m[0].length;
+        continue;
+      }
+    }
+    const code = s.codePointAt(i)!;
+    const ch = String.fromCodePoint(code);
     const w = charWidth(ch);
     if (n + w > max) break;
     out += ch;
     n += w;
+    i += ch.length;
   }
-  return out;
+  return sawEscape ? out + C.reset : out;
 }
 
 export function WIDTH(): number {
@@ -388,28 +402,39 @@ export class Tui {
     return " ".repeat(Math.max(0, Math.floor((this.usable - this.innerWidth() - 4) / 2)));
   }
 
-  private boxEdge(top: boolean): string {
+  private boxEdge(top: boolean, bare = false): string {
     const w = this.innerWidth() + 2;
-    return this.boxLead() + C.dim + (top ? "╭" : "╰") + "─".repeat(w) + (top ? "╮" : "╯") + C.reset;
+    return (bare ? "" : this.boxLead()) + C.dim + (top ? "╭" : "╰") + "─".repeat(w) + (top ? "╮" : "╯") + C.reset;
   }
 
-  private boxLine(content: string): string {
+  private boxLine(content: string, bare = false): string {
     const budget = Math.max(4, this.innerWidth() - 4);
     let out = content;
     if (visibleLen(out) > budget) {
       out = C.reset + plainClip(out, budget);
     }
     const pad = Math.max(0, this.innerWidth() - 2 - visibleLen(out));
-    return this.boxLead() + C.dim + "│" + C.reset + "  " + out + " ".repeat(pad) + "  " + C.dim + "│" + C.reset;
+    return (bare ? "" : this.boxLead()) + C.dim + "│" + C.reset + "  " + out + " ".repeat(pad) + "  " + C.dim + "│" + C.reset;
+  }
+
+  private nestedWidth(): number {
+    return Math.max(12, this.innerWidth() - 8);
   }
 
   private boxed(title: string, body: string[]): string[] {
-    const dashes = Math.max(2, this.innerWidth() - 5 - title.length);
+    const total = this.nestedWidth() + 2;
+    const titleText = trunc(title, total - 10);
+    const dashes = Math.max(2, total - 5 - titleText.length);
     const out: string[] = [
-      this.boxLead() + C.dim + "╭─ " + C.reset + C.gold + C.bold + trunc(title, this.innerWidth() - 8) + C.reset + " " + C.dim + "─".repeat(dashes) + "╮" + C.reset,
+      C.dim + "╭─ " + C.reset + C.gold + C.bold + titleText + C.reset + " " + C.dim + "─".repeat(dashes) + "╮" + C.reset,
     ];
-    for (const line of body) out.push(this.boxLine(line));
-    out.push(this.boxEdge(false));
+    for (const line of body) {
+      let content = line;
+      if (visibleLen(content) > total - 2) content = C.reset + plainClip(content, total - 2);
+      const pad = Math.max(0, total - 2 - visibleLen(content));
+      out.push(C.dim + "│" + C.reset + content + " ".repeat(pad) + C.dim + "│" + C.reset);
+    }
+    out.push(C.dim + "╰" + "─".repeat(total - 2) + "╯" + C.reset);
     return out;
   }
 
@@ -455,10 +480,10 @@ export class Tui {
   private renderMenu(): string[] {
     const items = this.filtered();
     if (!this.input.startsWith("/") || items.length === 0) return [];
-    const maxVisible = Math.max(1, Math.min(this.rows - 6, items.length));
+    const maxVisible = Math.max(1, Math.min(this.rows - 10, items.length));
     const first = Math.max(0, Math.min(this.menuIndex - maxVisible + 1, items.length - maxVisible));
     const window = items.slice(first, first + maxVisible);
-    const menuW = Math.min(this.usable - 2, 64);
+    const menuW = Math.min(this.innerWidth() - 6, 64);
     const lines: string[] = [];
     for (let i = 0; i < window.length; i++) {
       const item = window[i]!;
@@ -601,24 +626,31 @@ export class Tui {
       : this.view === "brandGrid256" ? this.brandGridLines()
       : this.view === "providerAdd" ? this.providerAddLines()
       : [];
-    const lines = [...menu, ...overlay];
+    const lines: string[] = [];
+    let minimal = true;
+    let bannerArt = false;
+    let tight = false;
     if (this.rows >= 7 && this.usable >= 22) {
+      minimal = false;
+      const bannerOn = this.bannerActive && ((overlay.length === 0 && menu.length === 0) || this.rows >= 30);
+      bannerArt = bannerOn && this.rows >= 14;
+      tight = bannerArt && this.rows < 18;
       lines.push(this.boxEdge(true));
-      lines.push(this.boxLine(""));
-      if (this.bannerActive) {
-        if (this.rows >= 24) {
+      if (!tight) lines.push(this.boxLine(""));
+      if (bannerOn) {
+        if (bannerArt) {
           for (const bannerLine of this.bannerInnerLines()) {
             lines.push(this.boxLine(this.centered(bannerLine)));
           }
-        } else if (this.rows >= 16) {
+        } else if (this.rows >= 8) {
           const brand = brandName();
           lines.push(this.boxLine(this.centered(C.teal + C.bold + "✦ " + brand + C.reset + C.dim + "  v" + this.bannerVersion + C.reset)));
         }
-        lines.push(this.boxLine(""));
+        if (this.rows >= 18) lines.push(this.boxLine(""));
       }
       const inner = Math.max(10, this.innerWidth() - 6);
       const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
-      const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0);
+      const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0) + menu.length + overlay.length;
       const budget = Math.max(1, this.rows - footerLines - fixedCount);
       const visuals: string[] = [];
       for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < budget; i--) {
@@ -629,6 +661,19 @@ export class Tui {
       }
       for (const visual of visuals) lines.push(this.boxLine("  " + visual));
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
+      const contentBudget = Math.max(4, this.innerWidth() - 4);
+      const blockLead = (block: string[]): string => {
+        const wide = Math.max(0, ...block.map((l) => visibleLen(l)));
+        return " ".repeat(Math.max(0, Math.floor((contentBudget - wide) / 2)));
+      };
+      if (overlay.length > 0) {
+        const lead = blockLead(overlay);
+        for (const overlayLine of overlay) lines.push(this.boxLine(lead + overlayLine));
+      }
+      if (menu.length > 0) {
+        const lead = blockLead(menu);
+        for (const menuLine of menu) lines.push(this.boxLine(lead + menuLine));
+      }
       lines.push(this.boxLine(""));
       lines.push(C.dim + this.boxLead() + "├" + "─".repeat(this.innerWidth() + 2) + "┤" + C.reset);
       this.inputRow = lines.length;
@@ -636,15 +681,34 @@ export class Tui {
       lines.push(this.boxLine(this.renderStatus()));
       lines.push(this.boxEdge(false));
     } else {
-      if (this.bannerActive && this.rows >= 7 && this.usable >= 16) {
-        lines.push(C.teal + C.bold + "✦ " + brandName() + C.reset + C.dim + "  v" + this.bannerVersion + C.reset);
-        lines.push("");
+      const bannerRows = this.bannerActive && this.rows >= 7 ? (this.usable >= 14 ? 2 : 1) : 0;
+      const chrome = 1 + (this.usable >= 16 && this.rows >= 5 ? 1 : 0);
+      const chatBudget = Math.max(0, this.rows - bannerRows - chrome - menu.length - overlay.length - 1);
+      if (this.bannerActive && bannerRows > 0) {
+        if (this.usable >= 14) {
+          lines.push(C.teal + C.bold + "✦ " + brandName() + C.reset + C.dim + "  v" + this.bannerVersion + C.reset);
+          lines.push("");
+        } else {
+          lines.push(C.teal + C.bold + "✦ " + brandName() + C.reset);
+        }
       }
+      if (chatBudget > 0 && this.chatLines.length > 0) {
+        const inner = Math.max(8, this.usable - 1);
+        const visuals: string[] = [];
+        for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < chatBudget; i--) {
+          const wrapped = wrap(this.chatLines[i]!, inner);
+          for (let j = wrapped.length - 1; j >= 0 && visuals.length < chatBudget; j--) {
+            visuals.unshift(wrapped[j]!);
+          }
+        }
+        for (const visual of visuals) lines.push(plainClip(visual, this.usable - 1));
+      }
+      for (const flyLine of [...menu, ...overlay]) lines.push(flyLine);
       this.inputRow = lines.length;
       lines.push(this.bar() + this.renderInput());
       if (this.usable >= 16 && this.rows >= 5) lines.push(this.renderStatus());
     }
-    const footerAllowed = this.usable >= 22;
+    const footerAllowed = this.usable >= 22 && !tight;
     if (this.rows >= 9 && footerAllowed) lines.push(this.renderHints());
     if (this.rows >= 12 && footerAllowed) lines.push(this.renderTip());
     const footer = ((this.rows >= 9 && footerAllowed) ? 1 : 0) + ((this.rows >= 12 && footerAllowed) ? 1 : 0);
@@ -828,11 +892,16 @@ export class Tui {
       "",
     ];
     const perRow = 2;
-    const cellWidth = Math.max(14, Math.floor((this.innerWidth() - 6) / perRow));
-    for (let row = 0; row < names.length; row += perRow) {
+    const totalRows = Math.ceil(names.length / perRow);
+    const maxListRows = Math.max(2, Math.min(totalRows, this.rows - 13));
+    let firstRow = Math.max(0, Math.min(Math.floor(this.brandColorIndex / perRow) - 1, totalRows - maxListRows));
+    const lastRow = Math.min(totalRows, firstRow + maxListRows);
+    const cellWidth = Math.max(8, Math.min(14, Math.floor((this.nestedWidth() - 2) / perRow)));
+    if (firstRow > 0) body.push(C.dim + "  ↑ more" + C.reset);
+    for (let row = firstRow; row < lastRow; row += 1) {
       const cells: string[] = [];
       for (let col = 0; col < perRow; col++) {
-        const index = row + col;
+        const index = row * perRow + col;
         if (index >= names.length) break;
         const name = names[index]!;
         const sel = index === this.brandColorIndex;
@@ -844,11 +913,13 @@ export class Tui {
             : isCustom
               ? entryColor(name) + "██" + C.reset
               : BRAND_PALETTE[name] + "██" + C.reset;
-        const cell = (sel ? C.teal + "❯ " + C.reset : "   ") + swatch + " " + (sel ? C.bold + C.teal + name : C.cream + name) + C.reset;
+        const namePart = trunc(name, Math.max(2, cellWidth - 5));
+        const cell = (sel ? C.teal + "❯ " + C.reset : "   ") + swatch + " " + (sel ? C.bold + C.teal + namePart : C.cream + namePart) + C.reset;
         cells.push(this.padCell(cell, cellWidth));
       }
       body.push(cells.join(""));
     }
+    if (lastRow < totalRows) body.push(C.dim + "  ↓ more" + C.reset);
     const stage = this.brandSingleColor
       ? "one color for the whole name"
       : "picking for letter " + letter + " (" + (this.brandPicks.length + 1) + "/" + total + ")";
@@ -870,7 +941,7 @@ export class Tui {
   }
 
   private gridPerRow(): number {
-    return Math.max(6, Math.floor((this.innerWidth() - 2) / 3));
+    return Math.max(4, Math.floor((this.nestedWidth() - 2) / 3));
   }
 
   private brandGridLines(): string[] {
@@ -884,7 +955,7 @@ export class Tui {
       "",
     ];
     const perRow = this.gridPerRow();
-    const maxRows = Math.max(3, Math.min(10, this.rows - 16));
+    const maxRows = Math.max(3, Math.min(10, this.rows - 15));
     const totalRows = Math.ceil(256 / perRow);
     let firstRow = Math.max(0, Math.min(Math.floor(this.gridIndex / perRow) - Math.floor(maxRows / 2), totalRows - maxRows));
     const lastRow = Math.min(totalRows, firstRow + maxRows);
