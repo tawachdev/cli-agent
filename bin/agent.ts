@@ -289,8 +289,6 @@ async function main(): Promise<void> {
       setStatus: (state, steps) => tui.setChatStatus(state, steps),
     };
     stdin.on("data", (chunk) => feedKeys(String(chunk), tui));
-    stdout.on("resize", () => tui.onResize());
-    stdin.on("resize", () => tui.onResize());
     let seenCols = stdout.columns ?? 0;
     const widthWatch = setInterval(() => {
       const cols = stdout.columns ?? 0;

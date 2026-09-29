@@ -385,6 +385,28 @@ describe("resize never overflows the screen", () => {
   });
 });
 
+describe("centered single box", () => {
+  it("box is centered at wide sizes and appears exactly once through a drag sweep", () => {
+    const { vt, tui } = makeVt(40, 120);
+    tui.enableHero("0.1.4");
+    tui.show();
+    for (const [cols, rows] of [[120, 40], [90, 30], [70, 24], [55, 16], [120, 40], [60, 20]] as Array<[number, number]>) {
+      vt.resize(cols, rows);
+      tui.onResize();
+      const lines = vt.screen().split("\n");
+      const topIdx = lines.findIndex((l) => l.includes("╭"));
+      expect(topIdx).toBeGreaterThanOrEqual(0);
+      const lead = lines[topIdx]!.indexOf("╭");
+      if (cols >= 100) expect(lead).toBeGreaterThan(5);
+      expect((vt.screen().match(/╭/g) ?? []).length).toBe(1);
+      expect(vt.screen()).toContain("Ask anything");
+      for (const line of lines) {
+        expect(line.length).toBeLessThanOrEqual(cols);
+      }
+    }
+  });
+});
+
 describe("real cursor placement", () => {
   it("sits at the text end inside the input box", () => {
     const { vt, tui } = makeVt(40, 100);

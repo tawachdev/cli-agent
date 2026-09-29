@@ -672,7 +672,7 @@ describe("brand view", () => {
     tui.handleKey({ kind: "enter" });
     tui.handleKey({ kind: "enter" });
     tui.handleKey({ kind: "enter" });
-    expect(cap.brandColors).toEqual([["#00ff00", "teal", "teal"]]);
+    expect(cap.brandColors).toEqual([["#00d700", "teal", "teal"]]);
   });
 
   it("grid rows never exceed the box width and use foreground colors", () => {

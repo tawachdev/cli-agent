@@ -354,11 +354,11 @@ export class Tui {
   }
 
   private innerWidth(): number {
-    return Math.max(8, this.usable - 4);
+    return Math.max(8, Math.min(this.usable - 4, 76));
   }
 
   private boxLead(): string {
-    return "";
+    return " ".repeat(Math.max(0, Math.floor((this.usable - this.innerWidth() - 4) / 2)));
   }
 
   private boxEdge(top: boolean): string {
@@ -615,7 +615,16 @@ export class Tui {
   }
 
   private render(): void {
-    const lines = this.buildLines();
+    const cols = this.tty.columns > 0 ? this.tty.columns : 80;
+    const lines = this.buildLines().map((line) => {
+      if (visibleLen(line) <= cols) return line;
+      let plain = "";
+      for (const ch of line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")) {
+        if (plain.length >= cols) break;
+        plain += ch;
+      }
+      return C.reset + plain;
+    });
     const inputRow = this.inputRow;
     const prev = this.lastLines;
     let wrote = false;
