@@ -3,7 +3,7 @@
 A terminal AI coding agent in one package. Clone, install, run — the terminal is the whole product: no web app, no dashboard, no accounts, no telemetry.
 
 - **Terminal UI** — pixel-art boot screen, boxed prompt, model picker, permission cards with visible diffs; repaints cleanly on any terminal size.
-- **Any model, your keys** — first launch walks you through picking a provider (anthropic, openai, deepseek, glm, gemini) and pasting an API key; keys live in the macOS Keychain, never logged, never returned. Local Ollama works with zero keys.
+- **Any model, your keys** — first launch walks you through picking a provider (anthropic, openai, deepseek, glm, gemini) and pasting an API key; keys live in the macOS Keychain, never logged, never returned.
 - **Make it yours** — the product name and its two colors are one environment variable away, or one line for a permanent rebrand.
 - **Images in the terminal** — drop an image path into the prompt: real pixels on iTerm2/WezTerm/kitty/Ghostty, a clean info panel elsewhere; the model sees it either way.
 
@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/tawachdev/cli-agent/main/install.sh
 agent
 ```
 
-Downloads a single self-contained binary (macOS/Linux, arm64/x64 — the runtime is embedded, nothing to install), verifies its checksum, puts it on your PATH. First launch opens the setup wizard in the terminal: bring any API key (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint) — or skip and use local Ollama.
+Downloads a single self-contained binary (macOS/Linux, arm64/x64 — the runtime is embedded, nothing to install), verifies its checksum, puts it on your PATH. First launch opens the setup wizard in the terminal: bring any API key (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint).
 
 From source instead (development):
 
@@ -34,7 +34,7 @@ bun install
 bun run cli
 ```
 
-The wizard asks for your API key — nothing else is required. Optional: run fully local with Ollama via `/providers` → **+ add provider** → base URL `http://127.0.0.1:11434/v1` (loopback http is allowed) with any model name you pulled. If a tier is ever bound to a provider without a key, the boot notice tells you exactly which one to fix.
+The wizard asks for your API key — nothing else is required. If a tier is ever bound to a provider without a key, the boot notice tells you exactly which one to fix.
 
 The CLI starts the local engine by itself (loopback-only, port `7800`). Interactive TUI: `bun run cli`. Engine alone: `bun run dev`.
 
@@ -64,7 +64,7 @@ Drag an image into the terminal: the path disappears, the image renders immediat
 bun run cli "what does /path/to/screenshot.png show?"
 ```
 
-Up to 4 images per message, 6 MB each (png, jpeg, gif, webp, bmp), validated by magic bytes end to end. Images need a vision-capable model on the active tier (`AGENT_MODEL_TIER2=qwen2.5vl:7b` or a cloud vision model); models without tool support are handled automatically by the engine.
+Up to 4 images per message, 6 MB each (png, jpeg, gif, webp, bmp), validated by magic bytes end to end. Images need a vision-capable model on the active tier (a cloud vision model on the active tier); models without tool support are handled automatically by the engine.
 
 ## CLI keys
 
@@ -80,7 +80,7 @@ Up to 4 images per message, 6 MB each (png, jpeg, gif, webp, bmp), validated by 
 |----------|---------|-------|
 | `AGENT_PORT` | `7800` | engine, loopback only |
 | `AGENT_NAME` / `AGENT_COLORS` | `MIMON` / `teal,gold` | display identity |
-| `AGENT_MODEL_TIER1..MAX` | qwen3 / qwen2.5-coder | tier routing, `.agent/models.json` wins over env |
+| `AGENT_MODEL_TIER1..MAX` | unset | tier routing, `.agent/models.json` wins over env |
 | `AGENT_KEY_<PROVIDER>` | — | key per provider (Keychain is the primary store) |
 | `AGENT_WORKSPACE_ROOT` | engine cwd | the only directory file tools may touch |
 

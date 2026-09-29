@@ -14,7 +14,7 @@ import { PermissionEngine } from "../src/engine/core/permissions/engine";
 import { PendingPermissions } from "../src/engine/core/permissions/pending";
 import { defaultPolicyFile } from "../src/engine/core/permissions/policy";
 import { ModelRouter } from "../src/engine/models/router";
-import { OllamaProvider } from "../src/engine/models/provider";
+import { OpenAICompatProvider } from "../src/engine/models/openai-provider";
 import { InMemoryKeyStore } from "../src/engine/models/keystore";
 import { loadExtraProviders, ProviderRegistry } from "../src/engine/models/registry";
 import { BindingsStore } from "../src/engine/models/bindings";
@@ -60,16 +60,16 @@ function buildApp(options: { workspaceRoot: string; env: Record<string, string |
   const pending = new PendingPermissions();
   const permissions = new PermissionEngine(defaultPolicyFile(), pending, audit);
   const bindings = new BindingsStore(options.workspaceRoot, options.env, {
-    coder: "qwen2.5-coder:14b",
-    general: "qwen3:14b",
-    mimon1: "qwen3:14b",
-    mimon2: "qwen2.5-coder:14b",
-    mimon3: "qwen3:14b",
-    mimonMax: "qwen2.5-coder:14b",
+    coder: "stub-coder",
+    general: "stub-general",
+    mimon1: "stub-general",
+    mimon2: "stub-coder",
+    mimon3: "stub-general",
+    mimonMax: "stub-coder",
   });
   const agent = new Agent({
     db,
-    router: new ModelRouter(() => ({ provider: new OllamaProvider("http://127.0.0.1:11434"), model: "test-model" })),
+    router: new ModelRouter(() => ({ provider: new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"), model: "test-model" })),
     tools: new ToolRegistry(permissions),
     toolContext: { workspaceRoot: options.workspaceRoot },
     numCtx: 4096,
@@ -105,7 +105,7 @@ describe("provider registry and /providers routes", () => {
     );
     const extra = await loadExtraProviders(join(workspace, ".agent", "providers.json"));
     const keystore = new InMemoryKeyStore();
-    const registry = new ProviderRegistry(keystore, extra, new OllamaProvider("http://127.0.0.1:11434"));
+    const registry = new ProviderRegistry(keystore, extra, new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"));
     const { app, db } = buildApp({ workspaceRoot: workspace, env: {}, registry });
 
     const listed = (await (await app.request("/providers")).json()) as {
@@ -152,11 +152,9 @@ describe("provider registry and /providers routes", () => {
 
   it("resolves provider/model bindings and throws a readable error without a key", async () => {
     const keystore = new InMemoryKeyStore();
-    const registry = new ProviderRegistry(keystore, [], new OllamaProvider("http://127.0.0.1:11434"));
+    const registry = new ProviderRegistry(keystore, [], undefined);
 
-    const local = registry.resolve("qwen2.5-coder:14b");
-    expect(local.model).toBe("qwen2.5-coder:14b");
-
+    expect(() => registry.resolve("stub-coder")).toThrow("no provider connected");
     expect(() => registry.resolve("anthropic/claude-sonnet-4-5")).toThrow("no API key for \"anthropic\"");
 
     keystore.set("anthropic", "sk-ant-value");
@@ -210,7 +208,7 @@ describe("add and remove custom providers via routes", () => {
     const workspace = mkdtempSync(join(tmpdir(), "mimon-add-"));
     const mock = startMockOpenAI();
     const keystore = new InMemoryKeyStore();
-    const registry = new ProviderRegistry(keystore, [], new OllamaProvider("http://127.0.0.1:11434"), join(workspace, ".agent", "providers.json"));
+    const registry = new ProviderRegistry(keystore, [], new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"), join(workspace, ".agent", "providers.json"));
     const { app, db } = buildApp({ workspaceRoot: workspace, env: {}, registry });
 
     const badUrl = await app.request("/providers", {
@@ -280,7 +278,7 @@ describe("model bindings via /models routes", () => {
   it("persists bindings to models.json, env wins over file, unknown provider rejected", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "mimon-bindings-"));
     const keystore = new InMemoryKeyStore();
-    const registry = new ProviderRegistry(keystore, [], new OllamaProvider("http://127.0.0.1:11434"));
+    const registry = new ProviderRegistry(keystore, [], new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"));
     const { app, db, bindings } = buildApp({ workspaceRoot: workspace, env: {}, registry });
 
     const rejected = await app.request("/models/coder", {
@@ -322,10 +320,10 @@ describe("model bindings via /models routes", () => {
 
     const envStore = new BindingsStore(
       workspace,
-      { AGENT_MODEL_TIER2: "qwen3:14b" },
+      { AGENT_MODEL_TIER2: "stub-general" },
       { coder: "a", general: "a", mimon1: "a", mimon2: "a", mimon3: "a", mimonMax: "a" },
     );
-    expect(envStore.get("mimon2")).toBe("qwen3:14b");
+    expect(envStore.get("mimon2")).toBe("stub-general");
     expect(envStore.source("mimon2")).toBe("env");
 
     const rows = auditRows(db);

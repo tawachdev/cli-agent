@@ -13,7 +13,7 @@ import { PermissionEngine } from "../src/engine/core/permissions/engine";
 import { PendingPermissions } from "../src/engine/core/permissions/pending";
 import { defaultPolicyFile } from "../src/engine/core/permissions/policy";
 import { ModelRouter } from "../src/engine/models/router";
-import { OllamaProvider } from "../src/engine/models/provider";
+import { OpenAICompatProvider } from "../src/engine/models/openai-provider";
 import { InMemoryKeyStore } from "../src/engine/models/keystore";
 import { ProviderRegistry } from "../src/engine/models/registry";
 import { BindingsStore } from "../src/engine/models/bindings";
@@ -28,16 +28,16 @@ function buildApp(options: { workspaceRoot: string; registry: ProviderRegistry }
   const pending = new PendingPermissions();
   const permissions = new PermissionEngine(defaultPolicyFile(), pending, audit);
   const bindings = new BindingsStore(options.workspaceRoot, {}, {
-    coder: "qwen2.5-coder:14b",
-    general: "qwen3:14b",
-    mimon1: "qwen3:14b",
-    mimon2: "qwen2.5-coder:14b",
-    mimon3: "qwen3:14b",
-    mimonMax: "qwen2.5-coder:14b",
+    coder: "stub-coder",
+    general: "stub-general",
+    mimon1: "stub-general",
+    mimon2: "stub-coder",
+    mimon3: "stub-general",
+    mimonMax: "stub-coder",
   });
   const agent = new Agent({
     db,
-    router: new ModelRouter(() => ({ provider: new OllamaProvider("http://127.0.0.1:11434"), model: "test-model" })),
+    router: new ModelRouter(() => ({ provider: new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"), model: "test-model" })),
     tools: new ToolRegistry(permissions),
     toolContext: { workspaceRoot: options.workspaceRoot },
     numCtx: 4096,
@@ -63,7 +63,7 @@ function buildApp(options: { workspaceRoot: string; registry: ProviderRegistry }
 }
 
 function freshRegistry(keystore: InMemoryKeyStore): ProviderRegistry {
-  return new ProviderRegistry(keystore, [], new OllamaProvider("http://127.0.0.1:11434"));
+  return new ProviderRegistry(keystore, [], new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"));
 }
 
 describe("setup status and skip", () => {

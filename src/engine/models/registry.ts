@@ -103,7 +103,7 @@ export class ProviderRegistry {
   constructor(
     private readonly keystore: KeyStore,
     extra: ProviderDef[],
-    private readonly ollama?: ModelProvider,
+    private readonly fallback?: ModelProvider,
     private readonly providersPath?: string,
   ) {
     this.defs = new Map([...BUILTIN_PROVIDERS, ...extra].map((def) => [def.name, def]));
@@ -166,10 +166,10 @@ export class ProviderRegistry {
   resolve(binding: string): ModelBinding {
     const { def, model } = this.splitBinding(binding);
     if (!def) {
-      if (!this.ollama) {
+      if (!this.fallback) {
         throw new Error("no provider connected — open /setup and connect one (bring its API key)");
       }
-      return { provider: this.ollama, model: binding };
+      return { provider: this.fallback, model: binding };
     }
     const apiKey = this.keystore.get(def.name);
     if (!apiKey) {

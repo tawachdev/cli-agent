@@ -12,7 +12,7 @@ import { defaultPolicyFile } from "../src/engine/core/permissions/policy";
 import { ModelRouter } from "../src/engine/models/router";
 import { InMemoryKeyStore } from "../src/engine/models/keystore";
 import { ProviderRegistry } from "../src/engine/models/registry";
-import { OllamaProvider } from "../src/engine/models/provider";
+import { OpenAICompatProvider } from "../src/engine/models/openai-provider";
 import { BindingsStore } from "../src/engine/models/bindings";
 import { ToolRegistry } from "../src/engine/tools/registry";
 import { StreamRegistry } from "../src/engine/api/ws/agent-stream";
@@ -25,7 +25,7 @@ describe("GET /health", () => {
     const audit = new SqliteAudit(db);
     const pending = new PendingPermissions();
     const permissions = new PermissionEngine(defaultPolicyFile(), pending, audit);
-    const registry = new ProviderRegistry(new InMemoryKeyStore(), [], new OllamaProvider("http://127.0.0.1:11434"));
+    const registry = new ProviderRegistry(new InMemoryKeyStore(), [], new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"));
     const bindings = new BindingsStore("/tmp", {}, {
       coder: "test-model",
       general: "test-model",

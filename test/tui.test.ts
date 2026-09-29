@@ -951,7 +951,7 @@ describe("keylessProviderBindings", () => {
     const roles = [
       { role: "mimon1", model: "gemini/gemini-2.5-pro", source: "file" },
       { role: "mimon2", model: "openai/gpt-5", source: "file" },
-      { role: "mimon3", model: "qwen3:14b", source: "default" },
+      { role: "mimon3", model: "stub-general", source: "default" },
     ];
     const providers = [
       { name: "gemini", keySet: false },

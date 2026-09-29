@@ -64,4 +64,3 @@ esac
 echo ""
 echo "installed: $INSTALL_DIR/$BIN"
 echo "first run: $BIN            (setup wizard opens — bring any API key)"
-echo "local ai:  ollama pull qwen2.5-coder:14b   (optional, no key needed)"
