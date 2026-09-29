@@ -311,6 +311,7 @@ export class Tui {
   private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null }> = [];
   private pendingPaths = new Set<string>();
   private errorLines: string[] = [];
+  private sentLine = "";
   private lastLines: string[] = [];
   private cursorLine = 0;
 
@@ -567,7 +568,11 @@ export class Tui {
     const prefix = hero.length + menu.length + overlay.length;
     const lines = [...hero, ...menu, ...overlay];
     if (this.rows >= 4) {
-      lines.push(this.boxEdge(true), this.boxLine(this.renderInput()));
+      lines.push(this.boxEdge(true));
+      if (this.sentLine) {
+        lines.push(this.boxLine(C.inverse + C.bold + " YOU " + C.reset + " " + C.cream + this.sentLine + C.reset));
+      }
+      lines.push(this.boxLine(this.renderInput()));
       for (const line of this.errorLines) {
         lines.push(this.boxLine(C.red + trunc(line, this.usable - 4) + C.reset));
       }
@@ -1548,6 +1553,7 @@ export class Tui {
           this.errorLines = [];
         }
         if (!task) return;
+        this.sentLine = task;
         if (this.history[this.history.length - 1] !== task) this.history.push(task);
         this.historyIndex = null;
         this.input = "";

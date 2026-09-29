@@ -413,8 +413,7 @@ export class Chat {
   private async runOnce(task: string, images: LoadedImage[]): Promise<void> {
     this.lastTool = "";
     const tag = images.length > 0 ? C.dim + "  +" + images.length + " image" + (images.length > 1 ? "s" : "") + C.reset : "";
-    if (this.ui) this.ui.printAbove([C.inverse + C.bold + " YOU " + C.reset + " " + task + tag]);
-    else this.tty.write(C.inverse + C.bold + " YOU " + C.reset + " " + task + tag + "\n");
+    if (!this.ui) this.tty.write(C.inverse + C.bold + " YOU " + C.reset + " " + task + tag + "\n");
     for (const image of images) renderImage(this.tty, image);
     const payload: Record<string, unknown> = { sessionId: this.sessionId, task, role: this.role };
     if (images.length > 0) payload["images"] = images.map((image) => toDataUrl(image.mime, image.base64));

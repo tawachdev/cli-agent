@@ -448,7 +448,6 @@ describe("double-send repro", () => {
       type(msg);
       key(tui, "enter");
       tui.beginBusy();
-      ui.printAbove([" YOU " + msg]);
       await chat.onEvent({ type: "turn.failed", payload: { reason: "no API key for gemini" } });
       chat.onError("failed: no API key for gemini");
       tui.endBusy();
@@ -458,7 +457,9 @@ describe("double-send repro", () => {
     const screen = vt.screen();
     expect((screen.match(/╭/g) ?? []).length).toBe(1);
     expect((screen.split("no API key").length - 1)).toBe(2);
-    expect((screen.split(" YOU ").length - 1)).toBe(2);
+    expect((screen.split(" YOU ").length - 1)).toBe(1);
+    expect(screen).toContain("slm");
+    expect((screen.split("failed: no API key").length - 1)).toBe(2);
   });
 });
 
