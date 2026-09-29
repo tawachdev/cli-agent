@@ -283,6 +283,7 @@ async function main(): Promise<void> {
       stream: (text) => tui.stream(text),
       streamStart: () => tui.streamStart(),
       streamEnd: () => tui.streamEnd(),
+      replaceLast: (line) => tui.historyReplaceLast(line),
       setStatus: (state, steps) => tui.setChatStatus(state, steps),
     };
     stdin.on("data", (chunk) => feedKeys(String(chunk), tui));

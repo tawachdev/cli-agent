@@ -227,6 +227,8 @@ describe("prompt chrome", () => {
       tui.show();
       type(tui, "/mod");
       type(tui, "hello world this is a long typed line for wrapping checks");
+      const bad = tty.lines().map((l, i) => [i, l] as const).filter(([, l]) => visibleLen(l) > columns - 1);
+      if (bad.length > 0) console.log("WIDE(" + columns + "): " + JSON.stringify(bad.slice(0, 2).map(([i, l]) => [i, String(l).slice(0, 50)])));
       for (const line of tty.lines()) {
         expect(visibleLen(line)).toBeLessThanOrEqual(columns - 1);
       }

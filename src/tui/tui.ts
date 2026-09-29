@@ -274,7 +274,6 @@ export class Tui {
   private busy = false;
   private inputRow = 0;
   private cursorCol = 0;
-  private history: string[] = [];
   private historyIndex: number | null = null;
   private draft = "";
   private turns = 0;
@@ -310,8 +309,11 @@ export class Tui {
   private addError = "";
   private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null }> = [];
   private pendingPaths = new Set<string>();
-  private errorLines: string[] = [];
+  private history: string[] = [];
   private sentLine = "";
+  private workingLine = "";
+  private chatLines: string[] = [];
+  private chatStreamOpen = false;
   private lastLines: string[] = [];
   private cursorLine = 0;
 
@@ -365,8 +367,8 @@ export class Tui {
   }
 
   private boxLine(content: string): string {
-    const pad = Math.max(0, this.innerWidth() - visibleLen(content));
-    return this.boxLead() + C.dim + "│" + C.reset + " " + content + " ".repeat(pad) + " " + C.dim + "│" + C.reset;
+    const pad = Math.max(0, this.innerWidth() - 2 - visibleLen(content));
+    return this.boxLead() + C.dim + "│" + C.reset + "  " + content + " ".repeat(pad) + "  " + C.dim + "│" + C.reset;
   }
 
   private boxed(title: string, body: string[]): string[] {
@@ -384,7 +386,7 @@ export class Tui {
   }
 
   private renderInput(): string {
-    const maxText = this.innerWidth();
+    const maxText = this.innerWidth() - 4;
     if (this.busy) {
       return C.dim + trunc("▌ working — esc to stop", maxText) + C.reset;
     }
@@ -400,7 +402,7 @@ export class Tui {
   private renderStatus(): string {
     const label = trunc(this.tier.label, Math.max(3, Math.min(9, this.innerWidth() - 3)));
     const images = this.pendingImages.length > 0 ? " · ▤" + this.pendingImages.length : "";
-    const meta = trunc(this.statusExtra + " · ctx " + this.ctxPct + "% · s " + this.sessionShort + images, Math.max(0, this.innerWidth() - 3 - label.length));
+    const meta = trunc(this.statusExtra + " · ctx " + this.ctxPct + "% · s " + this.sessionShort + images, Math.max(0, this.innerWidth() - 7 - label.length));
     return C.teal + "●" + C.reset + " " + C.bold + C.cream + label + C.reset + C.dim + meta + C.reset;
   }
 
@@ -563,15 +565,21 @@ export class Tui {
     const lines = [...hero, ...menu, ...overlay];
     if (this.rows >= 4) {
       lines.push(this.boxEdge(true));
-      if (this.sentLine) {
-        lines.push(this.boxLine(C.inverse + C.bold + " YOU " + C.reset + " " + C.cream + this.sentLine + C.reset));
+      lines.push(this.boxLine(""));
+      const inner = Math.max(10, this.innerWidth() - 6);
+      for (const logical of this.chatLines) {
+        for (const visual of wrap(logical, inner)) {
+          lines.push(this.boxLine("  " + visual));
+        }
       }
+      if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
+      lines.push(this.boxLine(""));
+      lines.push(C.dim + this.boxLead() + "├" + "─".repeat(this.innerWidth() + 2) + "┤" + C.reset);
+      this.inputRow = lines.length;
       lines.push(this.boxLine(this.renderInput()));
-      for (const line of this.errorLines) {
-        lines.push(this.boxLine(C.red + trunc(line, this.usable - 4) + C.reset));
-      }
-      lines.push(this.boxLine(this.renderStatus()), this.boxEdge(false));
-      this.inputRow = prefix + 1;
+      lines.push(this.boxLine(this.renderStatus()));
+      lines.push(this.boxEdge(false));
+      this.inputRow = this.inputRow;
     } else {
       lines.push(this.bar() + this.renderInput());
       this.inputRow = prefix;
@@ -583,6 +591,7 @@ export class Tui {
 
   private render(): void {
     let lines = this.buildLines();
+
     const maxBlock = Math.max(6, this.rows - 1);
     if (lines.length > maxBlock) {
       const cut = lines.length - maxBlock;
@@ -648,7 +657,7 @@ export class Tui {
 
   private cursorColumn(): number {
     const lead = this.boxLead().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").length;
-    return lead + 2 + trunc(this.input.slice(0, this.cursor), this.usable - 4).length;
+    return lead + 3 + trunc(this.input.slice(0, this.cursor), this.usable - 6).length;
   }
 
   private refresh(): void {
@@ -981,16 +990,34 @@ export class Tui {
   }
 
   showError(message: string): void {
-    const width = Math.max(10, this.innerWidth() - 4);
-    this.errorLines = wrap(message.replace(/\s+/g, " ").trim(), width).slice(0, 4);
+    const width = Math.max(10, this.innerWidth() - 6);
+    const wrapped = wrap(message.replace(/\s+/g, " ").trim(), width);
+    wrapped.forEach((l, i) => {
+      this.chatLines.push(C.red + (i === 0 ? "✘ " : "  ") + l + C.reset);
+    });
     this.refresh();
   }
 
-  clearError(): void {
-    if (this.errorLines.length > 0) {
-      this.errorLines = [];
-      this.refresh();
+  historyPush(line: string): void {
+    this.chatLines.push(line);
+    this.chatStreamOpen = false;
+    this.refresh();
+  }
+
+  historyStream(text: string): void {
+    if (this.chatLines.length === 0 || !this.chatStreamOpen) {
+      this.chatLines.push(text);
+      this.chatStreamOpen = true;
+    } else {
+      this.chatLines[this.chatLines.length - 1]! += text;
     }
+    this.refresh();
+  }
+
+  historyReplaceLast(line: string): void {
+    if (this.chatLines.length === 0) this.chatLines.push(line);
+    else this.chatLines[this.chatLines.length - 1]! = line;
+    this.refresh();
   }
 
   printAbove(lines: string[]): void {
@@ -1523,7 +1550,6 @@ export class Tui {
         this.input = "";
         this.cursor = 0;
         this.menuIndex = 0;
-        this.errorLines = [];
         if (this.pendingImages.length > 0) {
           this.clearPendingImages();
           this.notice("· attachments cleared ·");
@@ -1541,11 +1567,6 @@ export class Tui {
           return;
         }
         const task = this.input.trim();
-        if (!task && this.errorLines.length === 0) return;
-        if (this.errorLines.length > 0) {
-          this.printAbove(this.errorLines.map((l) => C.red + "✘ " + l + C.reset));
-          this.errorLines = [];
-        }
         if (!task) return;
         this.sentLine = task;
         if (this.history[this.history.length - 1] !== task) this.history.push(task);

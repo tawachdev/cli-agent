@@ -146,6 +146,7 @@ export class Chat {
     stream(text: string): void;
     streamStart(): void;
     streamEnd(): void;
+    replaceLast(line: string): void;
     setStatus(state: string, steps: number): void;
   } | null = null;
   onError: (message: string) => void = (message) => {
@@ -275,11 +276,11 @@ export class Chat {
         this.lastToolMs = ms;
         const ok = p["ok"] === true;
         if (uiMode) {
-          this.ui!.printAbove([
+          this.ui!.replaceLast(
             "  " + C.teal + (TOOL_ICON[String(this.lastTool)] ?? "◆") + C.reset + " " +
-            C.bold + this.lastTool + C.reset,
-            "  " + (ok ? C.green + "✔ ok " + fmtSecs(ms) + C.reset : C.red + "✘ " + (p["error"] as string ?? "failed") + C.reset),
-          ]);
+            C.bold + this.lastTool + C.reset + "  " +
+            (ok ? C.green + "✔ ok " + fmtSecs(ms) + C.reset : C.red + "✘ " + (p["error"] as string ?? "failed") + C.reset),
+          );
         } else {
           this.tty.write(
             ok
@@ -412,6 +413,10 @@ export class Chat {
 
   private async runOnce(task: string, images: LoadedImage[]): Promise<void> {
     this.lastTool = "";
+    if (this.ui) {
+      const tag = images.length > 0 ? C.dim + "  +" + images.length + " img" + C.reset : "";
+      this.ui.printAbove([C.inverse + C.bold + " YOU " + C.reset + " " + task + tag]);
+    }
     const tag = images.length > 0 ? C.dim + "  +" + images.length + " image" + (images.length > 1 ? "s" : "") + C.reset : "";
     if (!this.ui) this.tty.write(C.inverse + C.bold + " YOU " + C.reset + " " + task + tag + "\n");
     for (const image of images) renderImage(this.tty, image);
