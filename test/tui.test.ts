@@ -161,10 +161,10 @@ describe("splash", () => {
   });
 
   it("prints the hero banner once and it survives resizes", () => {
-    const { tui, tty } = makeTui(40, 40);
+    const { tui, tty } = makeTui(100, 40);
     tui.enableHero("0.1.4");
     tui.show();
-    expect(tty.text()).toContain("█ █ █");
+    expect(tty.text()).toContain("██ ██ ██");
     expect(tty.text()).toContain("v0.1.4 · your keys · your machine");
     tty.clear();
     tty.columns = 90;

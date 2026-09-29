@@ -309,6 +309,8 @@ export class Tui {
   private history: string[] = [];
   private workingLine = "";
   private chatLines: string[] = [];
+  private bannerActive = false;
+  private bannerVersion = "";
   private chatStreamOpen = false;
   private lastLines: string[] = [];
   private cursorLine = 0;
@@ -337,7 +339,9 @@ export class Tui {
   }
 
   enableHero(version: string): void {
-    this.printAbove(boxLines(this.tty.columns > 0 ? this.tty.columns : 40, version));
+    this.bannerActive = true;
+    this.bannerVersion = version;
+    this.refresh();
   }
 
   private filtered(): SlashCommand[] {
@@ -363,8 +367,18 @@ export class Tui {
   }
 
   private boxLine(content: string): string {
-    const pad = Math.max(0, this.innerWidth() - 2 - visibleLen(content));
-    return this.boxLead() + C.dim + "│" + C.reset + "  " + content + " ".repeat(pad) + "  " + C.dim + "│" + C.reset;
+    const budget = Math.max(4, this.innerWidth() - 4);
+    let out = content;
+    if (visibleLen(out) > budget) {
+      let plain = "";
+      for (const ch of out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")) {
+        if (plain.length >= budget) break;
+        plain += ch;
+      }
+      out = C.reset + plain;
+    }
+    const pad = Math.max(0, this.innerWidth() - 2 - visibleLen(out));
+    return this.boxLead() + C.dim + "│" + C.reset + "  " + out + " ".repeat(pad) + "  " + C.dim + "│" + C.reset;
   }
 
   private boxed(title: string, body: string[]): string[] {
@@ -563,8 +577,17 @@ export class Tui {
     if (this.rows >= 4) {
       lines.push(this.boxEdge(true));
       lines.push(this.boxLine(""));
+      if (this.bannerActive) {
+        for (const bannerLine of this.bannerInnerLines()) {
+          lines.push(this.boxLine("  " + bannerLine));
+        }
+        lines.push(this.boxLine(""));
+      }
       const inner = Math.max(10, this.innerWidth() - 6);
-      for (const logical of this.chatLines) {
+      const fixedCount = lines.length + 6;
+      const allow = Math.max(0, (this.rows - 1) - fixedCount);
+      const shown = this.chatLines.slice(-allow * 2);
+      for (const logical of shown) {
         for (const visual of wrap(logical, inner)) {
           lines.push(this.boxLine("  " + visual));
         }
@@ -587,15 +610,7 @@ export class Tui {
   }
 
   private render(): void {
-    let lines = this.buildLines();
-
-    const maxBlock = Math.max(6, this.rows - 1);
-    if (lines.length > maxBlock) {
-      const cut = lines.length - maxBlock;
-      lines = lines.slice(cut);
-      this.inputRow = Math.max(0, this.inputRow - cut);
-      this.lastLines = [];
-    }
+    const lines = this.buildLines();
     const inputRow = this.inputRow;
     const prev = this.lastLines;
     let wrote = false;
@@ -1008,6 +1023,27 @@ export class Tui {
       this.chatLines[this.chatLines.length - 1]! += text;
     }
     this.refresh();
+  }
+
+  private bannerInnerLines(): string[] {
+    const brand = brandName();
+    const palette = brandColors();
+    const wide = glyphWord(brand, false);
+    const mini = glyphWord(brand, true);
+    if (!wide || !mini) return [];
+    const useMini = this.innerWidth() < wide.width + 8;
+    const art = useMini ? mini : wide;
+    const gap = useMini ? " " : "  ";
+    const lines: string[] = [];
+    for (const cells of art.cells) {
+      const colored = cells.map((cell, i) => colorForLetter(i, palette) + cell + C.reset).join(gap);
+      lines.push(colored);
+    }
+    const meta = this.innerWidth() < 46
+      ? "v" + this.bannerVersion
+      : "v" + this.bannerVersion + " · your keys · your machine";
+    lines.push(C.dim + meta + C.reset);
+    return lines;
   }
 
   historyStreamEnd(): void {

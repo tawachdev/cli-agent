@@ -189,7 +189,7 @@ function expectClean(vt: VirtualTerminal, cols: number): void {
   expect(vt.count("▌")).toBeLessThanOrEqual(1);
   expect(vt.count("╭")).toBeLessThanOrEqual(2);
   expect(vt.count("╰")).toBeLessThanOrEqual(2);
-  expect(vt.count("│")).toBeLessThanOrEqual(22);
+  expect(vt.count("│")).toBeLessThanOrEqual(48);
   if (cols < 56) expect(screen).not.toContain("███╗");
   expect(vt.count("enter send")).toBeLessThanOrEqual(1);
 }

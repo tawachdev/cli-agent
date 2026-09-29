@@ -157,7 +157,6 @@ async function main(): Promise<void> {
     const applyBrand = (name: string, colors: string[]): void => {
       process.env.AGENT_NAME = name;
       process.env.AGENT_COLORS = colors.join(",");
-      tui.enableHero(PRODUCT_VERSION);
       tui.refreshBrand();
     };
     const tui = new Tui(tty, {
