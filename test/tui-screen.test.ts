@@ -385,6 +385,24 @@ describe("resize never overflows the screen", () => {
   });
 });
 
+describe("cursor drift on resize", () => {
+  it("a plain refresh after width change repaints from home — one box, no stacking", () => {
+    const { vt, tui } = makeVt(40, 120);
+    tui.enableHero("0.1.4");
+    tui.show();
+    vt.resize(80, 24);
+    vt.row = 20;
+    vt.col = 30;
+    tui.refresh();
+    const screen = vt.screen();
+    expect((screen.match(/╭/g) ?? []).length).toBe(1);
+    expect(screen).toContain("Ask anything");
+    for (const line of screen.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(80);
+    }
+  });
+});
+
 describe("centered single box", () => {
   it("box is centered at wide sizes and appears exactly once through a drag sweep", () => {
     const { vt, tui } = makeVt(40, 120);

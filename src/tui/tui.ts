@@ -314,6 +314,8 @@ export class Tui {
   private chatStreamOpen = false;
   private lastLines: string[] = [];
   private cursorLine = 0;
+  private lastCols = 0;
+  private lastRows = 0;
 
 
   constructor(
@@ -616,6 +618,15 @@ export class Tui {
 
   private render(): void {
     const cols = this.tty.columns > 0 ? this.tty.columns : 80;
+    const rowsNow = this.tty.rows > 0 ? this.tty.rows : 24;
+    if (this.lastCols > 0 && (cols !== this.lastCols || rowsNow !== this.lastRows)) {
+      this.tty.write("\x1b[2J\x1b[H");
+      this.lastLines = [];
+      this.cursorLine = 0;
+      this.shown = false;
+    }
+    this.lastCols = cols;
+    this.lastRows = rowsNow;
     const lines = this.buildLines().map((line) => {
       if (visibleLen(line) <= cols) return line;
       let plain = "";
@@ -686,7 +697,7 @@ export class Tui {
     return lead + 3 + trunc(this.input.slice(0, this.cursor), this.usable - 6).length;
   }
 
-  private refresh(): void {
+  refresh(): void {
     if (!this.shown) {
       if (this.busy) this.show();
       return;
