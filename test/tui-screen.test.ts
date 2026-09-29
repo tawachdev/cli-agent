@@ -394,11 +394,13 @@ describe("full chat flow in box", () => {
     chat.uiHandlesErrors = true;
     chat.onError = (m) => tui.showError(m);
     chat.ui = {
-      printAbove: (ls) => tui.printAbove(ls),
-      stream: (t) => tui.stream(t),
-      streamStart: () => tui.streamStart(),
-      streamEnd: () => tui.streamEnd(),
-      replaceLast: () => {},
+      printAbove: (ls) => {
+        for (const line of ls) tui.historyPush(line);
+      },
+      stream: (t) => tui.historyStream(t),
+      streamStart: () => {},
+      streamEnd: () => tui.historyStreamEnd(),
+      replaceLast: (l) => tui.historyReplaceLast(l),
       setStatus: () => {},
     };
     const type = (s: string) => { for (const ch of s) tui.handleKey({ kind: "char", ch }); };
@@ -413,16 +415,23 @@ describe("full chat flow in box", () => {
     await chat.onEvent({ type: "tool.result", payload: { ok: true, name: "fs.read" } });
     chat.ui?.printAbove(["\x1b[7m YOU \x1b[0m ok"]);
     await chat.onEvent({ type: "turn.failed", payload: { reason: "no API key" } });
-    const screen = vt.screen();
-    expect(screen).toContain("YOU");
-    expect(screen).toContain("Salam! Kifach n3awnek?");
-    expect(screen).toContain("fs.read");
-    expect(screen).toContain("failed: no API key");
-    console.log("FINAL_SCREEN:\n" + screen);
-    for (const line of screen.split("\n")) {
+    const rows = vt.screen().split("\n");
+    const top = rows.findIndex((r) => r.includes("╭"));
+    const bottoms = rows.map((r, i) => [r, i] as const).filter(([r]) => r.includes("╰"));
+    expect(top).toBeGreaterThanOrEqual(0);
+    expect(bottoms.length).toBeGreaterThan(0);
+    const inside = rows.slice(top + 1, bottoms[bottoms.length - 1]![1]).join("\n");
+    expect(inside).toContain("YOU");
+    expect(inside).toContain("Salam! Kifach n3awnek?");
+    expect(inside).toContain("fs.read");
+    expect(inside).toContain("failed: no API key");
+    const outside = rows.slice(0, top).join("\n");
+    expect(outside).not.toContain("YOU");
+    expect(outside).not.toContain("Salam");
+    for (const line of rows) {
       expect(line.length).toBeLessThanOrEqual(100);
     }
-    expect(vt.count("╭")).toBeLessThanOrEqual(2);
+    expect(vt.count("╭")).toBe(1);
   });
 });
 

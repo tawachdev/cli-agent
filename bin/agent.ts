@@ -280,10 +280,12 @@ async function main(): Promise<void> {
     chat.uiHandlesErrors = true;
     chat.onError = (message) => tui.showError(message);
     chat.ui = {
-      printAbove: (lines) => tui.printAbove(lines),
-      stream: (text) => tui.stream(text),
-      streamStart: () => tui.streamStart(),
-      streamEnd: () => tui.streamEnd(),
+      printAbove: (lines) => {
+        for (const line of lines) tui.historyPush(line);
+      },
+      stream: (text) => tui.historyStream(text),
+      streamStart: () => {},
+      streamEnd: () => tui.historyStreamEnd(),
       replaceLast: (line) => tui.historyReplaceLast(line),
       setStatus: (state, steps) => tui.setChatStatus(state, steps),
     };

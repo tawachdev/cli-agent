@@ -307,7 +307,6 @@ export class Tui {
   private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null }> = [];
   private pendingPaths = new Set<string>();
   private history: string[] = [];
-  private sentLine = "";
   private workingLine = "";
   private chatLines: string[] = [];
   private chatStreamOpen = false;
@@ -1011,6 +1010,10 @@ export class Tui {
     this.refresh();
   }
 
+  historyStreamEnd(): void {
+    this.chatStreamOpen = false;
+  }
+
   historyReplaceLast(line: string): void {
     if (this.chatLines.length === 0) this.chatLines.push(line);
     else this.chatLines[this.chatLines.length - 1]! = line;
@@ -1565,7 +1568,6 @@ export class Tui {
         }
         const task = this.input.trim();
         if (!task) return;
-        this.sentLine = task;
         if (this.history[this.history.length - 1] !== task) this.history.push(task);
         this.historyIndex = null;
         this.input = "";
