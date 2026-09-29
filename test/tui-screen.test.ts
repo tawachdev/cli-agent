@@ -191,7 +191,7 @@ function expectClean(vt: VirtualTerminal, cols: number): void {
   expect(vt.count("▌")).toBeLessThanOrEqual(1);
   expect(vt.count("╭")).toBeLessThanOrEqual(2);
   expect(vt.count("╰")).toBeLessThanOrEqual(2);
-  expect(vt.count("│")).toBeLessThanOrEqual(48);
+  expect(vt.count("│")).toBeLessThanOrEqual(72);
   if (cols < 56) expect(screen).not.toContain("███╗");
   expect(vt.count("enter send")).toBeLessThanOrEqual(1);
 }
@@ -387,6 +387,19 @@ describe("resize never overflows the screen", () => {
   });
 });
 
+describe("full-height box", () => {
+  it("box fills the viewport — top edge at row 0, bottom edge above the footer", async () => {
+    const { vt, tui } = makeVt(30, 100);
+    tui.enableHero("0.1.4");
+    tui.show();
+    const lines = vt.screen().split("\n");
+    expect(lines[0]!.includes("╭")).toBe(true);
+    const bottomIdx = lines.findIndex((l) => l.includes("╰"));
+    expect(bottomIdx).toBe(27);
+    expect(lines[lines.length - 3] ?? "").toContain("enter send");
+  });
+});
+
 describe("resize coalescing", () => {
   it("a burst of resize signals in one tick produces a single repaint", async () => {
     const { vt, tui } = makeVt(40, 120);
@@ -539,11 +552,13 @@ describe("double-send repro", () => {
     chat.uiHandlesErrors = true;
     chat.onError = (m) => tui.showError(m);
     chat.ui = {
-      printAbove: (ls) => tui.printAbove(ls),
-      stream: (t) => tui.stream(t),
-      streamStart: () => tui.streamStart(),
-      streamEnd: () => tui.streamEnd(),
-      replaceLast: () => {},
+      printAbove: (ls) => {
+        for (const line of ls) tui.historyPush(line);
+      },
+      stream: (t) => tui.historyStream(t),
+      streamStart: () => {},
+      streamEnd: () => tui.historyStreamEnd(),
+      replaceLast: (l) => tui.historyReplaceLast(l),
       setStatus: () => {},
     };
     tui.show();

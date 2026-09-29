@@ -602,6 +602,11 @@ export class Tui {
       }
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
       lines.push(this.boxLine(""));
+      const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
+      const boxTarget = Math.max(8, this.rows - footerLines);
+      const bottomCount = 4;
+      const fill = Math.max(0, boxTarget - lines.length - bottomCount - this.chatLines.length);
+      for (let i = 0; i < fill; i++) lines.push(this.boxLine(""));
       lines.push(C.dim + this.boxLead() + "├" + "─".repeat(this.innerWidth() + 2) + "┤" + C.reset);
       this.inputRow = lines.length;
       lines.push(this.boxLine(this.renderInput()));
