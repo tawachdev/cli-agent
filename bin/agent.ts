@@ -58,6 +58,7 @@ async function main(): Promise<void> {
   let spawnedBackend: ChildProcess | null = null;
 
   const bye = (): void => {
+    stdout.write("\x1b[?1049l");
     cleanup();
     chat.close();
     spawnedBackend?.kill();
@@ -66,6 +67,7 @@ async function main(): Promise<void> {
   };
 
   if (interactive) {
+    stdout.write("\x1b[?1049h");
     stdin.setRawMode(true);
     stdin.resume();
     const handleTurn = async (t: string): Promise<void> => {
@@ -332,6 +334,7 @@ async function main(): Promise<void> {
       spawnedBackend?.kill();
     };
     const die = (): void => {
+      stdout.write("\x1b[?1049l");
       cleanup();
       killBackend();
       exit(0);

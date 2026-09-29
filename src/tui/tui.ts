@@ -711,10 +711,9 @@ export class Tui {
   }
 
   notice(msg: string): void {
-    const wasShown = this.shown;
-    this.hide();
-    this.tty.write(C.dim + trunc(msg, Math.max(6, this.usable - 2)) + C.reset + "\n");
-    if (wasShown || !this.busy) this.show();
+    this.chatLines.push(C.dim + trunc(msg, Math.max(6, this.usable - 2)) + C.reset);
+    this.chatStreamOpen = false;
+    this.refresh();
   }
 
   beginBusy(): void {

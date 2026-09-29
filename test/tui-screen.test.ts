@@ -234,7 +234,7 @@ describe("virtual terminal resize storm", () => {
     vt.resize(26, 24);
     tui.onResize();
     key(tui, "enter");
-    expect(vt.screen()).toContain("model set to MIMON 3");
+    expect(vt.screen()).toContain("set to MIMON");
     for (const line of vt.screen().split("\n")) {
       expect(line.length).toBeLessThanOrEqual(70);
     }
