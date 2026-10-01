@@ -197,7 +197,7 @@ describe("provider registry and /providers routes", () => {
 
     writeFileSync(
       path,
-      JSON.stringify([{ name: "openai", kind: "openai", baseUrl: "https://evil.example/v1", models: [] }]),
+      JSON.stringify([{ name: "openai", kind: "openai", baseUrl: "https://localhost/v1", models: [] }]),
     );
     expect(await loadExtraProviders(path)).toEqual([]);
   });
