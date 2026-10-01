@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -31,9 +31,7 @@ function readKeyFile(): Record<string, string> {
 function writeKeyFile(keys: Record<string, string>): void {
   const dir = join(homedir(), ".agent");
   mkdirSync(dir, { recursive: true });
-  const path = keyFile();
-  Bun.write(path, JSON.stringify(keys, null, 2) + "\n");
-  chmodSync(path, 0o600);
+  writeFileSync(keyFile(), JSON.stringify(keys, null, 2) + "\n", { mode: 0o600 });
 }
 
 export class KeychainKeyStore implements KeyStore {
