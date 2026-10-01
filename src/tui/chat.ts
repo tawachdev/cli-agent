@@ -129,6 +129,7 @@ export class Chat {
   sessionId = "";
   tokensPerSec: number | null = null;
   private ws: WebSocket | null = null;
+  private wsGeneration = 0;
   private readonly allows = new Set<string>();
   private streaming = false;
   private chipOpen = false;
@@ -159,6 +160,9 @@ export class Chat {
   ) {}
 
   async connect(): Promise<void> {
+    this.ws?.close();
+    this.wsGeneration += 1;
+    const generation = this.wsGeneration;
     const wsUrl = new URL(baseUrl.toString());
     wsUrl.protocol = baseUrl.protocol === "https:" ? "wss:" : "ws:";
     wsUrl.pathname = "/sessions/" + this.sessionId + "/stream";
@@ -168,6 +172,7 @@ export class Chat {
       ws.addEventListener("error", () => reject(new Error("backend ws failed - run: bun run dev")));
     });
     ws.addEventListener("message", (m) => {
+      if (generation !== this.wsGeneration) return;
       try {
         this.onEvent(JSON.parse(m.data as string) as StreamEvent).catch((error: Error) => {
           stdout.write(C.red + "  ✘ event failed: " + error.message + C.reset + "\n");
