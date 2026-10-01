@@ -23,8 +23,9 @@ export const fsListTool: Tool<typeof inputSchema> = {
     const entries = await readdir(target, { withFileTypes: true });
     const listed = [];
     for (const entry of entries.slice(0, 500)) {
-      listed.push({ name: entry.name, type: entry.isDirectory() ? "dir" : "file" });
+      const type = entry.isSymbolicLink() ? "link" : entry.isDirectory() ? "dir" : "file";
+      listed.push({ name: entry.name, type });
     }
-    return { ok: true, data: { path: input.path, entries: listed } };
+    return { ok: true, data: { path: input.path, entries: listed, truncated: entries.length > 500 } };
   },
 };
