@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd landing && pnpm install --frozen-lockfile",
+  "buildCommand": "cd landing && pnpm exec astro check && pnpm build",
+  "outputDirectory": "landing/dist"
+}
