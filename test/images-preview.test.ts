@@ -13,7 +13,7 @@ function visible(s: string): number {
 describe("half-block pixel preview", () => {
   it("renders truecolor half-block rows, bounded, with reset", () => {
     const png = buildPng(8, 8, (x, y) => [200, 10 * x, 10 * y]);
-    const lines = pixelPreviewLines(asLoaded(png), 10, 4);
+    const lines = pixelPreviewLines({ ...asLoaded(png), mime: "image/png" as const }, 10, 4);
     expect(lines.length).toBeGreaterThan(1);
     expect(lines.length).toBeLessThanOrEqual(4);
     for (const line of lines) {
