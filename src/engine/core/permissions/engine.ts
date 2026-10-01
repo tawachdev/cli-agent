@@ -33,6 +33,7 @@ export class PermissionEngine {
     target: string,
     ids: { sessionId?: string; taskId?: string } = {},
     notify?: AskNotifier,
+    signal?: AbortSignal,
   ): Promise<PermissionDecision> {
     const action = decideAction(this.policy, cls, target);
     this.audit.write("permission.decided", { class: cls, target, action }, ids);
@@ -43,8 +44,17 @@ export class PermissionEngine {
     const requestId = crypto.randomUUID();
     notify?.({ requestId, class: cls, target });
     this.audit.write("permission.asked", { class: cls, target, requestId }, ids);
-    const approved = await this.pending.create(requestId);
-    this.audit.write("permission.resolved", { requestId, approved }, ids);
-    return { action: "ask", granted: approved };
+    if (signal?.aborted) {
+      return { action: "ask", granted: false };
+    }
+    const onAbort = () => this.pending.resolve(requestId, false);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      const approved = await this.pending.create(requestId);
+      this.audit.write("permission.resolved", { requestId, approved }, ids);
+      return { action: "ask", granted: approved };
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+    }
   }
 }
