@@ -11,6 +11,8 @@ export interface StreamEvent {
   payload: unknown;
 }
 
+const MAX_BUFFERED = 500;
+
 export class SessionStream {
   private seq = 0;
   private readonly buffer: StreamEvent[] = [];
@@ -28,6 +30,9 @@ export class SessionStream {
       payload,
     };
     this.buffer.push(event);
+    if (this.buffer.length > MAX_BUFFERED) {
+      this.buffer.splice(0, this.buffer.length - MAX_BUFFERED);
+    }
     for (const subscriber of this.subscribers) {
       subscriber(event);
     }
@@ -48,6 +53,8 @@ export class SessionStream {
   }
 }
 
+const MAX_STREAMS = 200;
+
 export class StreamRegistry {
   private readonly streams = new Map<string, SessionStream>();
 
@@ -56,7 +63,15 @@ export class StreamRegistry {
     if (!stream) {
       stream = new SessionStream(sessionId);
       this.streams.set(sessionId, stream);
+      if (this.streams.size > MAX_STREAMS) {
+        const oldest = this.streams.keys().next().value;
+        if (oldest !== undefined && oldest !== sessionId) this.streams.delete(oldest);
+      }
     }
     return stream;
+  }
+
+  delete(sessionId: string): void {
+    this.streams.delete(sessionId);
   }
 }
