@@ -1,0 +1,59 @@
+---
+import terminal from "lucide-static/icons/terminal.svg?raw";
+import keyRound from "lucide-static/icons/key-round.svg?raw";
+import image from "lucide-static/icons/image.svg?raw";
+import palette from "lucide-static/icons/palette.svg?raw";
+import shieldCheck from "lucide-static/icons/shield-check.svg?raw";
+import server from "lucide-static/icons/server.svg?raw";
+
+const features = [
+  {
+    icon: terminal,
+    name: "Terminal-native",
+    text: "A hand-rolled TUI: pixel-font boot screen, boxed prompt, model picker, permission cards. Repaints cleanly at any terminal size.",
+  },
+  {
+    icon: keyRound,
+    name: "Any model, your keys",
+    text: "anthropic, openai, deepseek, glm, gemini — or any OpenAI-compatible endpoint. Keys live in the macOS Keychain, never logged, never returned.",
+  },
+  {
+    icon: image,
+    name: "Images in the terminal",
+    text: "Drop a path and see real pixels on iTerm2, WezTerm, kitty and Ghostty — a clean info panel elsewhere. The model sees it either way.",
+  },
+  {
+    icon: palette,
+    name: "Make it yours",
+    text: "Rename the agent and repaint it — one color or one per letter — from a 256-color grid, presets, or custom hex. Saved for every launch.",
+  },
+  {
+    icon: shieldCheck,
+    name: "Ask-first tools",
+    text: "Read-only tools run on their own. Writes and execs show a visible diff and wait for your key before anything lands.",
+  },
+  {
+    icon: server,
+    name: "Local engine",
+    text: "A loopback-only server on 127.0.0.1:7800 drives the agent loop, tools and audit log. The CLI refuses anything but localhost.",
+  },
+];
+---
+
+<section id="features" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
+  <h2 class="reveal text-3xl font-bold tracking-tight sm:text-4xl">What ships in the box</h2>
+  <ul class="mt-10">
+    {features.map((feature, i) => (
+      <li
+        class="reveal flex flex-col gap-3 border-t border-line py-6 last:border-b sm:flex-row sm:items-start sm:gap-6"
+        style={`--d: ${i * 60}ms`}
+      >
+        <span class="mt-0.5 size-5 shrink-0 text-teal [&>svg]:size-5" set:html={feature.icon} aria-hidden="true" />
+        <div class="sm:max-w-2xl">
+          <h3 class="font-mono text-base font-semibold">{feature.name}</h3>
+          <p class="mt-1.5 max-w-prose text-sm leading-relaxed text-fog">{feature.text}</p>
+        </div>
+      </li>
+    ))}
+  </ul>
+</section>

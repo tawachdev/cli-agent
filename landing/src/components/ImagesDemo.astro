@@ -1,0 +1,100 @@
+---
+---
+
+<section id="images" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
+  <div class="grid items-center gap-10 md:grid-cols-2">
+    <div class="reveal">
+      <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Images, as real pixels</h2>
+      <p class="mt-4 max-w-prose text-sm leading-relaxed text-fog">
+        Drop a path into the prompt and mimon decodes it in pure TypeScript — PNG chunks, zlib
+        inflate, Paeth unfiltering — then draws it with <span class="font-mono text-cream">▀</span>
+        half-block pairs in 24-bit color. iTerm2, WezTerm, kitty and Ghostty get inline pixels;
+        anything else gets a clean info panel, and the model gets the image either way.
+      </p>
+      <p class="mt-6 font-mono text-xs text-fog">
+        png · jpeg · gif · webp · bmp<br />
+        4 images per message · 6 MB each · magic-byte validated
+      </p>
+    </div>
+    <div class="reveal" style="--d: 80ms">
+      <figure class="overflow-hidden rounded-lg border border-line bg-panel">
+        <div id="halfblock" class="p-4 font-mono text-xs leading-none">
+          <div id="halfblock-panel">
+            <p class="font-semibold">▤ demo.png</p>
+            <p class="mt-1 text-fog">480×320 · 15.2 KB · ~/shots/demo.png</p>
+            <p class="mt-1 text-fog">
+              inline pixels need iTerm2, WezTerm, kitty or Ghostty — the image still reaches the model
+            </p>
+          </div>
+        </div>
+        <figcaption class="border-t border-line px-4 py-2 font-mono text-xs text-fog">
+          rendered in your browser right now — the same ▀ half-block technique
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<script>
+  const host = document.getElementById("halfblock");
+  const panel = document.getElementById("halfblock-panel");
+
+  if (host && panel) {
+    const img = new Image();
+    img.src = "/demo.png";
+    img.addEventListener(
+      "error",
+      () => {
+        host.dataset.mode = "fallback-panel";
+      },
+      { once: true },
+    );
+    img.addEventListener(
+      "load",
+      () => {
+        try {
+          const style = getComputedStyle(host);
+          const measurer = document.createElement("canvas").getContext("2d");
+          if (!measurer) throw new Error("no 2d context");
+          measurer.font = `${style.fontSize} ${style.fontFamily}`;
+          const charWidth = measurer.measureText("▀").width;
+          const cols = Math.max(24, Math.floor((host.clientWidth - 32) / charWidth));
+          const rows = Math.round(((img.naturalHeight / img.naturalWidth) * cols) / 2);
+          const canvas = document.createElement("canvas");
+          canvas.width = cols;
+          canvas.height = rows * 2;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          if (!ctx) throw new Error("no 2d context");
+          ctx.drawImage(img, 0, 0, cols, rows * 2);
+          const data = ctx.getImageData(0, 0, cols, rows * 2).data;
+          const rgb = (x: number, y: number): string => {
+            const i = (y * cols + x) * 4;
+            return `${data[i]},${data[i + 1]},${data[i + 2]}`;
+          };
+          let html = "";
+          for (let y = 0; y < rows; y++) {
+            let spans = "";
+            let run = "";
+            let style = "";
+            for (let x = 0; x < cols; x++) {
+              const current = `color:rgb(${rgb(x, y * 2)});background:rgb(${rgb(x, y * 2 + 1)})`;
+              if (current === style) {
+                run += "▀";
+              } else {
+                if (run) spans += `<span style="${style}">${run}</span>`;
+                style = current;
+                run = "▀";
+              }
+            }
+            spans += `<span style="${style}">${run}</span>`;
+            html += `<span class="block" aria-hidden="true">${spans}</span>`;
+          }
+          panel.outerHTML = html;
+        } catch {
+          host.dataset.mode = "fallback-panel";
+        }
+      },
+      { once: true },
+    );
+  }
+</script>

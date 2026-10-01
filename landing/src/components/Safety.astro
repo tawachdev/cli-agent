@@ -1,0 +1,36 @@
+---
+const rules = [
+  {
+    name: "Writes & execs ask first",
+    text: "Read-only tools run on their own. Anything that lands on disk or spawns a process shows a visible diff and waits for your key.",
+  },
+  {
+    name: "Loopback only",
+    text: "The engine binds 127.0.0.1:7800 and refuses to serve anything else; the CLI refuses non-loopback engines.",
+  },
+  {
+    name: "Append-only audit",
+    text: "Every tool call and every permission decision lands in the audit log — and the log never rewinds.",
+  },
+  {
+    name: "Keys stay home",
+    text: "Provider keys live in the macOS Keychain (or a 0600 file elsewhere): never logged, never audited, never returned by any endpoint.",
+  },
+  {
+    name: "One sandbox",
+    text: "File tools may only touch AGENT_WORKSPACE_ROOT — the engine's working directory by default.",
+  },
+];
+---
+
+<section id="safety" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
+  <h2 class="reveal text-3xl font-bold tracking-tight sm:text-4xl">Ask first, audit always</h2>
+  <dl class="reveal mt-10" style="--d: 60ms">
+    {rules.map((rule) => (
+      <div class="flex flex-col gap-1 border-t border-line py-5 last:border-b sm:flex-row sm:gap-8">
+        <dt class="font-mono text-sm font-semibold text-teal sm:w-56 sm:shrink-0">{rule.name}</dt>
+        <dd class="max-w-prose text-sm leading-relaxed text-fog">{rule.text}</dd>
+      </div>
+    ))}
+  </dl>
+</section>

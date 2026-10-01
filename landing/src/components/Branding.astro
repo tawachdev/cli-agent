@@ -1,0 +1,50 @@
+---
+import { bannerSpans } from "../lib/pixel";
+
+const defaults = bannerSpans("MIMON", ["text-teal", "text-gold"]);
+const custom = bannerSpans("MIMON", ["text-red", "text-cream", "text-green", "text-gold", "text-slate"]);
+---
+
+<section id="brand" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
+  <div class="grid items-center gap-10 md:grid-cols-2">
+    <div class="order-2 reveal md:order-1">
+      <figure class="rounded-lg border border-line bg-panel p-5">
+        <div class="overflow-x-auto font-mono text-xs leading-tight" aria-hidden="true">
+          {defaults.map((row) => (
+            <span class="block whitespace-pre">
+              {row.map(([color, art]) => <span class={color}>{art}</span>)}
+            </span>
+          ))}
+        </div>
+        <div class="mt-4 overflow-x-auto font-mono text-xs leading-tight" aria-hidden="true">
+          {custom.map((row) => (
+            <span class="block whitespace-pre">
+              {row.map(([color, art]) => <span class={color}>{art}</span>)}
+            </span>
+          ))}
+        </div>
+        <figcaption class="mt-4 border-t border-line pt-3 font-mono text-xs text-fog">
+          same binary, two brands — the boot screen repaints from one line
+        </figcaption>
+      </figure>
+    </div>
+    <div class="order-1 reveal md:order-2" style="--d: 80ms">
+      <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Make it yours</h2>
+      <p class="mt-4 max-w-prose text-sm leading-relaxed text-fog">
+        The name on the boot screen and its colors are one environment variable away — or permanent
+        through <span class="font-mono text-cream">/brand</span> inside the TUI: one color for the
+        whole name, or a different color per letter, picked from presets, the full 256-color grid,
+        or any custom hex. Your swatches are remembered for next time.
+      </p>
+      <div class="mt-6 space-y-2 font-mono text-xs">
+        <p class="text-fog">
+          <span class="text-teal">AGENT_NAME</span>=ANIR{" "}
+          <span class="text-teal">AGENT_COLORS</span>=purple,gold
+        </p>
+        <p class="text-fog">
+          <span class="text-teal">/brand</span> → 256-color grid · presets · custom hex
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

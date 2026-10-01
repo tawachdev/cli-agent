@@ -1,0 +1,29 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Nav from "../components/Nav.astro";
+import Hero from "../components/Hero.astro";
+import Features from "../components/Features.astro";
+import HowItWorks from "../components/HowItWorks.astro";
+import ImagesDemo from "../components/ImagesDemo.astro";
+import Branding from "../components/Branding.astro";
+import Safety from "../components/Safety.astro";
+import Install from "../components/Install.astro";
+import Footer from "../components/Footer.astro";
+---
+
+<Layout
+  title="Mimon — the terminal AI coding agent"
+  description="An AI coding agent that lives in your terminal: any model, your keys, images as real pixels, ask-first tools. One command to install."
+>
+  <Nav />
+  <main>
+    <Hero />
+    <Features />
+    <HowItWorks />
+    <ImagesDemo />
+    <Branding />
+    <Safety />
+    <Install />
+  </main>
+  <Footer />
+</Layout>

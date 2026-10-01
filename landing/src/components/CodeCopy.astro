@@ -1,0 +1,24 @@
+---
+import copy from "lucide-static/icons/copy.svg?raw";
+import check from "lucide-static/icons/check.svg?raw";
+
+interface Props {
+  command: string;
+}
+
+const { command } = Astro.props;
+---
+
+<span class="inline-flex max-w-full items-center gap-2 rounded-md border border-line bg-panel px-3 py-2 font-mono text-sm">
+  <span class="shrink-0 text-fog">$</span>
+  <code class="overflow-x-auto whitespace-nowrap text-cream">{command}</code>
+  <button
+    type="button"
+    data-copy={command}
+    class="shrink-0 text-fog transition-transform duration-150 ease-out-strong hover:text-cream active:scale-[0.97]"
+    aria-label={`Copy command: ${command}`}
+  >
+    <span data-idle class="block size-4 [&>svg]:size-4" set:html={copy} />
+    <span data-copied class="hidden size-4 text-green [&>svg]:size-4" set:html={check} />
+  </button>
+</span>

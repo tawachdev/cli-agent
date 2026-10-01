@@ -1,0 +1,20 @@
+---
+import Terminal from "./Terminal.astro";
+import CodeCopy from "./CodeCopy.astro";
+---
+
+<section id="top" class="mx-auto max-w-6xl px-4 pb-20 pt-14 sm:px-6 sm:pt-20">
+  <h1 class="max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-5xl md:text-6xl">
+    The <span class="text-teal">terminal</span> is the whole product.
+  </h1>
+  <p class="mt-5 max-w-prose text-lg text-fog">
+    Mimon is an AI coding agent that lives in your terminal. Bring any model and your own keys — no
+    accounts, no dashboard, no telemetry. Drop an image and watch it render as real pixels.
+  </p>
+  <div class="mt-7 reveal">
+    <CodeCopy command="npm i -g mimon" />
+  </div>
+  <div class="mt-12 reveal" style="--d: 80ms">
+    <Terminal />
+  </div>
+</section>

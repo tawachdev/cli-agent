@@ -1,0 +1,60 @@
+---
+import { githubMark } from "../lib/brand";
+
+const links = [
+  { href: "#features", label: "features" },
+  { href: "#how", label: "how it works" },
+  { href: "#images", label: "images" },
+  { href: "#safety", label: "safety" },
+  { href: "#install", label: "install" },
+];
+---
+
+<header class="sticky top-0 z-50 border-b border-line bg-bg">
+  <nav class="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6" aria-label="main">
+    <a href="#top" class="font-mono text-sm font-bold tracking-tight text-teal">MIMON</a>
+    <div class="hidden items-center gap-5 font-mono text-xs text-fog md:flex">
+      {links.map((link) => (
+        <a
+          class="transition-colors duration-150 hover:text-cream"
+          href={link.href}
+          data-spy={link.href.slice(1)}
+        >
+          {link.label}
+        </a>
+      ))}
+    </div>
+    <a
+      href="https://github.com/tawachdev/cli-agent"
+      class="flex items-center gap-1.5 rounded-md px-2 py-1.5 font-mono text-xs text-fog transition-colors duration-150 hover:text-cream"
+      aria-label="GitHub repository"
+    >
+      <span class="size-4 [&>svg]:size-4" set:html={githubMark} />
+      <span class="hidden sm:inline">tawachdev/cli-agent</span>
+    </a>
+  </nav>
+</header>
+
+<script>
+  const links = [...document.querySelectorAll<HTMLAnchorElement>("header nav [data-spy]")];
+  const byId = new Map(links.map((link) => [link.dataset.spy!, link]));
+  const active = "text-cream";
+  if ("IntersectionObserver" in window && links.length > 0) {
+    const spy = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const link = byId.get(entry.target.id);
+          if (link && entry.isIntersecting) {
+            links.forEach((other) => other.classList.remove(active));
+            link.classList.add(active);
+          }
+        }
+      },
+      { rootMargin: "-35% 0px -60% 0px" },
+    );
+    for (const id of byId.keys()) {
+      const section = document.getElementById(id);
+      if (section) spy.observe(section);
+    }
+  }
+</script>

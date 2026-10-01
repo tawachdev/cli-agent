@@ -1,0 +1,44 @@
+---
+import "../styles/global.css";
+import { bannerSpans } from "../lib/pixel";
+
+const banner = bannerSpans("MIMON", ["text-teal", "text-gold"]);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Mimon — share card</title>
+  </head>
+  <body class="overflow-hidden">
+    <div class="flex h-screen w-screen flex-col justify-between bg-bg p-14">
+      <div class="flex items-start justify-between">
+        <div class="font-mono text-2xl leading-tight" aria-hidden="true">
+          {banner.map((row) => (
+            <span class="block whitespace-pre">
+              {row.map(([color, art]) => <span class={color}>{art}</span>)}
+            </span>
+          ))}
+        </div>
+        <p class="font-mono text-sm text-fog">tawachdev/cli-agent</p>
+      </div>
+      <div>
+        <h1 class="max-w-4xl text-6xl font-bold tracking-tight text-balance">
+          The <span class="text-teal">terminal</span> is the whole product.
+        </h1>
+        <p class="mt-5 font-mono text-xl text-fog">
+          AI coding agent · any model, your keys · images as real pixels
+        </p>
+      </div>
+      <div class="flex items-center justify-between">
+        <p class="rounded-md border border-line bg-panel px-4 py-2 font-mono text-lg">
+          <span class="text-fog">$</span> <span class="text-cream">npm i -g mimon</span>
+        </p>
+        <p class="font-mono text-sm text-fog">no accounts · no telemetry</p>
+      </div>
+    </div>
+  </body>
+</html>

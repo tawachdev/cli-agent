@@ -1,0 +1,48 @@
+---
+import { githubMark } from "../lib/brand";
+import CodeCopy from "./CodeCopy.astro";
+
+const alternatives = [
+  { label: "curl, no package manager", command: "curl -fsSL https://raw.githubusercontent.com/tawachdev/cli-agent/main/install.sh | sh" },
+  { label: "one shot, no install", command: 'npx mimon-cli "summarize this folder"' },
+  { label: "from source", command: "bun install && bun run cli" },
+];
+---
+
+<section id="install" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
+  <div class="reveal rounded-lg border border-line bg-panel px-6 py-10 sm:px-10">
+    <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Put it in your terminal.</h2>
+    <p class="mt-3 max-w-prose text-sm leading-relaxed text-fog">
+      One command, nothing else: the package carries a self-contained binary for macOS and Linux,
+      arm64 and x64. First launch walks you through the setup wizard — pick a provider, paste a
+      key, done.
+    </p>
+    <div class="mt-6">
+      <CodeCopy command="npm i -g mimon" />
+    </div>
+    <ul class="mt-8 space-y-2.5 border-t border-line pt-6">
+      {alternatives.map((alt) => (
+        <li class="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-4">
+          <span class="w-52 shrink-0 font-mono text-xs text-fog">{alt.label}</span>
+          <code class="overflow-x-auto whitespace-nowrap font-mono text-xs text-slate">{alt.command}</code>
+        </li>
+      ))}
+    </ul>
+    <div class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-5 font-mono text-xs text-fog">
+      <span><kbd>enter</kbd> send</span>
+      <span><kbd>/</kbd> command menu</span>
+      <span><kbd>tab</kbd> cycle model tier</span>
+      <span><kbd>esc</kbd> stop a turn</span>
+      <span><kbd>ctrl+c</kbd> quit</span>
+    </div>
+    <div class="mt-8">
+      <a
+        href="https://github.com/tawachdev/cli-agent"
+        class="inline-flex items-center gap-2 rounded-md border border-line px-4 py-2 font-mono text-sm text-cream transition-all duration-150 ease-out-strong hover:border-slate active:scale-[0.97]"
+      >
+        <span class="size-4 [&>svg]:size-4" set:html={githubMark} aria-hidden="true" />
+        read the source
+      </a>
+    </div>
+  </div>
+</section>

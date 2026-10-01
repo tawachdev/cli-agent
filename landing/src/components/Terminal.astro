@@ -1,0 +1,123 @@
+---
+import { DEMO_LINES } from "../lib/session";
+import { bannerSpans } from "../lib/pixel";
+
+const banner = bannerSpans("MIMON", ["text-teal", "text-gold"]);
+---
+
+<div class="overflow-hidden rounded-lg border border-line bg-panel shadow-2xl">
+  <div class="flex items-center gap-2 border-b border-line px-4 py-3">
+    <span class="size-3 rounded-full bg-red/60"></span>
+    <span class="size-3 rounded-full bg-gold/60"></span>
+    <span class="size-3 rounded-full bg-green/60"></span>
+    <span class="ml-2 font-mono text-xs text-fog">mimon — demo session</span>
+  </div>
+  <pre class="overflow-x-auto p-4 font-mono text-xs leading-snug sm:text-sm"
+    ><span aria-hidden="true">{banner.map((row) => <span class="block">{row.map(([color, art]) => <span class={color}>{art}</span>)}</span>)}</span
+    ><span id="demo-session"
+      >{DEMO_LINES.map((line, i) => (
+        <span
+          class:list={["block break-words whitespace-pre-wrap", line.cls ?? "text-text"]}
+          set:html={(line.kind === "cmd"
+            ? `<span class="text-fog">~ ❯ </span><span class="text-cream">${line.text}</span>`
+            : line.text || "&nbsp;") + (i === DEMO_LINES.length - 1 ? '<span class="cursor text-teal">█</span>' : "")}
+        />
+      ))}</span
+    ></pre
+  >
+  <div class="flex items-center justify-between border-t border-line px-4 py-2 font-mono text-xs text-fog">
+    <span>fast · glm-4.6</span>
+    <span>▤ 1 attached · 127.0.0.1:7800</span>
+  </div>
+</div>
+
+<script>
+  import { DEMO_LINES, type DemoLine } from "../lib/session";
+
+  const host = document.getElementById("demo-session");
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  function lineEl(line: DemoLine): HTMLElement {
+    const el = document.createElement("span");
+    el.className = `block break-words whitespace-pre-wrap ${line.cls ?? "text-text"}`;
+    if (line.kind === "cmd") {
+      el.innerHTML = `<span class="text-fog">~ ❯ </span><span class="text-cream"></span>`;
+    } else if (line.chip === "allow") {
+      el.innerHTML = line.text.replace(
+        "[a]",
+        '[<button type="button" class="demo-key" aria-label="allow the edit">a</button>]',
+      );
+    } else {
+      el.innerHTML = line.text || "&nbsp;";
+    }
+    return el;
+  }
+
+  function waitAllow(el: HTMLElement): Promise<void> {
+    return new Promise((resolve) => {
+      const button = el.querySelector("button");
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        window.removeEventListener("keydown", onKey);
+        button?.removeEventListener("click", finish);
+        button?.setAttribute("data-chosen", "");
+        const chosen = document.createElement("span");
+        chosen.className = "text-gold";
+        chosen.textContent = " → a";
+        el.appendChild(chosen);
+        resolve();
+      };
+      const onKey = (event: KeyboardEvent) => {
+        if (event.key === "a" || event.key === "A") finish();
+      };
+      window.addEventListener("keydown", onKey);
+      button?.addEventListener("click", finish);
+      setTimeout(finish, 4500);
+    });
+  }
+
+  async function typeInto(el: HTMLElement, text: string, ms: number): Promise<void> {
+    for (const ch of text) {
+      el.textContent = (el.textContent ?? "") + ch;
+      await sleep(ms);
+    }
+  }
+
+  async function play(): Promise<void> {
+    if (!host) return;
+    for (;;) {
+      host.innerHTML = "";
+      for (const line of DEMO_LINES) {
+        if (line.kind === "cmd") {
+          const el = lineEl(line);
+          const target = el.lastElementChild as HTMLElement;
+          const cursor = document.createElement("span");
+          cursor.className = "cursor text-teal";
+          cursor.textContent = "█";
+          el.appendChild(cursor);
+          host.appendChild(el);
+          await typeInto(target, line.text, 34);
+          cursor.remove();
+          await sleep(line.gap ?? 300);
+        } else {
+          const el = lineEl(line);
+          host.appendChild(el);
+          if (line.chip === "allow") await waitAllow(el);
+          if (line.stream) {
+            const full = el.textContent ?? "";
+            el.textContent = "";
+            await typeInto(el, full, 9);
+          }
+          await sleep(line.gap ?? 150);
+        }
+      }
+      await sleep(8000);
+    }
+  }
+
+  if (!reduced) play();
+</script>
