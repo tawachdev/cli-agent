@@ -75,6 +75,7 @@ tools.register(createVisionTool(router, config.numCtx, tmpdir()));
 const plugins = await loadPluginRoots(
   [join(config.workspaceRoot, ".agent", "plugins"), join(homedir(), ".agent", "plugins")],
   tools,
+  logger,
 );
 for (const plugin of plugins) {
   logger.info("plugin loaded", { ...plugin });
@@ -98,6 +99,7 @@ const server = Bun.serve({
   fetch: createServer({
     db,
     logger,
+    hostname: config.hostname,
     agent,
     streams,
     pending,
