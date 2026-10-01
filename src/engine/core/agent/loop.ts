@@ -93,7 +93,9 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
       return { answer, steps: step, usage };
     }
 
-    history.push({ role: "assistant", content: turnContent });
+    if (turnCalls.length > 0 && step === maxSteps) {
+      throw new Error("turn exceeded max steps (" + maxSteps + ")");
+    }
     workingHistory.push({ role: "assistant", content: turnContent });
     for (const call of turnCalls) {
       deps.publish("tool.requested", { name: call.name, arguments: call.arguments });
