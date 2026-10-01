@@ -13,6 +13,16 @@ function cap(text: string): string {
   return text.length > MAX_OUTPUT_BYTES ? text.slice(0, MAX_OUTPUT_BYTES) + "\n... (truncated)" : text;
 }
 
+async function readCapped(stream: ReadableStream<Uint8Array>, buf: { text: string }): Promise<void> {
+  const decoder = new TextDecoder();
+  for await (const chunk of stream) {
+    if (buf.text.length < MAX_OUTPUT_BYTES) {
+      buf.text += decoder.decode(chunk, { stream: true });
+    }
+  }
+  buf.text += decoder.decode();
+}
+
 export const shellExecTool: Tool<typeof inputSchema> = {
   name: "shell.exec",
   description: "Run a shell command in the workspace and return stdout, stderr and exit code",
@@ -20,6 +30,9 @@ export const shellExecTool: Tool<typeof inputSchema> = {
   schema: inputSchema,
   target: (input) => input.command,
   async invoke(input: z.output<typeof inputSchema>, ctx: ToolContext): Promise<ToolResult> {
+    if (ctx.signal?.aborted) {
+      return { ok: false, error: "command aborted before start", data: { command: input.command } };
+    }
     const proc = Bun.spawn(["sh", "-c", input.command], {
       cwd: ctx.workspaceRoot,
       stdout: "pipe",
@@ -29,24 +42,25 @@ export const shellExecTool: Tool<typeof inputSchema> = {
     const abort = () => proc.kill();
     ctx.signal?.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(() => proc.kill(), input.timeoutMs);
+    timer.unref?.();
 
-    let stdout = "";
-    let stderr = "";
-    const readers = [
-      new Response(proc.stdout).text().then((t) => (stdout = t)),
-      new Response(proc.stderr).text().then((t) => (stderr = t)),
-    ];
-    const exitCode = await proc.exited;
-    clearTimeout(timer);
-    ctx.signal?.removeEventListener("abort", abort);
-    await Promise.allSettled(readers);
+    const out = { text: "" };
+    const err = { text: "" };
+    const readers = [readCapped(proc.stdout, out), readCapped(proc.stderr, err)];
+    try {
+      const exitCode = await proc.exited;
+      await Promise.allSettled(readers);
 
-    return exitCode === 0
-      ? { ok: true, data: { command: input.command, exitCode, stdout: cap(stdout), stderr: cap(stderr) } }
-      : {
-          ok: false,
-          error: "command failed with exit code " + exitCode,
-          data: { command: input.command, exitCode, stdout: cap(stdout), stderr: cap(stderr) },
-        };
+      return exitCode === 0
+        ? { ok: true, data: { command: input.command, exitCode, stdout: cap(out.text), stderr: cap(err.text) } }
+        : {
+            ok: false,
+            error: "command failed with exit code " + exitCode,
+            data: { command: input.command, exitCode, stdout: cap(out.text), stderr: cap(err.text) },
+          };
+    } finally {
+      clearTimeout(timer);
+      ctx.signal?.removeEventListener("abort", abort);
+    }
   },
 };
