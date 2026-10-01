@@ -9,6 +9,7 @@ export interface ToolGate {
     target: string,
     ids: ToolIds,
     notify?: (request: { requestId: string; class: PermissionClass; target: string; preview?: string }) => void,
+    signal?: AbortSignal,
   ): Promise<{ granted: boolean }>;
 }
 
@@ -57,8 +58,12 @@ export class ToolRegistry {
     const target = tool.target(parsed.data);
     const preview = tool.preview?.(parsed.data);
     if (this.gate) {
-      const decision = await this.gate.authorize(tool.permissionClass, target, ids, (request) =>
-        notify?.({ ...request, preview }),
+      const decision = await this.gate.authorize(
+        tool.permissionClass,
+        target,
+        ids,
+        (request) => notify?.({ ...request, preview }),
+        ctx.signal,
       );
       if (!decision.granted) {
         return {
