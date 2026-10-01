@@ -7,6 +7,8 @@ A terminal AI coding agent in one package. Clone, install, run — the terminal 
 - **Make it yours** — the product name and its two colors are one environment variable away, or one line for a permanent rebrand.
 - **Images in the terminal** — drop an image path into the prompt: real pixels on iTerm2/WezTerm/kitty/Ghostty, a clean info panel elsewhere; the model sees it either way.
 
+Live demo: **https://mimon-landing.vercel.app**
+
 ## Install — one command, nothing else
 
 With npm (or pnpm/yarn/bun — any of them):
