@@ -12,7 +12,7 @@ export function createProvidersRoute(registry: ProviderRegistry, audit: AuditWri
     return c.json({ ok: true, providers: registry.list() });
   });
   route.post("/", async (c) => {
-    const body = extraProviderSchema.safeParse(await c.req.json().catch(() => null));
+    const body = await extraProviderSchema.safeParseAsync(await c.req.json().catch(() => null));
     if (!body.success) {
       return c.json({ ok: false, error: "name, kind and a https baseUrl are required" }, 400);
     }
@@ -26,6 +26,7 @@ export function createProvidersRoute(registry: ProviderRegistry, audit: AuditWri
   });
   route.delete("/:name", async (c) => {
     const name = c.req.param("name");
+    if (!registry.has(name)) return c.json({ ok: false, error: "unknown provider" }, 404);
     try {
       await registry.removeProvider(name);
     } catch (error) {

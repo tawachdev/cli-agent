@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { sniffImageMime, stripDataUrl } from "../../../shared/images";
 import type { Db } from "../../db/client";
@@ -74,18 +74,18 @@ export function createAgentRoute(
     const aborted = parsed.data.sessionId
       ? agent.abortSession(parsed.data.sessionId)
       : agent.abortTask(parsed.data.taskId as string);
-    return c.json({ ok: aborted, aborted });
+    if (!aborted) return c.json({ ok: false, error: "unknown task or session" }, 404);
+    return c.json({ ok: true, aborted });
   });
 
-  const resolvePermission = (requestId: string, approved: boolean, sessionId: string) => {
+  const resolvePermission = (c: Context, requestId: string, approved: boolean, sessionId: string) => {
     const resolved = pending.resolve(requestId, approved);
-    if (resolved) {
-      streams.get(sessionId).publish("permission.resolved", {
-        requestId,
-        approved,
-      });
-    }
-    return { ok: resolved, requestId, approved };
+    if (!resolved) return c.json({ ok: false, error: "unknown permission request" }, 404);
+    streams.get(sessionId).publish("permission.resolved", {
+      requestId,
+      approved,
+    });
+    return c.json({ ok: true, requestId, approved });
   };
 
   route.post("/permissions/:requestId", async (c) => {
@@ -95,7 +95,7 @@ export function createAgentRoute(
     if (!parsed.success) {
       return c.json({ ok: false, error: parsed.error.message }, 400);
     }
-    return c.json(resolvePermission(requestId, parsed.data.approved, parsed.data.sessionId));
+    return resolvePermission(c, requestId, parsed.data.approved, parsed.data.sessionId);
   });
 
   route.post("/permissions", async (c) => {
@@ -108,7 +108,7 @@ export function createAgentRoute(
     if (!parsed.success) {
       return c.json({ ok: false, error: parsed.error.message }, 400);
     }
-    return c.json(resolvePermission(parsed.data.requestId, parsed.data.approved, parsed.data.sessionId));
+    return resolvePermission(c, parsed.data.requestId, parsed.data.approved, parsed.data.sessionId);
   });
 
   return route;
