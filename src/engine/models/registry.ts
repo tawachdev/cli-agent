@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { resolve4, resolve6 } from "node:dns/promises";
 import { z } from "zod";
 import type { ModelProvider } from "./types";
 import type { ModelBinding } from "./router";
@@ -47,9 +48,34 @@ export const BUILTIN_PROVIDERS: ProviderDef[] = [
   },
 ];
 
-const PRIVATE_V4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.)/;
+const PRIVATE_V4 = /^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
 
-export function safeProviderBaseUrl(value: string): boolean {
+function isPrivateAddress(address: string): boolean {
+  const value = address.toLowerCase();
+  if (!value.includes(":")) return PRIVATE_V4.test(value);
+  if (value === "::1" || value === "::") return true;
+  const head = value.split(":")[0] ?? "";
+  const first = head === "" ? Number.NaN : Number.parseInt(head, 16);
+  if (!Number.isNaN(first)) {
+    if ((first & 0xffc0) === 0xfe80) return true;
+    if ((first & 0xfe00) === 0xfc00) return true;
+  }
+  if (value.startsWith("::ffff:")) {
+    const tail = value.slice("::ffff:".length);
+    if (tail.includes(".")) return PRIVATE_V4.test(tail);
+    const [hiText, loText] = tail.split(":");
+    if (hiText && loText) {
+      const hi = Number.parseInt(hiText, 16);
+      const lo = Number.parseInt(loText, 16);
+      if (!Number.isNaN(hi) && !Number.isNaN(lo)) {
+        return PRIVATE_V4.test(`${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`);
+      }
+    }
+  }
+  return false;
+}
+
+export async function safeProviderBaseUrl(value: string): Promise<boolean> {
   if (value.length === 0 || value.length > 300) return false;
   if (/[\s\x00-\x1f\x7f]/.test(value)) return false;
   let url: URL;
@@ -66,23 +92,37 @@ export function safeProviderBaseUrl(value: string): boolean {
   if (loopback) return true;
   if (PRIVATE_V4.test(host)) return false;
   if (/^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)) return false;
-  return host.includes(".") || host === "::1";
+  if (isPrivateAddress(host)) return false;
+  if (!host.includes(".")) return false;
+  const [v4, v6] = await Promise.allSettled([resolve4(host), resolve6(host)]);
+  const records = [
+    ...(v4.status === "fulfilled" ? v4.value : []),
+    ...(v6.status === "fulfilled" ? v6.value : []),
+  ];
+  if (records.length === 0) return false;
+  return !records.some((address) => isPrivateAddress(address));
 }
 
 export const extraProviderSchema = z.object({
-  name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).max(200),
   kind: z.enum(["openai", "anthropic"]),
   baseUrl: z.string().refine(safeProviderBaseUrl, {
     message: "baseUrl must be a public https:// URL (http:// allowed for 127.0.0.1/localhost only)",
   }),
-  models: z.array(z.string().min(1)).default([]),
+  models: z.array(z.string().min(1).max(200)).max(128).default([]),
 });
 
 export async function loadExtraProviders(path: string): Promise<ProviderDef[]> {
   const file = Bun.file(path);
   if (!(await file.exists())) return [];
-  const raw = await file.json();
-  const parsed = z.array(extraProviderSchema).safeParse(raw);
+  let raw: unknown;
+  try {
+    raw = await file.json();
+  } catch (error) {
+    console.warn("[providers] corrupt providers file ignored:", (error as Error).message);
+    return [];
+  }
+  const parsed = await z.array(extraProviderSchema).safeParseAsync(raw);
   if (!parsed.success) {
     throw new Error(`invalid providers file ${path}: ${parsed.error.issues[0]?.message ?? "unknown"}`);
   }
@@ -128,7 +168,9 @@ export class ProviderRegistry {
     const defs = [...this.custom].map((name) => this.defs.get(name)!);
     const dir = dirname(this.providersPath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    await Bun.write(this.providersPath, JSON.stringify(defs, null, 2) + "\n");
+    const tmp = join(dir, `.${basename(this.providersPath)}.${process.pid}.tmp`);
+    await Bun.write(tmp, JSON.stringify(defs, null, 2) + "\n");
+    renameSync(tmp, this.providersPath);
   }
 
   async addProvider(def: ProviderDef): Promise<void> {
