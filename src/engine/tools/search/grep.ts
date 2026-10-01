@@ -25,6 +25,7 @@ export const grepTool: Tool<typeof inputSchema> = {
     const matches: Array<{ file: string; line: number; text: string }> = [];
     const needle = input.pattern.toLowerCase();
     let scanned = 0;
+    let visited = 0;
     let truncated = false;
 
     for await (const rel of glob.scan({ cwd: root, onlyFiles: true, dot: true })) {
@@ -32,16 +33,24 @@ export const grepTool: Tool<typeof inputSchema> = {
         truncated = true;
         break;
       }
-      if (scanned >= MAX_FILES_SCANNED) {
+      const parts = rel.split(sep);
+      if (parts.some((part) => SKIP_DIRS.has(part))) {
+        visited++;
+        if (visited >= MAX_FILES_SCANNED) {
+          truncated = true;
+          break;
+        }
+        continue;
+      }
+      if (visited >= MAX_FILES_SCANNED) {
         truncated = true;
         break;
       }
-      const parts = rel.split(sep);
-      if (parts.some((part) => SKIP_DIRS.has(part))) continue;
       const abs = join(root, rel);
       const info = await stat(abs).catch(() => null);
       if (!info?.isFile() || info.size > MAX_FILE_BYTES) continue;
       scanned++;
+      visited++;
       const content = await readFile(abs, "utf8").catch(() => null);
       if (content === null) continue;
       const lines = content.split("\n");
