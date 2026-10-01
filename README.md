@@ -1,72 +1,59 @@
-# cli-agent
+<div align="center">
 
-A terminal AI coding agent in one package. Clone, install, run — the terminal is the whole product: no web app, no dashboard, no accounts, no telemetry.
+<img src="docs/demo.png" width="720" alt="Mimon — the terminal AI coding agent">
 
-- **Terminal UI** — pixel-art boot screen, boxed prompt, model picker, permission cards with visible diffs; repaints cleanly on any terminal size.
-- **Any model, your keys** — first launch walks you through picking a provider (anthropic, openai, deepseek, glm, gemini) and pasting an API key; keys live in the macOS Keychain, never logged, never returned.
-- **Make it yours** — the product name and its two colors are one environment variable away, or one line for a permanent rebrand.
-- **Images in the terminal** — drop an image path into the prompt: real pixels on iTerm2/WezTerm/kitty/Ghostty, a clean info panel elsewhere; the model sees it either way.
+# mimon
 
-Live demo: **https://mimon-landing.vercel.app**
+**The terminal is the whole product.** An AI coding agent that lives in your terminal — any model, your keys, images as real pixels. No accounts, no dashboard, no telemetry.
 
-## Install — one command, nothing else
+[Live demo](https://mimon-landing.vercel.app) · [Install](#start-in-30-seconds) · [Safety](#safety)
 
-With npm (or pnpm/yarn/bun — any of them):
+![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%C2%B7%20arm64%20%7C%20x64-00af87)
 
-```sh
-npm i -g mimon
-mimon
+</div>
+
+## Start in 30 seconds
+
+| Path | Command |
+|------|---------|
+| one shot, nothing installed | `npx mimon-cli "summarize this folder"` |
+| self-contained binary | `curl -fsSL https://raw.githubusercontent.com/tawachdev/cli-agent/main/install.sh \| sh` then `agent` |
+| package manager | `npm i -g mimon` then `mimon` |
+
+The binary is self-contained (runtime embedded — macOS/Linux, arm64/x64, nothing else to install). First launch opens the setup wizard: pick a provider (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint), paste its API key — the key is tested live and bound to all four model tiers. Nothing else is required.
+
+If `agent` is not found after the curl install, open a new shell so PATH picks it up.
+
+The CLI starts the local engine by itself (loopback-only, port `7800`). From source: `bun install && bun run cli`.
+
+## The shape of a turn
+
+```text
+~ ❯ fix the failing test in src/tui
+● reading src/tui/chat.ts · 444 lines
+⚠ edit src/tui/chat.ts
+  - if (chunks.length) return null
+  + if (!chunks.length) return null
+  allow [a] · edit [e] · deny [n]  → a
+✓ patched · 1 hunk
+● exec bun test src/tui
+✓ 42 pass · 0 fail · 312 ms
 ```
 
-No clone, no build step: the package carries a self-contained binary for your platform (macOS/Linux, arm64/x64 — the runtime is embedded). First launch opens the setup wizard in the terminal: pick a provider (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint), paste its API key — the key is tested live and every tier routes to it. Your keys stay on your machine (macOS Keychain; a 0600 file elsewhere). One-shot without installing: `npx mimon-cli "summarize this folder"`.
+Writes and execs wait on a visible diff; read-only tools just run. The [live demo](https://mimon-landing.vercel.app) replays a full session in your browser.
 
-Prefer curl? Same binary from GitHub Releases:
+## What you get
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/tawachdev/cli-agent/main/install.sh | sh
-agent
-```
+| Capability | What it means |
+|------------|---------------|
+| Terminal-native TUI | pixel-font boot screen, boxed prompt, model picker, permission cards; repaints cleanly at any terminal size |
+| Any model, your keys | anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint; keys live in the macOS Keychain — never logged, never returned |
+| Images in the terminal | drop a path, see real pixels on iTerm2/WezTerm/kitty/Ghostty, a clean info panel elsewhere; the model sees it either way |
+| Make it yours | rename the agent and repaint it — per letter if you want — from a 256-color grid, presets, or custom hex; saved for every launch |
+| Local engine | loopback-only server on `127.0.0.1:7800`; the CLI refuses non-loopback engines |
+| Ask-first tools | writes and execs show a diff and wait for your key; every call lands in an append-only audit log |
 
-Downloads a single self-contained binary (macOS/Linux, arm64/x64 — the runtime is embedded, nothing to install), verifies its checksum, puts it on your PATH. First launch opens the setup wizard in the terminal: bring any API key (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint).
-
-From source instead (development):
-
-```sh
-bun install
-bun run cli
-```
-
-The wizard asks for your API key — nothing else is required. If a tier is ever bound to a provider without a key, the boot notice tells you exactly which one to fix.
-
-The CLI starts the local engine by itself (loopback-only, port `7800`). Interactive TUI: `bun run cli`. Engine alone: `bun run dev`.
-
-The terminal is the whole product and the `/` menu is its control panel: `/setup` connects a provider (pick one, paste the key, it is tested live and bound to all four tiers), `/brand` changes the name and colors, `/model` routes tiers. A quiet hint appears on first launch if no provider is connected — nothing takes over your screen.
-
-## Make it yours
-
-Any OpenAI-compatible endpoint (Groq, OpenRouter, Together, LM Studio...) is a first-class citizen: `/providers` → **+ add provider** → name, base URL, models — it joins the list like a builtin; open it to set its key and bind a tier. Custom providers persist in `.agent/providers.json` (`kind` is always `openai`; other kinds can be added by editing that file). Base URLs are validated defensively before the engine ever dials one: real URL parse, public `https://` only (`http` allowed for 127.0.0.1/localhost), private and link-local IP ranges (10.x, 192.168.x, 172.16–31.x, 169.254.x), embedded credentials, control characters and overlong values are all rejected.
-
-Inside the TUI: type `/` and pick **/brand** — change the name (2–12 letters), change colors (one for the whole name or one per letter, from presets, the 256-color grid, or custom hex — applied colors are remembered as your swatches), or reset. The choice is saved (`.agent/brand.json`) and every launch after that boots with your brand — no environment variables needed.
-
-Environment works too:
-
-```sh
-AGENT_NAME=ANIR AGENT_COLORS=purple,gold bun run cli
-```
-
-`AGENT_NAME` — 2–12 letters, spells your name in the pixel font (full A–Z, two sizes). `AGENT_COLORS` — one color **per letter**, cycled if shorter: `AGENT_COLORS=green,black,red,blue` paints M in green, I in black… The picker in `/brand` offers two modes: **one color for the whole name**, or **a color for each letter** — walked letter by letter with a live preview of your name. Palette: **all 256 terminal colors** as a browsable grid (arrows to move, enter to pick), 14 quick presets, or any color you want via **custom hex…** (`#rrggbb`, rendered as truecolor where the terminal supports it). Colors you apply are remembered: your custom hex swatches join the palette for every next time (up to 12, kept in `.agent/brand.json`). Invalid values fall back to the defaults. Permanent defaults live in `src/shared/brand.ts` (`DEFAULT_BRAND` / `DEFAULT_COLORS`) — one file owns the identity. A saved `/brand` choice wins over the environment.
-
-Technical identifiers (`AGENT_*` env vars, `.agent/` state folder, `agent` Keychain service, port `7800`) are stable on purpose so the product can coexist with any other agent on the same machine.
-
-## Images in the terminal
-
-Drag an image into the terminal: the path disappears, the image renders immediately as a preview, and a `▤N` counter appears in the status bar — enter sends it with your message (esc clears the attachments). You can also just type a path:
-
-```sh
-bun run cli "what does /path/to/screenshot.png show?"
-```
-
-Up to 4 images per message, 6 MB each (png, jpeg, gif, webp, bmp), validated by magic bytes end to end. Images need a vision-capable model on the active tier (a cloud vision model on the active tier); models without tool support are handled automatically by the engine.
+The `/` menu is the control panel: `/setup` connects a provider, `/providers` manages keys and custom endpoints, `/model` routes tiers, `/brand` changes identity. A quiet hint appears on first launch if no provider is connected — nothing takes over your screen.
 
 ## CLI keys
 
@@ -86,6 +73,50 @@ Up to 4 images per message, 6 MB each (png, jpeg, gif, webp, bmp), validated by 
 | `AGENT_KEY_<PROVIDER>` | — | key per provider (Keychain is the primary store) |
 | `AGENT_WORKSPACE_ROOT` | engine cwd | the only directory file tools may touch |
 
+## Make it yours
+
+`/brand` inside the TUI: change the name (2–12 letters), one color for the whole name or one per letter — from 14 presets, the full 256-color grid, or custom hex (`#rrggbb`, truecolor where supported). Your applied colors are remembered as swatches (up to 12 custom, in `.agent/brand.json`) and every launch boots with your brand. Environment works too, and a saved `/brand` choice wins over it:
+
+```sh
+AGENT_NAME=ANIR AGENT_COLORS=purple,gold mimon
+```
+
+Permanent defaults live in `src/shared/brand.ts` (`DEFAULT_BRAND` / `DEFAULT_COLORS`) — one file owns the identity.
+
+Custom OpenAI-compatible endpoints (Groq, OpenRouter, Together, LM Studio...) are first-class: `/providers` → **+ add provider** → name, base URL, models. They persist in `.agent/providers.json`. Base URLs are validated before the engine dials: real URL parse, public `https://` only (`http` for 127.0.0.1/localhost), private and link-local ranges (10.x, 192.168.x, 172.16–31.x, 169.254.x), embedded credentials, control characters and overlong values are all rejected.
+
+## Images in the terminal
+
+Drag an image into the prompt: the path disappears, the image renders as a preview, and a `▤N` counter appears in the status bar — enter sends it (esc clears attachments). Or just type a path:
+
+```sh
+mimon "what does /path/to/screenshot.png show?"
+```
+
+| Terminal | What you see |
+|----------|--------------|
+| iTerm2, WezTerm, mintty | inline pixels (iterm protocol) |
+| kitty, Ghostty | inline pixels (kitty protocol, chunked) |
+| anything else | clean info panel — the model still gets the image |
+
+PNG decoding is pure TypeScript (chunks → zlib inflate → Paeth unfilter). Caps: 4 images per message, 6 MB each, png/jpeg/gif/webp/bmp, validated by magic bytes end to end. Images need a vision-capable model on the active tier; models without tool support are handled automatically by the engine.
+
+## Safety
+
+- **Writes & execs ask first** — read-only tools auto-run; anything that lands on disk or spawns a process shows a visible diff and waits.
+- **Loopback only** — the engine binds `127.0.0.1` and refuses to serve anything else; the CLI refuses non-loopback engines.
+- **Append-only audit** — every tool call and permission decision is logged; the log never rewinds.
+- **Keys stay home** — macOS Keychain (or `AGENT_KEY_*` env / 0600 file elsewhere), never logged, never audited, never returned by any endpoint.
+- **One sandbox** — file tools touch only `AGENT_WORKSPACE_ROOT`.
+
+Technical identifiers (`AGENT_*` env vars, `.agent/` state folder, `agent` Keychain service, port `7800`) are stable on purpose so the product can coexist with any other agent on the same machine.
+
+## Honest limits
+
+- No cloud, no accounts, no telemetry — and no mobile or web client by design; if you want IDE-inline diffs or parallel cloud runs, an editor plugin or cloud agent scores better there.
+- Images need a vision-capable model on the active tier.
+- Prebuilt binaries cover macOS and Linux only.
+
 ## Verify
 
 ```sh
@@ -93,7 +124,3 @@ bun run typecheck        tsc --noEmit, strict
 bun test                 TUI resize storms, pixel font, image pipeline, engine routes
 bun run stage            renders every TUI state (works with AGENT_NAME / AGENT_COLORS)
 ```
-
-## Safety
-
-Read-only tools auto-run; write and exec ask first with a visible diff. Engine binds `127.0.0.1` only; the CLI refuses non-loopback engines. Every tool call and permission decision lands in an append-only audit log. Keys stay in the macOS Keychain (or `AGENT_KEY_*` env), never logged, never audited, never returned by any endpoint.
