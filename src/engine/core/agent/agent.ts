@@ -65,8 +65,16 @@ export class AbortRegistry {
   }
 
   abortSession(sessionId: string): boolean {
+    let aborted = false;
     for (const [taskId, entry] of this.entries) {
-      if (entry.sessionId === sessionId) return this.abort(taskId);
+      if (entry.sessionId === sessionId && this.abort(taskId)) aborted = true;
+    }
+    return aborted;
+  }
+
+  hasRunning(sessionId: string): boolean {
+    for (const entry of this.entries.values()) {
+      if (entry.sessionId === sessionId) return true;
     }
     return false;
   }
@@ -98,6 +106,9 @@ export class Agent {
   ): Promise<TurnResult & { taskId: string }> {
     if (!getSession(this.deps.db, sessionId)) {
       throw new SessionNotFoundError(sessionId);
+    }
+    if (this.aborts.hasRunning(sessionId)) {
+      throw new Error("session already has a running task");
     }
     const row = createTask(this.deps.db, sessionId, task, role);
     const audit = (type: string, payload: Record<string, unknown>) =>
