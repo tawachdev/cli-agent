@@ -52,4 +52,5 @@ export function appendMessage(
     message.content,
     message.toolName ?? null,
   );
+  db.query("UPDATE sessions SET updated_at = ? WHERE id = ?").run(new Date().toISOString(), message.sessionId);
 }
