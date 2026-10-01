@@ -21,7 +21,7 @@ import {
   putProviderKey,
   testProvider,
 } from "../src/tui/chat";
-import { loadImages } from "../src/tui/images";
+import { loadImages, MAX_IMAGES } from "../src/tui/images";
 
 const tty: Tty = {
   write: (data) => stdout.write(data),
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
   let taskFailed = false;
 
   const bye = (): void => {
-    stdout.write("\x1b[?1049l");
+    stdout.write("\x1b[?2004l\x1b[?1049l");
     cleanup();
     chat.close();
     spawnedBackend?.kill();
@@ -70,14 +70,14 @@ async function main(): Promise<void> {
   };
 
   if (interactive) {
-    stdout.write("\x1b[?1049h");
+    stdout.write("\x1b[?1049h\x1b[?2004h");
     stdin.setRawMode(true);
     stdin.resume();
     const handleTurn = async (t: string): Promise<void> => {
       try {
         const attached = tui.takePendingImages();
         const { images: fromText, errors } = await loadImages(t);
-        const images = [...attached, ...fromText.filter((image) => !attached.some((a) => a.path === image.path))];
+        const images = [...attached, ...fromText.filter((image) => !attached.some((a) => a.path === image.path))].slice(0, MAX_IMAGES);
         for (const message of errors) stdout.write(C.dim + "  · " + message + C.reset + "\n");
         await chat.run(t, images);
         if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);
@@ -326,93 +326,101 @@ async function main(): Promise<void> {
   }
 
   try {
-    await chat.healthCheck();
-  } catch {
+    try {
+      await chat.healthCheck();
+    } catch {
 
-    const compiled = !process.execPath.endsWith("bun") && !process.execPath.includes("/bun-");
-    const backendEnv = {
-      ...process.env,
-      AGENT_WORKSPACE_ROOT: process.cwd(),
-      AGENT_DB_PATH: join(homedir(), ".agent", "agent.db"),
-    };
-    spawnedBackend = compiled
-      ? spawn(process.execPath, ["serve"], { stdio: "ignore", env: backendEnv })
-      : spawn(
-          process.execPath,
-          [fileURLToPath(new URL("../src/engine/app/bootstrap.ts", import.meta.url))],
-          { stdio: "ignore", env: backendEnv, cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
-        );
-    const killBackend = (): void => {
-      spawnedBackend?.kill();
-    };
-    const die = (): void => {
-      stdout.write("\x1b[?1049l");
-      cleanup();
-      killBackend();
-      exit(0);
-    };
-    process.on("exit", killBackend);
-    process.on("SIGINT", die);
-    process.on("SIGTERM", die);
-    process.on("SIGPIPE", die);
-    let up = false;
-    for (let i = 0; i < 30 && !up; i++) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 300));
-      try {
-        await chat.healthCheck();
-        up = true;
-      } catch {
-        up = false;
+      const compiled = !process.execPath.endsWith("bun") && !process.execPath.includes("/bun-");
+      const backendEnv = {
+        ...process.env,
+        AGENT_WORKSPACE_ROOT: process.cwd(),
+        AGENT_DB_PATH: join(homedir(), ".agent", "agent.db"),
+      };
+      spawnedBackend = compiled
+        ? spawn(process.execPath, ["serve"], { stdio: "ignore", env: backendEnv })
+        : spawn(
+            process.execPath,
+            [fileURLToPath(new URL("../src/engine/app/bootstrap.ts", import.meta.url))],
+            { stdio: "ignore", env: backendEnv, cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
+          );
+      const killBackend = (): void => {
+        spawnedBackend?.kill();
+      };
+      const die = (): void => {
+        stdout.write("\x1b[?2004l\x1b[?1049l");
+        cleanup();
+        killBackend();
+        exit(0);
+      };
+      process.on("exit", killBackend);
+      process.on("SIGINT", die);
+      process.on("SIGTERM", die);
+      process.on("SIGPIPE", die);
+      let up = false;
+      for (let i = 0; i < 30 && !up; i++) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 300));
+        try {
+          await chat.healthCheck();
+          up = true;
+        } catch {
+          up = false;
+        }
       }
+      if (!up) {
+        stdout.write("\x1b[?2004l\x1b[?1049l");
+        stdout.write(C.red + "\n  backend did not come up at " + backendOrigin + "\n  start it manually with: bun run dev\n\n" + C.reset);
+        spawnedBackend?.kill();
+        cleanup();
+        exit(1);
+      }
+
     }
-    if (!up) {
-      stdout.write("\x1b[?1049l");
-      stdout.write(C.red + "\n  backend did not come up at " + backendOrigin + "\n  start it manually with: bun run dev\n\n" + C.reset);
+
+    await chat.newSession();
+    await chat.connect();
+    if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);
+
+    if (!interactive) {
+      const { images, errors } = await loadImages(task);
+      for (const message of errors) stdout.write(C.dim + "  · " + message + C.reset + "\n");
+      splash(tty, PRODUCT_VERSION);
+      await chat.run(task, images);
+      chat.close();
       spawnedBackend?.kill();
       cleanup();
-      exit(1);
+      exit(taskFailed ? 1 : 0);
     }
 
-  }
+    let savedBrand: { name: string; colors: string[]; customColors: string[] } | null = null;
+    try {
+      savedBrand = await getBrand();
+      process.env.AGENT_NAME = savedBrand.name;
+      process.env.AGENT_COLORS = savedBrand.colors.join(",");
+    } catch {
+    }
 
-  await chat.newSession();
-  await chat.connect();
-  if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);
-
-  if (!interactive) {
-    const { images, errors } = await loadImages(task);
-    for (const message of errors) stdout.write(C.dim + "  · " + message + C.reset + "\n");
-    splash(tty, PRODUCT_VERSION);
-    await chat.run(task, images);
+    ui?.enableHero(PRODUCT_VERSION);
+    ui?.show();
+    if (savedBrand) ui?.setBrandCustomColors(savedBrand.customColors);
+    void Promise.all([getSetupStatus(), getBindings(), getProviders()])
+      .then(([status, roles, providers]) => {
+        const stale = keylessProviderBindings(roles, providers);
+        if (stale.length > 0) {
+          const list = stale.map((s) => s.role + " → " + s.provider).join(", ");
+          ui?.notice("⚠ bound without key: " + list + " — /providers → set key, or /model → rebind");
+        } else if (status.needsSetup) {
+          ui?.notice("· bring your API key — /setup connects it in seconds · /brand makes it yours ·");
+        }
+      })
+      .catch(() => {});
+    await new Promise<void>(() => {});
+  } catch (error) {
+    stdout.write("\x1b[?2004l\x1b[?1049l");
+    cleanup();
     chat.close();
     spawnedBackend?.kill();
-    cleanup();
-    exit(taskFailed ? 1 : 0);
+    throw error;
   }
-
-  let savedBrand: { name: string; colors: string[]; customColors: string[] } | null = null;
-  try {
-    savedBrand = await getBrand();
-    process.env.AGENT_NAME = savedBrand.name;
-    process.env.AGENT_COLORS = savedBrand.colors.join(",");
-  } catch {
-  }
-
-  ui?.enableHero(PRODUCT_VERSION);
-  ui?.show();
-  if (savedBrand) ui?.setBrandCustomColors(savedBrand.customColors);
-  void Promise.all([getSetupStatus(), getBindings(), getProviders()])
-    .then(([status, roles, providers]) => {
-      const stale = keylessProviderBindings(roles, providers);
-      if (stale.length > 0) {
-        const list = stale.map((s) => s.role + " → " + s.provider).join(", ");
-        ui?.notice("⚠ bound without key: " + list + " — /providers → set key, or /model → rebind");
-      } else if (status.needsSetup) {
-        ui?.notice("· bring your API key — /setup connects it in seconds · /brand makes it yours ·");
-      }
-    })
-    .catch(() => {});
-  await new Promise<void>(() => {});
 }
 
 main().catch((error: Error) => {
