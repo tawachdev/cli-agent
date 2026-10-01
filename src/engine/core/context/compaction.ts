@@ -14,7 +14,11 @@ export interface CompactionInput {
 }
 
 export function estimateHistoryTokens(history: ChatMessage[]): number {
-  return history.reduce((sum, message) => sum + Math.ceil(message.content.length / 4), 0);
+  return history.reduce(
+    (sum, message) =>
+      sum + Math.ceil(message.content.length / 4) + ("images" in message ? (message.images?.length ?? 0) * 1200 : 0),
+    0,
+  );
 }
 
 export function historyTokenBudget(numCtx: number): number {
@@ -29,7 +33,7 @@ export async function compactHistory(
   if (estimateHistoryTokens(history) <= budget) {
     return { history, compacted: false };
   }
-  const keep = Math.min(6, Math.max(2, history.length - 2));
+  const keep = Math.min(6, Math.max(2, Math.floor((history.length - 2) / 2)));
   const oldMessages = history.slice(1, history.length - keep);
   const recent = history.slice(history.length - keep);
   const transcript = oldMessages
@@ -53,10 +57,10 @@ export async function compactHistory(
     }
   }
   input.publish("context.compacted", { summarizedTurns: oldMessages.length });
-  const compacted: ChatMessage[] = [
-    history[0] as ChatMessage,
-    { role: "user", content: "Conversation so far (summary): " + summary.trim() },
-    ...recent,
-  ];
+  const summaryMessage: ChatMessage = { role: "user", content: "Conversation so far (summary): " + summary.trim() };
+  while (estimateHistoryTokens([history[0] as ChatMessage, summaryMessage, ...recent]) > budget && recent.length > 2) {
+    recent.shift();
+  }
+  const compacted: ChatMessage[] = [history[0] as ChatMessage, summaryMessage, ...recent];
   return { history: compacted, compacted: true };
 }
