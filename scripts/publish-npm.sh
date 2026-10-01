@@ -8,8 +8,8 @@ done
 
 publish_if_new() {
   local dir="$1" name
-  name="$(node -e "console.log(require('./package.json').name)" 2>/dev/null)"
   cd "$dir"
+  name="$(node -e "console.log(require('./package.json').name)" 2>/dev/null)"
   if [ "$(npm view "$name@$(node -e "console.log(require('./package.json').version)")" version 2>/dev/null)" = "$(node -e "console.log(require('./package.json').version)")" ]; then
     echo "skip $name@$(node -e "console.log(require('./package.json').version)") — already published"
     cd - > /dev/null
