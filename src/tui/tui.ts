@@ -446,8 +446,12 @@ export class Tui {
     return text + " ".repeat(Math.max(1, width - visibleLen(text)));
   }
 
+  private inputMaxText(): number {
+    return this.usable < 22 ? this.usable - 2 : this.innerWidth() - 4;
+  }
+
   private renderInput(): string {
-    const maxText = this.usable < 22 ? this.usable - 2 : this.innerWidth() - 4;
+    const maxText = this.inputMaxText();
     if (this.busy) {
       return C.dim + trunc("▌ working — esc to stop", maxText) + C.reset;
     }
@@ -770,9 +774,10 @@ export class Tui {
   }
 
   private cursorColumn(): number {
-    if (this.usable < 22) return 2 + visibleLen(trunc(this.input.slice(0, this.cursor), this.usable - 4));
+    const maxText = this.inputMaxText();
+    if (this.usable < 22) return 2 + visibleLen(trunc(this.input.slice(0, this.cursor), maxText));
     const lead = this.boxLead().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").length;
-    return lead + 3 + visibleLen(trunc(this.input.slice(0, this.cursor), this.usable - 6));
+    return lead + 3 + visibleLen(trunc(this.input.slice(0, this.cursor), maxText));
   }
 
   refresh(): void {
