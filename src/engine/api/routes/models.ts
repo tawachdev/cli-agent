@@ -28,7 +28,10 @@ export function createModelsRoute(
     const body = bindingBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ ok: false, error: "binding required" }, 400);
     const parts = registry.splitBinding(body.data.binding);
-    if (!parts.def && body.data.binding.includes("/")) {
+    if (!parts.def && !body.data.binding.includes("/")) {
+      return c.json({ ok: false, error: "binding must be provider/model" }, 400);
+    }
+    if (!parts.def) {
       return c.json({ ok: false, error: "unknown provider in binding" }, 400);
     }
     if (parts.def && !registry.hasKey(parts.def.name)) {
