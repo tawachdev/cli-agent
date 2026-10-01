@@ -1,7 +1,7 @@
 import { stdout } from "node:process";
 import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
 import { existsSync } from "node:fs";
-import { imageChipName, loadImagesFromPaths, locateImagePaths, pixelPreviewLines, renderImage, type LoadedImage } from "./images";
+import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, pixelPreviewLines, renderImage, type LoadedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -1103,6 +1103,11 @@ export class Tui {
         if (hit.path.includes("NSIRD_")) {
           this.notice("✘ screenshot temp file is gone — take it again with Cmd+Shift+4 (saves to Desktop) and drag the file here");
         }
+        continue;
+      }
+      if (this.pendingImages.length >= MAX_IMAGES) {
+        this.pendingPaths.add(hit.path);
+        this.notice("✘ " + hit.path + " — skipped, max " + MAX_IMAGES + " images per message");
         continue;
       }
       this.input = this.input.slice(0, hit.start) + this.input.slice(hit.end);
