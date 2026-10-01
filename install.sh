@@ -35,24 +35,24 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "downloading $ASSET ..."
 if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "$URL_BASE/$ASSET" -o "$TMP_DIR/$BIN"
-  curl -fsSL "$URL_BASE/$ASSET.sha256" -o "$TMP_DIR/$BIN.sha256" || true
+  curl -fsSL "$URL_BASE/$ASSET" -o "$TMP_DIR/$ASSET"
+  curl -fsSL "$URL_BASE/$ASSET.sha256" -o "$TMP_DIR/$ASSET.sha256" || true
 else
-  wget -q "$URL_BASE/$ASSET" -O "$TMP_DIR/$BIN"
-  wget -q "$URL_BASE/$ASSET.sha256" -O "$TMP_DIR/$BIN.sha256" || true
+  wget -q "$URL_BASE/$ASSET" -O "$TMP_DIR/$ASSET"
+  wget -q "$URL_BASE/$ASSET.sha256" -O "$TMP_DIR/$ASSET.sha256" || true
 fi
 
-if [ -f "$TMP_DIR/$BIN.sha256" ]; then
+if [ -f "$TMP_DIR/$ASSET.sha256" ]; then
   if command -v shasum >/dev/null 2>&1; then
-    (cd "$TMP_DIR" && shasum -a 256 -c "$BIN.sha256") || { echo "checksum mismatch — aborting"; exit 1; }
+    (cd "$TMP_DIR" && shasum -a 256 -c "$ASSET.sha256") || { echo "checksum mismatch — aborting"; exit 1; }
   elif command -v sha256sum >/dev/null 2>&1; then
-    (cd "$TMP_DIR" && sha256sum -c "$BIN.sha256") || { echo "checksum mismatch — aborting"; exit 1; }
+    (cd "$TMP_DIR" && sha256sum -c "$ASSET.sha256") || { echo "checksum mismatch — aborting"; exit 1; }
   fi
 fi
 
-chmod +x "$TMP_DIR/$BIN"
+chmod +x "$TMP_DIR/$ASSET"
 mkdir -p "$INSTALL_DIR"
-mv "$TMP_DIR/$BIN" "$INSTALL_DIR/$BIN"
+mv "$TMP_DIR/$ASSET" "$INSTALL_DIR/$BIN"
 
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
