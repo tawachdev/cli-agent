@@ -19,6 +19,7 @@ import type { Logger } from "../shared/logger";
 export interface ServerDeps {
   db: Db;
   logger: Logger;
+  hostname?: string;
   agent: Agent;
   streams: StreamRegistry;
   pending: PendingPermissions;
@@ -31,8 +32,49 @@ export interface ServerDeps {
   brand: BrandStore;
 }
 
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function hostnameFromHeader(header: string): string {
+  const value = header.trim().toLowerCase();
+  if (value.startsWith("[")) {
+    const end = value.indexOf("]");
+    return end === -1 ? value : value.slice(1, end);
+  }
+  if ((value.match(/:/g) ?? []).length > 1) return value;
+  const colon = value.indexOf(":");
+  return colon === -1 ? value : value.slice(0, colon);
+}
+
+function originHostname(origin: string): string {
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 export function createServer(deps: ServerDeps): Hono {
   const app = new Hono();
+  const configured = (deps.hostname ?? "127.0.0.1").trim().toLowerCase().replace(/^\[|\]$/g, "");
+  const wildcard = configured === "" || configured === "0.0.0.0" || configured === "::";
+  const allowedHosts = new Set(LOCAL_HOSTNAMES);
+  if (!wildcard) allowedHosts.add(configured);
+  app.use("*", async (c, next) => {
+    if (!wildcard) {
+      const hostHeader = c.req.header("host");
+      if (hostHeader !== undefined && !allowedHosts.has(hostnameFromHeader(hostHeader))) {
+        return c.json({ ok: false, error: "forbidden host" }, 403);
+      }
+    }
+    const origin = c.req.header("origin");
+    if (origin !== undefined) {
+      const hostname = originHostname(origin);
+      if (!LOCAL_HOSTNAMES.has(hostname)) {
+        return c.json({ ok: false, error: "forbidden origin" }, 403);
+      }
+    }
+    await next();
+  });
   app.get("/", (c) => c.json({ ok: true, service: "agent-backend" }));
   app.route("/health", createHealthRoute(deps.db, deps.info));
   app.route("/models", createModelsRoute(deps.bindings, deps.registry, deps.audit));
