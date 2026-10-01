@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { ToolRegistry } from "../tools/registry";
 import type { AnyTool } from "../tools/types";
+import type { Logger } from "../shared/logger";
 
 const manifestSchema = z.object({
   name: z.string().min(1),
@@ -41,7 +42,11 @@ export async function loadPluginDir(pluginDir: string, registry: ToolRegistry): 
   return { name: manifest.name, version: manifest.version, tools: registered };
 }
 
-export async function loadPluginRoots(roots: string[], registry: ToolRegistry): Promise<LoadedPlugin[]> {
+export async function loadPluginRoots(
+  roots: string[],
+  registry: ToolRegistry,
+  logger?: Logger,
+): Promise<LoadedPlugin[]> {
   const loaded: LoadedPlugin[] = [];
   for (const root of roots) {
     if (!existsSync(root)) continue;
@@ -49,7 +54,14 @@ export async function loadPluginRoots(roots: string[], registry: ToolRegistry): 
       if (!entry.isDirectory()) continue;
       const pluginDir = join(root, entry.name);
       if (!existsSync(join(pluginDir, "manifest.json"))) continue;
-      loaded.push(await loadPluginDir(pluginDir, registry));
+      try {
+        loaded.push(await loadPluginDir(pluginDir, registry));
+      } catch (error) {
+        logger?.warn("plugin skipped", {
+          dir: pluginDir,
+          error: (error as Error).message,
+        });
+      }
     }
   }
   return loaded;
