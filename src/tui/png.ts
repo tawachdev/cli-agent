@@ -19,6 +19,14 @@ function paeth(a: number, b: number, c: number): number {
 }
 
 export function decodePng(base64: string): RgbaPixels | null {
+  try {
+    return decodePngInner(base64);
+  } catch {
+    return null;
+  }
+}
+
+function decodePngInner(base64: string): RgbaPixels | null {
   const buf = Buffer.from(base64, "base64");
   if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIG)) return null;
   let offset = 8;
@@ -33,8 +41,10 @@ export function decodePng(base64: string): RgbaPixels | null {
   while (offset + 8 <= buf.length) {
     const length = buf.readUInt32BE(offset);
     const type = buf.toString("ascii", offset + 4, offset + 8);
+    if (offset + 8 + length > buf.length) break;
     const data = buf.subarray(offset + 8, offset + 8 + length);
     if (type === "IHDR") {
+      if (data.length < 13) return null;
       width = data.readUInt32BE(0);
       height = data.readUInt32BE(4);
       bitDepth = data[8]!;
@@ -105,7 +115,7 @@ export function decodePng(base64: string): RgbaPixels | null {
         out[o] = pal[idx] ?? 0;
         out[o + 1] = pal[idx + 1] ?? 0;
         out[o + 2] = pal[idx + 2] ?? 0;
-        out[o + 3] = trns && trns[line[i]!] !== undefined && trns[line[i]!]! < 255 ? 0 : 255;
+        out[o + 3] = trns && trns[line[i]!] !== undefined ? trns[line[i]!]! : 255;
       } else if (colorType === 4) {
         const g = line[i]!;
         out[o] = g;
