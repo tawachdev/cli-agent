@@ -35,17 +35,32 @@ export function defaultPolicyFile(): PolicyFile {
 }
 
 export function loadPolicy(workspaceRoot: string): PolicyFile {
-  const primary = join(workspaceRoot, ".agent", "permissions.json");
-  const legacy = join(workspaceRoot, ".agent", "permissions.json");
-  const path = existsSync(primary) ? primary : existsSync(legacy) ? legacy : null;
-  if (path === null) return defaultPolicyFile();
-  const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
-  return policySchema.parse(raw);
+  const path = join(workspaceRoot, ".agent", "permissions.json");
+  if (!existsSync(path)) return defaultPolicyFile();
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    return policySchema.parse(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[permissions] invalid permissions.json, using defaults:", message);
+    return defaultPolicyFile();
+  }
+}
+
+const SHELL_META = /[;&|`$\n><]/;
+
+function matchesAllow(pattern: string, target: string, cls: PermissionClass): boolean {
+  if (target === pattern) return true;
+  if (cls === "exec") {
+    if (!target.startsWith(pattern + " ")) return false;
+    return !SHELL_META.test(target.slice(pattern.length + 1));
+  }
+  return target.startsWith(pattern.endsWith("/") ? pattern : pattern + "/");
 }
 
 export function decideAction(policy: PolicyFile, cls: PermissionClass, target: string): PermissionAction {
   const tier = policy.tiers[cls];
-  if (tier.allow.some((pattern) => target === pattern || target.startsWith(pattern + " "))) {
+  if (tier.allow.some((pattern) => matchesAllow(pattern, target, cls))) {
     return "allow";
   }
   return tier.default;
