@@ -239,7 +239,7 @@ function tipsList(): string[] {
 
 export type Key =
   | { kind: "char"; ch: string }
-  | { kind: "enter" | "backspace" | "delete" | "up" | "down" | "left" | "right" | "home" | "end" | "escape" | "tab" | "ctrl-c" | "ctrl-p" | "unknown" };
+  | { kind: "enter" | "backspace" | "delete" | "up" | "down" | "left" | "right" | "home" | "end" | "escape" | "tab" | "ctrl-c" | "ctrl-p" | "unknown" | "paste-start" | "paste-end" };
 
 export function decodeChunk(chunk: string): { keys: Key[]; rest: string } {
   const keys: Key[] = [];
@@ -265,6 +265,8 @@ export function decodeChunk(chunk: string): { keys: Key[]; rest: string } {
         else if (seq === "\x1b[H" || seq === "\x1b[1~") keys.push({ kind: "home" });
         else if (seq === "\x1b[F" || seq === "\x1b[4~") keys.push({ kind: "end" });
         else if (seq === "\x1b[3~") keys.push({ kind: "delete" });
+        else if (seq === "\x1b[200~") keys.push({ kind: "paste-start" });
+        else if (seq === "\x1b[201~") keys.push({ kind: "paste-end" });
         i = j + 1;
         continue;
       }
@@ -355,6 +357,8 @@ export class Tui {
   private lastCols = 0;
   private lastRows = 0;
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  private pasting = false;
+  private pasteBreak = false;
 
 
   constructor(
@@ -1074,6 +1078,18 @@ export class Tui {
     this.detectAttachments();
   }
 
+  private insertPasteText(ch: string): void {
+    if (ch === "\n") {
+      if (this.pasteBreak) return;
+      this.pasteBreak = true;
+      this.insert(" ");
+    } else {
+      this.pasteBreak = false;
+      this.insert(ch);
+    }
+    this.refresh();
+  }
+
   private detectAttachments(): void {
     const located = locateImagePaths(this.input);
     for (const hit of located.reverse()) {
@@ -1324,6 +1340,17 @@ export class Tui {
   handleKey(key: Key): void {
     if (key.kind === "ctrl-c") {
       this.hooks.onExit();
+      return;
+    }
+    if (this.pasting) {
+      if (key.kind === "paste-end") this.pasting = false;
+      else if (key.kind === "char") this.insertPasteText(key.ch);
+      else if (key.kind === "enter" || key.kind === "unknown") this.insertPasteText("\n");
+      return;
+    }
+    if (key.kind === "paste-start") {
+      this.pasting = true;
+      this.pasteBreak = false;
       return;
     }
     if (this.view === "permission") {
