@@ -9,6 +9,9 @@ dist/
 .env
 .DS_Store
 .agent/
+.v2c/
+.video_agent/
 npm/main/node_modules/
 npm/**/package-lock.json
 npm/platforms/*/bin/
+__pycache__/

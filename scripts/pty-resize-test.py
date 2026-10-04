@@ -5,7 +5,7 @@ def set_size(fd, cols, rows):
 
 pid, master = pty.fork()
 if pid == 0:
-    os.chdir("/Users/mohmmedtawach/ai/cli-agent")
+    os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     env = dict(os.environ, TERM="xterm-256color", AGENT_DB_PATH="/tmp/ptytest.db", AGENT_WORKSPACE_ROOT="/tmp/ptytest")
     os.execve("/opt/homebrew/bin/bun", ["bun", "run", "bin/agent.ts"], env)
 

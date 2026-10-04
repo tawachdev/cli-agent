@@ -2,7 +2,7 @@
   "name": "@mohamed-taaouch/darwin-x64",
   "version": "0.1.8",
   "description": "mimon CLI binary for darwin-x64",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "os": [
     "darwin"
   ],
