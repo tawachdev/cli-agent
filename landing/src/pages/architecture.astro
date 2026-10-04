@@ -1,0 +1,232 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import CodeCopy from "../components/CodeCopy.astro";
+
+const layers = [
+  {
+    name: "your terminal — the TUI",
+    accent: "text-cream",
+    from: "src/tui",
+    detail: "keystrokes in · ANSI frames out · repaints on resize",
+    chips: ["pixel-font boot screen", "iterm + kitty image protocols", "hand-measured glyphs"],
+  },
+  {
+    name: "mimon engine — local, no cloud",
+    accent: "text-teal",
+    from: "src/engine",
+    detail: "loopback-only server · the CLI refuses non-loopback engines",
+    chips: [
+      "agent loop",
+      "permission gate",
+      "append-only audit",
+      "context compactor",
+      "tier router",
+      "SQLite sessions",
+    ],
+    tools: "tools: fs · git · shell · search · computer",
+  },
+  {
+    name: "model providers",
+    accent: "text-gold",
+    from: null,
+    detail: "reached with your key, from your machine",
+    chips: ["anthropic", "openai", "deepseek", "glm", "gemini", "any OpenAI-compatible URL"],
+  },
+] as const;
+
+const hops = ["loopback HTTP + WebSocket · 127.0.0.1:7800", "HTTPS · your API key — never ours"];
+
+const trace = [
+  { step: "in", cls: "text-cream", text: "~ ❯ fix the failing test in src/tui" },
+  { step: "load", cls: "text-text", text: `session restored · 14 messages → rebuilt + compacted to <span class="text-cream">6,812 tok</span>` },
+  { step: "route", cls: "text-text", text: `tier <span class="text-cream">fast</span> · glm-4.6 · stream on` },
+  { step: "tool", cls: "text-text", text: `read src/tui/chat.ts · <span class="text-fog">read-only → runs free</span>` },
+  { step: "tool", cls: "text-text", text: `edit src/tui/chat.ts · <span class="text-fog">write → gate</span>` },
+  { step: "gate", cls: "text-gold", text: `⚠ diff on screen · waits for your key` },
+  { step: "", cls: "text-text", text: `<span class="text-fog">→ a</span> · patch applied · 1 hunk` },
+  { step: "audit", cls: "text-text", text: `#1042 · edit allowed · appended — the log never rewinds` },
+  { step: "tool", cls: "text-text", text: `exec bun test src/tui · <span class="text-fog">exec → gate</span>` },
+  { step: "done", cls: "text-teal", text: `✓ 42 pass · 0 fail · turn closed in 6 of 24 steps` },
+] as const;
+
+const decisions = [
+  {
+    name: "Keys in the Keychain",
+    why: "Provider keys go to the macOS Keychain (a 0600 file elsewhere). They are never logged, never written to the audit log, and never returned by any endpoint — the engine holds them in memory only.",
+  },
+  {
+    name: "Loopback only",
+    why: "The server binds 127.0.0.1:7800 and refuses to serve anything else, and the CLI refuses an engine that is not on loopback. A local agent should not be a network service.",
+  },
+  {
+    name: "Ask-first tools",
+    why: "Read-only tools run free — that is where the speed lives. Anything that lands on disk or spawns a process shows a visible diff and waits. The gate is a hard step in the loop, not a setting.",
+  },
+  {
+    name: "Append-only audit",
+    why: "Every tool call and every permission decision lands in an append-only log. It is the receipts of the session: useful to you, impossible to rewrite.",
+  },
+  {
+    name: "A PNG decoder from scratch",
+    why: "src/tui/png.ts parses chunks, inflates, and unfilters Paeth in plain TypeScript — no native image dependency, validated by magic bytes end to end. ~600 lines instead of a linked library.",
+  },
+  {
+    name: "Hard step cap",
+    why: "Every turn is bounded by a step cap. A confused run stops instead of spiraling — the loop cannot spend your tokens forever.",
+  },
+  {
+    name: "One sandbox",
+    why: "File tools touch only AGENT_WORKSPACE_ROOT, and custom provider endpoints are validated before the engine dials: public https only, private ranges and embedded credentials rejected.",
+  },
+] as const;
+
+const tree = [
+  { dir: "src/", note: "" },
+  { dir: "├── tui/", note: "terminal client — ANSI frames · pixel font · image protocols · png.ts" },
+  { dir: "├── engine/", note: "" },
+  { dir: "│   ├── core/", note: "agent loop · permissions · audit · context · verifier" },
+  { dir: "│   ├── tools/", note: "fs · git · shell · search · computer" },
+  { dir: "│   ├── models/", note: "providers · tier router · keystore (Keychain)" },
+  { dir: "│   ├── api/", note: "HTTP routes + WebSocket for the TUI" },
+  { dir: "│   ├── db/", note: "SQLite session store + migrations" },
+  { dir: "│   └── app/", note: "bootstrap · config · server (binds 127.0.0.1)" },
+  { dir: "└── shared/", note: "brand · glyphs · images · types" },
+] as const;
+---
+
+<Layout
+  title="How mimon is built — architecture of a terminal AI agent"
+  description="The architecture of mimon: a local loopback engine, ask-first tools, keys in the Keychain, a pure-TypeScript PNG decoder — how the pieces fit, layer by layer."
+>
+  <Nav variant="architecture" />
+  <main>
+    <section class="mx-auto max-w-6xl px-4 pb-4 pt-14 sm:px-6 sm:pt-20">
+      <h1 class="max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-5xl">
+        How mimon <span class="text-teal">is built</span>.
+      </h1>
+      <p class="mt-5 max-w-prose text-lg text-fog">
+        One product, three layers, zero cloud. This page is the honest map of how the pieces fit —
+        the same diagram the code follows. If you want the feel before the anatomy,
+        <a href="/#top" class="text-cream underline decoration-line underline-offset-4 transition-colors duration-150 hover:decoration-cream">replay the live demo</a>.
+      </p>
+    </section>
+
+    <section id="system" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
+      <h2 class="reveal text-3xl font-bold tracking-tight sm:text-4xl">The system, layer by layer</h2>
+      <div class="reveal mt-10" style="--d: 60ms">
+        {layers.map((layer, i) => (
+          <>
+            {i > 0 && (
+              <div class="flex items-center gap-3 py-1 pl-4 font-mono text-xs text-fog sm:pl-6" aria-hidden="true">
+                <span class="text-fog/70">↓</span>
+                <span class="whitespace-nowrap">{hops[i - 1]}</span>
+                <span class="h-px flex-1 bg-line"></span>
+              </div>
+            )}
+            <div class="rounded-lg border border-line bg-panel p-4 sm:p-5">
+              <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <p class={`font-mono text-sm font-semibold ${layer.accent}`}>{layer.name}</p>
+                {layer.from && <p class="font-mono text-xs text-fog/70">{layer.from}</p>}
+              </div>
+              <p class="mt-1.5 font-mono text-xs leading-relaxed text-fog">{layer.detail}</p>
+              <div class="mt-3 flex flex-wrap gap-1.5">
+                {layer.chips.map((chip) => (
+                  <span class="rounded border border-line bg-panel2 px-2 py-1 font-mono text-[11px] text-fog">{chip}</span>
+                ))}
+              </div>
+              {"tools" in layer && layer.tools && (
+                <p class="mt-2.5 font-mono text-[11px] text-fog/70">{layer.tools}</p>
+              )}
+            </div>
+          </>
+        ))}
+      </div>
+      <p class="reveal mt-6 max-w-prose text-sm leading-relaxed text-fog" style="--d: 120ms">
+        Nothing in this picture is a service. The engine is a process on your machine, the session
+        store is a SQLite file, and the only traffic that leaves is model traffic — dialled with
+        your key, to the provider you picked.
+      </p>
+    </section>
+
+    <section id="turn" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
+      <h2 class="reveal text-3xl font-bold tracking-tight sm:text-4xl">One turn, traced</h2>
+      <p class="reveal mt-4 max-w-prose text-sm leading-relaxed text-fog">
+        A real turn, annotated with what the engine is doing at each step. The step labels on the
+        left are the actual phases of the loop.
+      </p>
+      <div class="reveal mt-8 overflow-hidden rounded-lg border border-line bg-panel shadow-2xl" style="--d: 60ms">
+        <div class="flex items-center gap-2 border-b border-line px-4 py-3">
+          <span class="size-3 rounded-full bg-red/60"></span>
+          <span class="size-3 rounded-full bg-gold/60"></span>
+          <span class="size-3 rounded-full bg-green/60"></span>
+          <span class="ml-2 font-mono text-xs text-fog">one turn — annotated</span>
+        </div>
+        <div class="overflow-x-auto p-4 font-mono text-xs leading-loose sm:text-sm">
+          {trace.map((line, i) => (
+            <div class="reveal grid grid-cols-[3.5rem_1fr] gap-x-3 whitespace-pre-wrap" style={`--d: ${i * 45}ms`}>
+              <span class="text-fog/50">{line.step}</span>
+              <span class:list={["break-words", line.cls]} set:html={line.text} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <p class="reveal mt-6 max-w-prose text-sm leading-relaxed text-fog" style="--d: 120ms">
+        Reads never interrupt you — that is where a turn gets its speed. Writes and execs each
+        stop at the gate, and both the call and your decision land in the audit log before the
+        loop moves on.
+      </p>
+    </section>
+
+    <section id="decisions" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
+      <h2 class="reveal text-3xl font-bold tracking-tight sm:text-4xl">The decisions, and the why</h2>
+      <div class="mt-10">
+        {decisions.map((d, i) => (
+          <div class:list={["reveal grid gap-2 border-t border-line py-6 sm:grid-cols-[16rem_1fr] sm:gap-8", i === decisions.length - 1 && "border-b"]} style={`--d: ${Math.min(i * 40, 200)}ms`}>
+            <h3 class="font-mono text-sm font-semibold text-cream">{d.name}</h3>
+            <p class="max-w-prose text-sm leading-relaxed text-fog">{d.why}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section id="map" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
+      <h2 class="reveal text-3xl font-bold tracking-tight sm:text-4xl">How the code is laid out</h2>
+      <p class="reveal mt-4 max-w-prose text-sm leading-relaxed text-fog">
+        Two deployables and a shared core: the TUI you see, the engine that thinks, and the types
+        both agree on. Two runtime dependencies total — hono for the API, zod for the boundaries.
+      </p>
+      <div class="reveal mt-8 overflow-hidden rounded-lg border border-line bg-panel" style="--d: 60ms">
+        <div class="overflow-x-auto p-4 font-mono text-xs leading-loose sm:p-5 sm:text-sm">
+          {tree.map((row) => (
+            <div class="grid gap-x-4 sm:grid-cols-[14rem_1fr] sm:whitespace-nowrap">
+              <span class="text-cream">{row.dir}</span>
+              <span class="text-fog sm:overflow-hidden sm:text-ellipsis">{row.note}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section class="mx-auto max-w-6xl px-4 pb-20 sm:px-6">
+      <div class="reveal rounded-lg border border-line bg-panel px-6 py-10 sm:px-10">
+        <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">See it run.</h2>
+        <p class="mt-3 max-w-prose text-sm leading-relaxed text-fog">
+          The demo replays a full session — the same loop you just read, at typing speed. Or put
+          the real thing in your terminal; setup takes one command and a key.
+        </p>
+        <div class="mt-6 flex flex-wrap items-center gap-4">
+          <a
+            href="/#top"
+            class="inline-flex items-center rounded-md border border-line px-4 py-2 font-mono text-sm text-cream transition-all duration-150 ease-out-strong hover:border-slate active:scale-[0.97]"
+          >
+            replay the demo
+          </a>
+          <CodeCopy command="npm i -g mimon-cli" />
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</Layout>

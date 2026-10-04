@@ -1,13 +1,29 @@
 ---
 import { githubMark } from "../lib/brand";
 
-const links = [
-  { href: "#features", label: "features" },
-  { href: "#how", label: "how it works" },
-  { href: "#images", label: "images" },
-  { href: "#safety", label: "safety" },
-  { href: "#install", label: "install" },
-];
+interface Props {
+  variant?: "home" | "architecture";
+}
+
+const { variant = "home" } = Astro.props;
+
+const links =
+  variant === "architecture"
+    ? [
+        { href: "/", label: "overview" },
+        { href: "#system", label: "system" },
+        { href: "#turn", label: "a turn" },
+        { href: "#decisions", label: "decisions" },
+        { href: "#map", label: "code map" },
+      ]
+    : [
+        { href: "#features", label: "features" },
+        { href: "#how", label: "how it works" },
+        { href: "#images", label: "images" },
+        { href: "#safety", label: "safety" },
+        { href: "#install", label: "install" },
+        { href: "/architecture", label: "architecture" },
+      ];
 ---
 
 <header class="sticky top-0 z-50 border-b border-line bg-bg">

@@ -6,7 +6,7 @@
 
 **The terminal is the whole product.** An AI coding agent that lives in your terminal — any model, your keys, images as real pixels. No accounts, no dashboard, no telemetry.
 
-[Live demo](https://mimon-landing.vercel.app) · [Install](#start-in-30-seconds) · [Safety](#safety)
+[Live demo](https://mimon-landing.vercel.app) · [How it's built](https://mimon-landing.vercel.app/architecture) · [Install](#start-in-30-seconds) · [Safety](#safety)
 
 ![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%C2%B7%20arm64%20%7C%20x64-00af87)
 
