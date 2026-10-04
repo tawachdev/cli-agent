@@ -9,6 +9,7 @@ import type {
 } from "./types";
 
 interface OpenAIDelta {
+  error?: { message?: string };
   choices?: Array<{
     delta?: {
       content?: string;
@@ -29,8 +30,17 @@ interface PendingToolCall {
   arguments: string;
 }
 
+interface OpenAIToolMessage {
+  role: "tool";
+  tool_call_id: string;
+  content: string;
+  [key: string]: unknown;
+}
+
 function toOpenAIMessages(messages: ChatMessage[]): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
+  // legacy fallback: tool results with no persisted call id are grouped under one
+  // synthetic assistant tool_calls turn so old sessions still serialize legally
   const pendingResults: { id: string; name: string; content: string }[] = [];
   let callSeq = 0;
   const flushResults = () => {
@@ -51,13 +61,36 @@ function toOpenAIMessages(messages: ChatMessage[]): Record<string, unknown>[] {
   };
   for (const message of messages) {
     if (message.role === "tool") {
-      callSeq += 1;
-      pendingResults.push({ id: `mimon_call_${callSeq}`, name: message.toolName, content: message.content });
+      if (message.toolCallId) {
+        flushResults();
+        const toolMessage: OpenAIToolMessage = {
+          role: "tool",
+          tool_call_id: message.toolCallId,
+          content: message.content,
+        };
+        out.push(toolMessage);
+      } else {
+        callSeq += 1;
+        pendingResults.push({ id: `mimon_call_${callSeq}`, name: message.toolName, content: message.content });
+      }
       continue;
     }
     flushResults();
     if (message.role === "assistant") {
-      if (message.content) out.push({ role: "assistant", content: message.content });
+      if (message.toolCalls && message.toolCalls.length > 0) {
+        const content = message.content || null;
+        out.push({
+          role: "assistant",
+          content,
+          tool_calls: message.toolCalls.map((call) => ({
+            id: call.id ?? `mimon_call_${call.name}`,
+            type: "function",
+            function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) },
+          })),
+        });
+      } else if (message.content) {
+        out.push({ role: "assistant", content: message.content });
+      }
       continue;
     }
     if (message.role === "user" && message.images && message.images.length > 0) {
@@ -92,7 +125,7 @@ function toToolCalls(pending: Map<number, PendingToolCall>): ToolCall[] {
         args = {};
       }
     }
-    calls.push({ name: pendingCall.name, arguments: args });
+    calls.push({ id: pendingCall.id, name: pendingCall.name, arguments: args });
   }
   return calls;
 }
@@ -121,7 +154,16 @@ export class OpenAICompatProvider implements ModelProvider {
         buffer = buffer.slice(newline + 1);
         const data = line.startsWith("data:") ? line.slice(5).trim() : "";
         if (data && data !== "[DONE]") {
-          const chunk = JSON.parse(data) as OpenAIDelta;
+          let chunk: OpenAIDelta;
+          try {
+            chunk = JSON.parse(data) as OpenAIDelta;
+          } catch {
+            newline = buffer.indexOf("\n");
+            continue;
+          }
+          if (chunk.error) {
+            throw new Error(`${this.label} stream error: ${chunk.error.message ?? "unknown"}`);
+          }
           const choice = chunk.choices?.[0];
           const text = choice?.delta?.content;
           if (text) yield { type: "token", text };

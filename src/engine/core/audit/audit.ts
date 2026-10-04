@@ -1,5 +1,6 @@
 import type { Db } from "../../db/client";
 import type { TaskState } from "../agent/orchestrator";
+import { canTransition, IllegalTransitionError } from "../agent/orchestrator";
 
 export interface AuditWriter {
   write(type: string, payload: Record<string, unknown>, ids?: { sessionId?: string; taskId?: string }): void;
@@ -60,12 +61,22 @@ export function updateTaskState(db: Db, id: string, state: TaskState): void {
   db.query("UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?").run(state, new Date().toISOString(), id);
 }
 
-export function updateTaskResult(db: Db, id: string, fields: { plan?: string; result?: string; state?: TaskState }): void {
+export function transitionTaskState(db: Db, id: string, to: TaskState): TaskState {
+  const row = getTask(db, id);
+  if (!row) throw new Error(`task not found: ${id}`);
+  const from = row.state;
+  if (!canTransition(from, to)) throw new IllegalTransitionError(from, to);
+  const changes = db
+    .query("UPDATE tasks SET state = ?, updated_at = ? WHERE id = ? AND state = ?")
+    .run(to, new Date().toISOString(), id, from);
+  if (Number(changes.changes) === 0) throw new IllegalTransitionError(from, to);
+  return from;
+}
+
+export function updateTaskResult(db: Db, id: string, fields: { result?: string }): void {
   const row = getTask(db, id);
   if (!row) return;
-  db.query("UPDATE tasks SET state = ?, plan = ?, result = ?, updated_at = ? WHERE id = ?").run(
-    fields.state ?? row.state,
-    fields.plan ?? row.plan,
+  db.query("UPDATE tasks SET result = ?, updated_at = ? WHERE id = ?").run(
     fields.result ?? row.result,
     new Date().toISOString(),
     id,

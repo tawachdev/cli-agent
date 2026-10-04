@@ -56,15 +56,15 @@ function originHostname(origin: string): string {
 export function createServer(deps: ServerDeps): Hono {
   const app = new Hono();
   const configured = (deps.hostname ?? "127.0.0.1").trim().toLowerCase().replace(/^\[|\]$/g, "");
-  const wildcard = configured === "" || configured === "0.0.0.0" || configured === "::";
+  if (configured === "" || configured === "0.0.0.0" || configured === "::") {
+    throw new Error("the engine refuses wildcard binds — the control API is unauthenticated by design and must stay on loopback");
+  }
   const allowedHosts = new Set(LOCAL_HOSTNAMES);
-  if (!wildcard) allowedHosts.add(configured);
+  allowedHosts.add(configured);
   app.use("*", async (c, next) => {
-    if (!wildcard) {
-      const hostHeader = c.req.header("host");
-      if (hostHeader !== undefined && !allowedHosts.has(hostnameFromHeader(hostHeader))) {
-        return c.json({ ok: false, error: "forbidden host" }, 403);
-      }
+    const hostHeader = c.req.header("host");
+    if (hostHeader !== undefined && !allowedHosts.has(hostnameFromHeader(hostHeader))) {
+      return c.json({ ok: false, error: "forbidden host" }, 403);
     }
     const origin = c.req.header("origin");
     if (origin !== undefined) {

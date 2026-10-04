@@ -38,11 +38,19 @@ export const shellExecTool: Tool<typeof inputSchema> = {
       stdout: "pipe",
       stderr: "pipe",
       stdin: "ignore",
+      timeout: input.timeoutMs,
+      killSignal: "SIGKILL",
     });
-    const abort = () => proc.kill();
-    ctx.signal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(() => proc.kill(), input.timeoutMs);
-    timer.unref?.();
+    let escalated = false;
+    const terminate = () => {
+      if (escalated) return;
+      escalated = true;
+      proc.kill();
+      setTimeout(() => {
+        if (proc.exitCode === null) proc.kill("SIGKILL");
+      }, 2000).unref?.();
+    };
+    ctx.signal?.addEventListener("abort", terminate, { once: true });
 
     const out = { text: "" };
     const err = { text: "" };
@@ -51,6 +59,9 @@ export const shellExecTool: Tool<typeof inputSchema> = {
       const exitCode = await proc.exited;
       await Promise.allSettled(readers);
 
+      if (ctx.signal?.aborted) {
+        return { ok: false, error: "command aborted", data: { command: input.command } };
+      }
       return exitCode === 0
         ? { ok: true, data: { command: input.command, exitCode, stdout: cap(out.text), stderr: cap(err.text) } }
         : {
@@ -59,8 +70,7 @@ export const shellExecTool: Tool<typeof inputSchema> = {
             data: { command: input.command, exitCode, stdout: cap(out.text), stderr: cap(err.text) },
           };
     } finally {
-      clearTimeout(timer);
-      ctx.signal?.removeEventListener("abort", abort);
+      ctx.signal?.removeEventListener("abort", terminate);
     }
   },
 };

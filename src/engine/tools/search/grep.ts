@@ -1,7 +1,8 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import type { Tool } from "../types";
+import { scopedPath } from "../../shared/paths";
 
 const MAX_MATCHES = 100;
 const MAX_FILE_BYTES = 1024 * 1024;
@@ -20,7 +21,10 @@ export const grepTool: Tool<typeof inputSchema> = {
   schema: inputSchema,
   target: (input) => input.pattern,
   async invoke(input, ctx) {
-    const root = resolve(ctx.workspaceRoot);
+    const root = scopedPath(ctx.workspaceRoot, ".");
+    if (!root) {
+      return { ok: false, error: "workspace root is not a contained directory" };
+    }
     const glob = new Bun.Glob(input.glob);
     const matches: Array<{ file: string; line: number; text: string }> = [];
     const needle = input.pattern.toLowerCase();
@@ -46,7 +50,8 @@ export const grepTool: Tool<typeof inputSchema> = {
         truncated = true;
         break;
       }
-      const abs = join(root, rel);
+      const abs = scopedPath(ctx.workspaceRoot, rel);
+      if (!abs) continue;
       const info = await stat(abs).catch(() => null);
       if (!info?.isFile() || info.size > MAX_FILE_BYTES) continue;
       scanned++;

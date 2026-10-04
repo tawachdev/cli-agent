@@ -1,8 +1,10 @@
 import type { Db } from "../../db/client";
 import type { ModelBinding } from "../../models/router";
-import type { ChatMessage, TokenUsage, ToolCall } from "../../models/types";
+import type { ChatMessage, PersistedToolCall, TokenUsage, ToolCall } from "../../models/types";
+import { parseToolCalls } from "../../models/types";
 import { compactHistory } from "../context/compaction";
 import { truncateObservation } from "../context/truncation";
+import type { AuditWriter } from "../audit/audit";
 import type { ToolRegistry } from "../../tools/registry";
 import { appendMessage, listMessages } from "./state";
 
@@ -14,6 +16,7 @@ export interface TurnDeps {
   tools: ToolRegistry;
   toolContext: { workspaceRoot: string; signal?: AbortSignal };
   publish: PublishEvent;
+  audit?: AuditWriter;
   numCtx: number;
   temperature?: number;
   maxSteps?: number;
@@ -82,13 +85,12 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
       }
     }
 
-    if (turnContent) {
-      appendMessage(deps.db, { sessionId: deps.sessionId, role: "assistant", content: turnContent });
-      deps.publish("message.completed", { content: turnContent });
-      answer = turnContent;
-    }
-
     if (turnCalls.length === 0) {
+      if (turnContent) {
+        answer = turnContent;
+        appendMessage(deps.db, { sessionId: deps.sessionId, role: "assistant", content: turnContent });
+        deps.publish("message.completed", { content: turnContent });
+      }
       deps.publish("turn.completed", { answer, steps: step });
       return { answer, steps: step, usage };
     }
@@ -96,13 +98,29 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
     if (turnCalls.length > 0 && step === maxSteps) {
       throw new Error("turn exceeded max steps (" + maxSteps + ")");
     }
-    workingHistory.push({ role: "assistant", content: turnContent });
-    for (const call of turnCalls) {
+    const persistedCalls: PersistedToolCall[] = turnCalls.map((call, index) => ({
+      id: call.id ?? `turn${step}_call${index + 1}`,
+      name: call.name,
+      arguments: call.arguments,
+    }));
+    appendMessage(deps.db, {
+      sessionId: deps.sessionId,
+      role: "assistant",
+      content: turnContent,
+      toolCalls: persistedCalls,
+    });
+    workingHistory.push({ role: "assistant", content: turnContent, toolCalls: persistedCalls });
+    if (turnContent) deps.publish("message.completed", { content: turnContent });
+    for (const call of persistedCalls) {
       deps.publish("tool.requested", { name: call.name, arguments: call.arguments });
       deps.publish("tool.started", { name: call.name });
+      deps.audit?.write("tool.requested", { name: call.name, arguments: JSON.stringify(call.arguments).slice(0, 500) });
+      const startedAt = Date.now();
       const result = await deps.tools.invoke(call.name, call.arguments, deps.toolContext, ids, (request) =>
         deps.publish("permission.requested", request),
       );
+      const durationMs = Date.now() - startedAt;
+      deps.audit?.write("tool.result", { name: call.name, ok: result.ok, durationMs });
       const observation = truncateObservation(JSON.stringify(result));
       deps.publish("tool.result", {
         name: call.name,
@@ -114,8 +132,9 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
         role: "tool",
         content: observation,
         toolName: call.name,
+        toolCallId: call.id,
       });
-      workingHistory.push({ role: "tool", content: observation, toolName: call.name });
+      workingHistory.push({ role: "tool", content: observation, toolName: call.name, toolCallId: call.id });
     }
   }
 
@@ -132,12 +151,26 @@ function attachImages(history: ChatMessage[], images: string[]): void {
   }
 }
 
-function toChatMessage(row: { role: string; content: string; tool_name: string | null }): ChatMessage {
+function toChatMessage(row: {
+  role: string;
+  content: string;
+  tool_name: string | null;
+  tool_calls: string | null;
+  tool_call_id: string | null;
+}): ChatMessage {
   if (row.role === "tool") {
-    return { role: "tool", content: row.content, toolName: row.tool_name ?? "" };
+    return {
+      role: "tool",
+      content: row.content,
+      toolName: row.tool_name ?? "",
+      toolCallId: row.tool_call_id ?? undefined,
+    };
   }
   if (row.role === "assistant") {
-    return { role: "assistant", content: row.content };
+    const calls = parseToolCalls(row.tool_calls);
+    return calls.length > 0
+      ? { role: "assistant", content: row.content, toolCalls: calls }
+      : { role: "assistant", content: row.content };
   }
   if (row.role === "system") {
     return { role: "system", content: row.content };

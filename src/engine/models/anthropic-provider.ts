@@ -29,6 +29,8 @@ const MAX_TOKENS = 8192;
 function toAnthropicMessages(messages: ChatMessage[]): { system: string; messages: Block[] } {
   const system: string[] = [];
   const out: Block[] = [];
+  // legacy fallback: tool results with no persisted call id are re-attached with
+  // synthetic ids so old sessions still serialize legally
   const pendingResults: { id: string; name: string; content: string }[] = [];
   let callSeq = 0;
   const flushResults = () => {
@@ -60,13 +62,30 @@ function toAnthropicMessages(messages: ChatMessage[]): { system: string; message
       continue;
     }
     if (message.role === "tool") {
-      callSeq += 1;
-      pendingResults.push({ id: `mimon_tool_${callSeq}`, name: message.toolName, content: message.content });
+      if (message.toolCallId) {
+        // canonical path: results group into the user turn that follows the assistant tool_use turn
+        const last = out[out.length - 1];
+        const toolResult: Block = { type: "tool_result", tool_use_id: message.toolCallId, content: message.content };
+        if (last && last["role"] === "user" && Array.isArray(last["content"]) && (last["content"] as Block[]).every((b) => b["type"] === "tool_result")) {
+          (last["content"] as Block[]).push(toolResult);
+        } else {
+          flushResults();
+          out.push({ role: "user", content: [toolResult] });
+        }
+      } else {
+        callSeq += 1;
+        pendingResults.push({ id: `mimon_tool_${callSeq}`, name: message.toolName, content: message.content });
+      }
       continue;
     }
     flushResults();
     if (message.role === "assistant") {
-      if (message.content) out.push({ role: "assistant", content: [{ type: "text", text: message.content }] });
+      const blocks: Block[] = [];
+      if (message.content) blocks.push({ type: "text", text: message.content });
+      for (const call of message.toolCalls ?? []) {
+        blocks.push({ type: "tool_use", id: call.id ?? `mimon_tool_${call.name}`, name: call.name, input: call.arguments ?? {} });
+      }
+      if (blocks.length > 0) out.push({ role: "assistant", content: blocks });
       continue;
     }
     const blocks: Block[] = [{ type: "text", text: message.content }];
@@ -113,7 +132,13 @@ export class AnthropicProvider implements ModelProvider {
         const line = buffer.slice(0, newline).trim();
         buffer = buffer.slice(newline + 1);
         if (line.startsWith("data:")) {
-          const event = JSON.parse(line.slice(5).trim()) as AnthropicEvent;
+          let event: AnthropicEvent;
+          try {
+            event = JSON.parse(line.slice(5).trim()) as AnthropicEvent;
+          } catch {
+            newline = buffer.indexOf("\n");
+            continue;
+          }
           if (event.type === "error") {
             const err = (event as { error?: { message?: string } }).error;
             throw new Error(`${this.label} stream error: ${err?.message ?? "unknown"}`);
@@ -144,7 +169,7 @@ export class AnthropicProvider implements ModelProvider {
                   args = {};
                 }
               }
-              const call: ToolCall = { name: block.name, arguments: args };
+              const call: ToolCall = { id: block.id || undefined, name: block.name, arguments: args };
               yield { type: "tool_call", call };
               blocks.delete(event.index ?? 0);
             }

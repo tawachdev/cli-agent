@@ -1,8 +1,17 @@
 import { z } from "zod";
 
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
 const configSchema = z.object({
   port: z.coerce.number().int().min(1).max(65535).default(7800),
-  hostname: z.string().default("127.0.0.1"),
+  hostname: z
+    .string()
+    .default("127.0.0.1")
+    .transform((value) => value.trim())
+    .refine((value) => LOOPBACK_HOSTNAMES.has(value.toLowerCase()), {
+      message:
+        "the engine binds loopback only — AGENT_HOSTNAME must be 127.0.0.1, localhost or ::1; a non-loopback bind would expose an unauthenticated control plane",
+    }),
   dbPath: z.string().default("./data/agent.db"),
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
   workspaceRoot: z.string().default(process.cwd()),

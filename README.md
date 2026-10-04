@@ -72,6 +72,7 @@ The `/` menu is the control panel: `/setup` connects a provider, `/providers` ma
 | `AGENT_MODEL_TIER1..MAX` | unset | tier routing, `.agent/models.json` wins over env |
 | `AGENT_KEY_<PROVIDER>` | — | key per provider (Keychain is the primary store) |
 | `AGENT_WORKSPACE_ROOT` | engine cwd | the only directory file tools may touch |
+| `AGENT_PLUGINS` | unset | workspace plugins stay disabled until this lists `workspace` |
 
 ## Make it yours
 
@@ -104,10 +105,12 @@ PNG decoding is pure TypeScript (chunks → zlib inflate → Paeth unfilter). Ca
 ## Safety
 
 - **Writes & execs ask first** — read-only tools auto-run; anything that lands on disk or spawns a process shows a visible diff and waits.
-- **Loopback only** — the engine binds `127.0.0.1` and refuses to serve anything else; the CLI refuses non-loopback engines.
-- **Append-only audit** — every tool call and permission decision is logged; the log never rewinds.
+- **Loopback only** — the engine refuses to start on any non-loopback host, and the CLI refuses non-loopback engines; forged Host/Origin headers are rejected.
+- **Append-only audit** — every tool call, permission decision, task state change and verification result is logged; the log never rewinds.
 - **Keys stay home** — macOS Keychain (or `AGENT_KEY_*` env / 0600 file elsewhere), never logged, never audited, never returned by any endpoint.
-- **One sandbox** — file tools touch only `AGENT_WORKSPACE_ROOT`.
+- **One sandbox** — file tools touch only `AGENT_WORKSPACE_ROOT`, and search resolves every match back inside it; symlink chains that can't be proven inside are refused.
+- **Plugins are opt-in** — plugins are code: anything in the workspace's `.agent/plugins` is ignored unless you set `AGENT_PLUGINS=workspace`; `~/.agent/plugins` counts as your own trusted install.
+- **Allow rules stay narrow** — exec allow rules in `.agent/permissions.json` are a convenience, not a sandbox: interpreters (`node`, `bun`, `python`...) only auto-run when pinned to one exact command, shell metacharacters in the tail fall back to asking, and everything else keeps the ask-first default.
 
 Technical identifiers (`AGENT_*` env vars, `.agent/` state folder, `agent` Keychain service, port `7800`) are stable on purpose so the product can coexist with any other agent on the same machine.
 

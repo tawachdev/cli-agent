@@ -35,4 +35,14 @@ describe("scopedPath containment", () => {
   it("allows symlinks that resolve inside the workspace", () => {
     expect(scopedPath(ws, "inside/ok.txt")).toBe(realpathSync(join(ws, "src", "ok.txt")));
   });
+
+  it("fails closed on symlink chains deeper than the hop limit", () => {
+    let link = secret;
+    for (let i = 0; i < 12; i += 1) {
+      const next = join(ws, `chain-${i}`);
+      symlinkSync(link, next);
+      link = next;
+    }
+    expect(scopedPath(ws, "chain-11")).toBeNull();
+  });
 });

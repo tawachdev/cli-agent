@@ -13,6 +13,22 @@ export interface CompactionInput {
   publish: PublishEvent;
 }
 
+function transcriptLine(message: ChatMessage): string {
+  if (message.role === "tool") {
+    const call = "toolCallId" in message ? ` (call ${message.toolCallId})` : "";
+    return `tool[${message.toolName}]${call}: ` + message.content.slice(0, 2000);
+  }
+  if (message.role === "assistant") {
+    const calls = message.toolCalls ?? [];
+    const callText =
+      calls.length > 0
+        ? " [tool calls: " + calls.map((call) => `${call.name}(${JSON.stringify(call.arguments)})`).join("; ") + "]"
+        : "";
+    return "assistant: " + message.content.slice(0, 2000) + callText;
+  }
+  return message.role + ": " + message.content.slice(0, 2000);
+}
+
 export function estimateHistoryTokens(history: ChatMessage[]): number {
   return history.reduce(
     (sum, message) =>
@@ -23,6 +39,16 @@ export function estimateHistoryTokens(history: ChatMessage[]): number {
 
 export function historyTokenBudget(numCtx: number): number {
   return Math.floor(numCtx * 0.7);
+}
+
+// A kept tail may not start with tool results whose assistant tool_calls turn was
+// dropped — providers reject histories where a tool result has no matching call.
+function trimOrphanedToolResults(messages: ChatMessage[]): ChatMessage[] {
+  let start = 0;
+  while (start < messages.length && messages[start]!.role === "tool") {
+    start += 1;
+  }
+  return start === 0 ? messages : messages.slice(start);
 }
 
 export async function compactHistory(
@@ -36,9 +62,7 @@ export async function compactHistory(
   const keep = Math.min(6, Math.max(2, Math.floor((history.length - 2) / 2)));
   const oldMessages = history.slice(1, history.length - keep);
   const recent = history.slice(history.length - keep);
-  const transcript = oldMessages
-    .map((message) => message.role + ": " + message.content.slice(0, 2000))
-    .join("\n");
+  const transcript = oldMessages.map(transcriptLine).join("\n");
   let summary = "";
   for await (const chunk of input.binding.provider.complete(
     {
@@ -58,9 +82,10 @@ export async function compactHistory(
   }
   input.publish("context.compacted", { summarizedTurns: oldMessages.length });
   const summaryMessage: ChatMessage = { role: "user", content: "Conversation so far (summary): " + summary.trim() };
-  while (estimateHistoryTokens([history[0] as ChatMessage, summaryMessage, ...recent]) > budget && recent.length > 2) {
-    recent.shift();
+  let kept = trimOrphanedToolResults(recent);
+  while (estimateHistoryTokens([history[0] as ChatMessage, summaryMessage, ...kept]) > budget && kept.length > 2) {
+    kept = trimOrphanedToolResults(kept.slice(1));
   }
-  const compacted: ChatMessage[] = [history[0] as ChatMessage, summaryMessage, ...recent];
+  const compacted: ChatMessage[] = [history[0] as ChatMessage, summaryMessage, ...kept];
   return { history: compacted, compacted: true };
 }

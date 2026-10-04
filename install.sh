@@ -36,18 +36,24 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 echo "downloading $ASSET ..."
 if command -v curl >/dev/null 2>&1; then
   curl -fsSL "$URL_BASE/$ASSET" -o "$TMP_DIR/$ASSET"
-  curl -fsSL "$URL_BASE/$ASSET.sha256" -o "$TMP_DIR/$ASSET.sha256" || true
+  curl -fsSL "$URL_BASE/$ASSET.sha256" -o "$TMP_DIR/$ASSET.sha256"
 else
   wget -q "$URL_BASE/$ASSET" -O "$TMP_DIR/$ASSET"
-  wget -q "$URL_BASE/$ASSET.sha256" -O "$TMP_DIR/$ASSET.sha256" || true
+  wget -q "$URL_BASE/$ASSET.sha256" -O "$TMP_DIR/$ASSET.sha256"
 fi
 
-if [ -f "$TMP_DIR/$ASSET.sha256" ]; then
-  if command -v shasum >/dev/null 2>&1; then
-    (cd "$TMP_DIR" && shasum -a 256 -c "$ASSET.sha256") || { echo "checksum mismatch — aborting"; exit 1; }
-  elif command -v sha256sum >/dev/null 2>&1; then
-    (cd "$TMP_DIR" && sha256sum -c "$ASSET.sha256") || { echo "checksum mismatch — aborting"; exit 1; }
-  fi
+if [ ! -f "$TMP_DIR/$ASSET.sha256" ]; then
+  echo "checksum file missing — aborting rather than installing an unverified binary"
+  exit 1
+fi
+
+if command -v shasum >/dev/null 2>&1; then
+  (cd "$TMP_DIR" && shasum -a 256 -c "$ASSET.sha256") || { echo "checksum mismatch — aborting"; exit 1; }
+elif command -v sha256sum >/dev/null 2>&1; then
+  (cd "$TMP_DIR" && sha256sum -c "$ASSET.sha256") || { echo "checksum mismatch — aborting"; exit 1; }
+else
+  echo "no sha256 tool found (shasum or sha256sum) — cannot verify the download, aborting"
+  exit 1
 fi
 
 chmod +x "$TMP_DIR/$ASSET"

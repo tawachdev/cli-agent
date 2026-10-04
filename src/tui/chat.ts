@@ -226,16 +226,6 @@ export class Chat {
     const p = event.payload;
     const uiMode = this.ui !== null;
     switch (event.type) {
-      case "plan.updated": {
-        this.chipClose();
-        if (uiMode) {
-          this.ui!.printAbove(wrap("▢ plan: " + String(p.plan ?? ""), 90).map((l) => C.gold + l + C.reset));
-        } else {
-          const lines = wrap(String(p.plan ?? ""), WIDTH() - 10).map((l) => "  " + l);
-          panel(this.tty, "plan", C.gold, C.slate, lines);
-        }
-        break;
-      }
       case "token.delta": {
         if (!this.streaming) {
           this.chipClose();
@@ -384,6 +374,7 @@ export class Chat {
       requestId: String(p["requestId"] ?? ""),
       approved,
       sessionId: this.sessionId,
+      ...(typeof p["taskId"] === "string" && p["taskId"] ? { taskId: p["taskId"] } : {}),
     });
     if (this.ui) this.ui.printAbove([C.dim + (approved ? "· allowed ·" : "· denied ·") + C.reset]);
     else this.tty.write(C.dim + (approved ? "  · allowed ·\n" : "  · denied ·\n") + C.reset);

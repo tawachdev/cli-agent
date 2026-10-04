@@ -1,6 +1,5 @@
 export type TaskState =
   | "idle"
-  | "planning"
   | "executing"
   | "verifying"
   | "completed"
@@ -8,9 +7,8 @@ export type TaskState =
   | "aborted";
 
 const legal: Record<TaskState, TaskState[]> = {
-  idle: ["planning", "failed", "aborted"],
-  planning: ["executing", "failed", "aborted"],
-  executing: ["executing", "verifying", "completed", "failed", "aborted"],
+  idle: ["executing", "failed", "aborted"],
+  executing: ["verifying", "completed", "failed", "aborted"],
   verifying: ["completed", "failed", "executing", "aborted"],
   completed: [],
   failed: [],
@@ -19,4 +17,13 @@ const legal: Record<TaskState, TaskState[]> = {
 
 export function canTransition(from: TaskState, to: TaskState): boolean {
   return legal[from].includes(to);
+}
+
+export class IllegalTransitionError extends Error {
+  constructor(
+    readonly from: TaskState,
+    readonly to: TaskState,
+  ) {
+    super(`illegal task state transition: ${from} -> ${to}`);
+  }
 }

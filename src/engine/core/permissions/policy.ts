@@ -47,13 +47,50 @@ export function loadPolicy(workspaceRoot: string): PolicyFile {
   }
 }
 
-const SHELL_META = /[;&|`$\n><]/;
+const SHELL_META = /[;&|`$\n><(){}"']/;
+
+const INTERPRETERS = new Set([
+  "node",
+  "nodejs",
+  "python",
+  "python3",
+  "ruby",
+  "perl",
+  "php",
+  "bash",
+  "sh",
+  "zsh",
+  "fish",
+  "dash",
+  "ksh",
+  "bun",
+  "deno",
+  "osascript",
+  "env",
+  "xargs",
+  "eval",
+  "exec",
+  "source",
+]);
+
+function executableOf(command: string): string {
+  const first = command.trim().split(/\s+/)[0] ?? "";
+  return first.split("/").pop() ?? first;
+}
 
 function matchesAllow(pattern: string, target: string, cls: PermissionClass): boolean {
+  if (SHELL_META.test(pattern)) return false;
+  if (cls === "exec" && INTERPRETERS.has(executableOf(pattern))) {
+    // interpreters execute arbitrary code from their arguments — only an exact,
+    // fully pinned command (never a bare interpreter) may auto-run
+    const pinned = pattern.trim().split(/\s+/).length >= 2;
+    return pinned && target === pattern;
+  }
   if (target === pattern) return true;
   if (cls === "exec") {
     if (!target.startsWith(pattern + " ")) return false;
-    return !SHELL_META.test(target.slice(pattern.length + 1));
+    const remainder = target.slice(pattern.length + 1);
+    return !SHELL_META.test(remainder);
   }
   return target.startsWith(pattern.endsWith("/") ? pattern : pattern + "/");
 }

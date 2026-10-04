@@ -1,8 +1,8 @@
 {
   "name": "mimon",
-  "version": "0.1.0",
+  "version": "0.1.8",
   "description": "Personal terminal AI agent. Any model with your own API keys \u2014 local-first, no accounts, no telemetry.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "files": [
     "bin/"
   ],
@@ -13,9 +13,9 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@mimon/darwin-arm64": "file:../platforms/darwin-arm64",
-    "@mimon/darwin-x64": "file:../platforms/darwin-x64",
-    "@mimon/linux-arm64": "file:../platforms/linux-arm64",
-    "@mimon/linux-x64": "file:../platforms/linux-x64"
+    "@mohamed-taaouch/darwin-arm64": "file:../platforms/darwin-arm64",
+    "@mohamed-taaouch/darwin-x64": "file:../platforms/darwin-x64",
+    "@mohamed-taaouch/linux-arm64": "file:../platforms/linux-arm64",
+    "@mohamed-taaouch/linux-x64": "file:../platforms/linux-x64"
   }
 }

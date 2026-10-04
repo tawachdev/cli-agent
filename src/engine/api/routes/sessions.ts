@@ -62,7 +62,10 @@ export function createSessionsRoute(
     if (!getSession(db, id)) {
       return c.json({ ok: false, error: "session not found" }, 404);
     }
-    return c.json({ ok: true, messages: listMessages(db, id) });
+    const limitParam = Number(c.req.query("limit") ?? "500");
+    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.floor(limitParam), 1), 1000) : 500;
+    const rows = listMessages(db, id);
+    return c.json({ ok: true, messages: rows.slice(-limit) });
   });
 
   route.post("/:id/messages", async (c) => {
@@ -70,7 +73,7 @@ export function createSessionsRoute(
     if (!getSession(db, id)) {
       return c.json({ ok: false, error: "session not found" }, 404);
     }
-    const body = z.object({ role: z.enum(["user", "system"]), content: z.string().min(1) });
+    const body = z.object({ role: z.enum(["user", "system"]), content: z.string().min(1).max(32_000) });
     const parsed = body.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ ok: false, error: "invalid body" }, 400);

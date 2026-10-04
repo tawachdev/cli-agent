@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -32,6 +32,7 @@ function writeKeyFile(keys: Record<string, string>): void {
   const dir = join(homedir(), ".agent");
   mkdirSync(dir, { recursive: true });
   writeFileSync(keyFile(), JSON.stringify(keys, null, 2) + "\n", { mode: 0o600 });
+  chmodSync(keyFile(), 0o600);
 }
 
 export class KeychainKeyStore implements KeyStore {
@@ -49,6 +50,8 @@ export class KeychainKeyStore implements KeyStore {
 
   set(name: string, key: string): void {
     if (process.platform === "darwin") {
+      // known limitation: `security` only reliably reads the secret from argv here,
+      // where it is briefly visible to other local processes via ps
       const run = Bun.spawnSync(["security", "add-generic-password", "-s", SERVICE, "-a", name, "-w", key, "-U"]);
       if (run.exitCode !== 0) {
         throw new Error(`could not store the key in Keychain (exit ${run.exitCode})`);

@@ -30,9 +30,14 @@ interface RecordedEvent {
   payload: unknown;
 }
 
-function makeAgent(db: ReturnType<typeof openDb>, provider: ModelProvider, maxSteps?: number): Agent {
+function makeAgent(
+  db: ReturnType<typeof openDb>,
+  provider: ModelProvider,
+  maxSteps?: number,
+  checkCommand?: string,
+): Agent {
   const audit = new SqliteAudit(db);
-  const pending = { create: async () => true, resolve: () => false };
+  const pending = { create: async () => true, resolve: () => ({ ok: false }) };
   const permissions = new PermissionEngine(defaultPolicyFile(), pending, audit);
   const tools = new ToolRegistry(permissions);
   tools.register(fsReadTool);
@@ -46,15 +51,15 @@ function makeAgent(db: ReturnType<typeof openDb>, provider: ModelProvider, maxSt
     maxSteps,
     audit,
     permissions,
+    checkCommand,
   });
 }
 
 describe("agent orchestration", () => {
-  it("plans, executes with tools, verifies and completes with a taskId", async () => {
+  it("executes with tools, verifies and completes with a taskId", async () => {
     const db = openDb(":memory:");
     runMigrations(db, migrations);
     const provider = new FakeProvider([
-      [{ type: "token", text: "1. Read the file" }],
       [
         { type: "token", text: "Let me read the file." },
         { type: "tool_call", call: { name: "fs.read", arguments: { path: "etc/hostname" } } },
@@ -75,8 +80,6 @@ describe("agent orchestration", () => {
     const types = events.map((event) => event.type);
     expect(types).toEqual([
       "state.changed",
-      "plan.updated",
-      "state.changed",
       "turn.started",
       "token.delta",
       "message.completed",
@@ -87,19 +90,68 @@ describe("agent orchestration", () => {
       "message.completed",
       "turn.completed",
       "state.changed",
-      "state.changed",
     ]);
-    expect(provider.requests[0]?.tools).toBeUndefined();
-    expect(provider.requests[1]?.tools).toBeDefined();
+    expect(provider.requests[0]?.tools).toBeDefined();
 
     const states = events
       .filter((event) => event.type === "state.changed")
       .map((event) => (event.payload as { state: string }).state);
-    expect(states).toEqual(["planning", "executing", "verifying", "completed"]);
+    expect(states).toEqual(["executing", "completed"]);
 
-    const taskRow = db.query("SELECT state, plan FROM tasks").get() as { state: string; plan: string };
+    const taskRow = db.query("SELECT state, plan, result FROM tasks").get() as {
+      state: string;
+      plan: string | null;
+      result: string;
+    };
     expect(taskRow.state).toBe("completed");
-    expect(taskRow.plan).toBe("1. Read the file");
+    expect(taskRow.plan).toBeNull();
+    expect(JSON.parse(taskRow.result)).toMatchObject({ answer: "Done reading.", verified: false });
+    db.close();
+  });
+
+  it("enters verifying and refuses completion when the check command fails", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db, migrations);
+    const provider = new FakeProvider([[{ type: "token", text: "Done." }]]);
+    const agent = makeAgent(db, provider, undefined, "exit 3");
+    const session = createSession(db, null);
+    const events: RecordedEvent[] = [];
+
+    await expect(
+      agent.runTask(session.id, "answer", "coder", (type, payload) => events.push({ type, payload })),
+    ).rejects.toThrow(TurnError);
+
+    const states = events
+      .filter((event) => event.type === "state.changed")
+      .map((event) => (event.payload as { state: string }).state);
+    expect(states).toEqual(["executing", "verifying", "failed"]);
+
+    const verify = events.find((event) => event.type === "verify.result");
+    expect(verify?.payload).toMatchObject({ status: "failed", ok: false });
+
+    const taskRow = db.query("SELECT state, result FROM tasks").get() as { state: string; result: string | null };
+    expect(taskRow.state).toBe("failed");
+    expect(taskRow.result).toBeNull();
+    db.close();
+  });
+
+  it("completes through verifying when the check command passes", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db, migrations);
+    const provider = new FakeProvider([[{ type: "token", text: "Done." }]]);
+    const agent = makeAgent(db, provider, undefined, "exit 0");
+    const session = createSession(db, null);
+    const events: RecordedEvent[] = [];
+
+    await agent.runTask(session.id, "answer", "coder", (type, payload) => events.push({ type, payload }));
+
+    const states = events
+      .filter((event) => event.type === "state.changed")
+      .map((event) => (event.payload as { state: string }).state);
+    expect(states).toEqual(["executing", "verifying", "completed"]);
+    const taskRow = db.query("SELECT state, result FROM tasks").get() as { state: string; result: string };
+    expect(taskRow.state).toBe("completed");
+    expect(JSON.parse(taskRow.result)).toMatchObject({ verified: true });
     db.close();
   });
 
@@ -109,7 +161,7 @@ describe("agent orchestration", () => {
     const looping: StreamChunk[] = [
       { type: "tool_call", call: { name: "fs.read", arguments: { path: "x" } } },
     ];
-    const provider = new FakeProvider([[{ type: "token", text: "plan" }], looping, looping]);
+    const provider = new FakeProvider([looping, looping]);
     const agent = makeAgent(db, provider, 2);
     const session = createSession(db, null);
     const events: RecordedEvent[] = [];
@@ -130,12 +182,10 @@ describe("agent orchestration", () => {
     runMigrations(db, migrations);
     const hangUntilAborted: ModelProvider = {
       async *complete(req, signal) {
-        if (req.tools) {
-          await new Promise<never>((_resolve, reject) => {
-            signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
-          });
-        }
-        yield { type: "token", text: "plan" };
+        await new Promise<never>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+        yield { type: "token", text: "unreachable" };
       },
     };
     const agent = makeAgent(db, hangUntilAborted);

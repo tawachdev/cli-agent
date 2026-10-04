@@ -58,7 +58,7 @@ describe("AnthropicProvider", () => {
 
     expect(chunks).toEqual([
       { type: "token", text: "Hello" },
-      { type: "tool_call", call: { name: "fs.read", arguments: { path: "a.txt" } } },
+      { type: "tool_call", call: { id: "toolu_1", name: "fs.read", arguments: { path: "a.txt" } } },
       {
         type: "usage",
         usage: { promptTokens: 21, completionTokens: 9, evalDurationNs: 0, totalDurationNs: 0 },

@@ -5,16 +5,13 @@ const path = require("node:path");
 const platform = `${process.platform}-${process.arch}`;
 
 function binaryCandidates() {
-  const names = [`@mohamed-taaouch/${platform}`];
   const entries = [];
-  for (const name of names) {
-    try {
-      entries.push(path.join(path.dirname(require.resolve(`${name}/package.json`)), "bin", "mimon"));
-    } catch {
-      continue;
-    }
+  try {
+    const name = `@mohamed-taaouch/${platform}`;
+    entries.push(path.join(path.dirname(require.resolve(`${name}/package.json`)), "bin", "mimon"));
+  } catch {
+    // platform package not resolvable — fall through to the error below
   }
-  entries.push(path.join(__dirname, "..", "node_modules", "@tawachdev", platform, "bin", "mimon"));
   return entries;
 }
 
@@ -24,7 +21,7 @@ const binary = binaryCandidates().find((candidate) => fs.existsSync(candidate));
 if (!binary) {
   process.stderr.write(
     `mimon: no binary for ${platform} — the platform package @mohamed-taaouch/${platform} did not install.\n` +
-      "try: npm i -g mimon --force  (or open an issue with your OS and arch)\n",
+      "try: npm i -g mimon-cli --force  (or open an issue with your OS and arch)\n",
   );
   process.exit(1);
 }

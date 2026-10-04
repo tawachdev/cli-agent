@@ -72,10 +72,18 @@ tools.register(gitStatusTool);
 tools.register(gitDiffTool);
 tools.register(shellExecTool);
 tools.register(createVisionTool(router, config.numCtx, tmpdir()));
+const allowWorkspacePlugins = (process.env.AGENT_PLUGINS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .includes("workspace");
 const plugins = await loadPluginRoots(
-  [join(config.workspaceRoot, ".agent", "plugins"), join(homedir(), ".agent", "plugins")],
+  [
+    { dir: join(config.workspaceRoot, ".agent", "plugins"), trust: "workspace" },
+    { dir: join(homedir(), ".agent", "plugins"), trust: "trusted" },
+  ],
   tools,
   logger,
+  { allowWorkspace: allowWorkspacePlugins },
 );
 for (const plugin of plugins) {
   logger.info("plugin loaded", { ...plugin });

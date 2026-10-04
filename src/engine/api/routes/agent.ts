@@ -15,7 +15,7 @@ export function createAgentRoute(
   const route = new Hono();
   const runBody = z.object({
     sessionId: z.string().min(1),
-    task: z.string().min(1),
+    task: z.string().min(1).max(32_000),
     role: z.enum(["coder", "general", "mimon1", "mimon2", "mimon3", "mimonMax"]).default("coder"),
     images: z
       .array(
@@ -78,10 +78,23 @@ export function createAgentRoute(
     return c.json({ ok: true, aborted });
   });
 
-  const resolvePermission = (c: Context, requestId: string, approved: boolean, sessionId: string) => {
-    const resolved = pending.resolve(requestId, approved);
-    if (!resolved) return c.json({ ok: false, error: "unknown permission request" }, 404);
-    streams.get(sessionId).publish("permission.resolved", {
+  const resolvePermission = (
+    c: Context,
+    requestId: string,
+    approved: boolean,
+    claimed: { sessionId: string; taskId?: string },
+  ) => {
+    const outcome = pending.resolve(requestId, approved, claimed);
+    if (!outcome.ok) {
+      const status = outcome.reason === "ownership" ? 403 : 404;
+      const error =
+        outcome.reason === "ownership"
+          ? "permission request does not belong to this session/task"
+          : "unknown permission request";
+      return c.json({ ok: false, error }, status);
+    }
+    const ownerStream = outcome.owner.sessionId ?? claimed.sessionId;
+    streams.get(ownerStream).publish("permission.resolved", {
       requestId,
       approved,
     });
@@ -90,12 +103,16 @@ export function createAgentRoute(
 
   route.post("/permissions/:requestId", async (c) => {
     const requestId = c.req.param("requestId");
-    const body = z.object({ approved: z.boolean(), sessionId: z.string().min(1) });
+    const body = z.object({
+      approved: z.boolean(),
+      sessionId: z.string().min(1),
+      taskId: z.string().min(1).optional(),
+    });
     const parsed = body.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ ok: false, error: parsed.error.message }, 400);
     }
-    return resolvePermission(c, requestId, parsed.data.approved, parsed.data.sessionId);
+    return resolvePermission(c, requestId, parsed.data.approved, parsed.data);
   });
 
   route.post("/permissions", async (c) => {
@@ -103,12 +120,13 @@ export function createAgentRoute(
       requestId: z.string().min(1),
       approved: z.boolean(),
       sessionId: z.string().min(1),
+      taskId: z.string().min(1).optional(),
     });
     const parsed = body.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ ok: false, error: parsed.error.message }, 400);
     }
-    return resolvePermission(c, parsed.data.requestId, parsed.data.approved, parsed.data.sessionId);
+    return resolvePermission(c, parsed.data.requestId, parsed.data.approved, parsed.data);
   });
 
   return route;

@@ -35,7 +35,7 @@ class FakeProvider implements ModelProvider {
 
 function makeAgent(db: Db, provider: ModelProvider): Agent {
   const audit = new SqliteAudit(db);
-  const pending = { create: async () => true, resolve: () => false };
+  const pending = { create: async () => true, resolve: () => ({ ok: false }) };
   const permissions = new PermissionEngine(defaultPolicyFile(), pending, audit);
   return new Agent({
     db,
@@ -91,7 +91,7 @@ describe("images through the agent", () => {
     runMigrations(db, migrations);
     const provider = new FakeProvider([[{ type: "token", text: "seen" }]]);
     const audit = new SqliteAudit(db);
-    const pending = { create: async () => true, resolve: () => false };
+    const pending = { create: async () => true, resolve: () => ({ ok: false }) };
     const permissions = new PermissionEngine(defaultPolicyFile(), pending, audit);
     const session = createSession(db, null);
     const result = await runTurn(

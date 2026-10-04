@@ -2,6 +2,15 @@
 set -eu
 cd "$(dirname "$0")/.."
 
+root_version="$(node -e "console.log(require('./package.json').version)")"
+for manifest in npm/main/package.json npm/platforms/darwin-arm64/package.json npm/platforms/darwin-x64/package.json npm/platforms/linux-arm64/package.json npm/platforms/linux-x64/package.json; do
+  manifest_version="$(node -e "console.log(require('./$manifest').version)")"
+  if [ "$manifest_version" != "$root_version" ]; then
+    echo "version mismatch: $manifest is $manifest_version, root is $root_version — sync versions before publishing"
+    exit 1
+  fi
+done
+
 for target in bun-darwin-arm64 bun-darwin-x64 bun-linux-arm64 bun-linux-x64; do
   bun build --compile bin/agent.ts --target="$target" --outfile "dist/agent-${target#bun-}"
 done

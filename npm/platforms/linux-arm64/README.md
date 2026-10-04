@@ -1,3 +1,3 @@
-# @mimon/linux-arm64
+# @mohamed-taaouch/linux-arm64
 
-Platform binary for the mimon CLI. Installed automatically by `mimon`.
+mimon CLI binary for linux-arm64.

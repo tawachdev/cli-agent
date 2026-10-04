@@ -1,4 +1,5 @@
 import type { Db } from "../../db/client";
+import { parseToolCalls, type PersistedToolCall } from "../../models/types";
 
 export interface SessionRow {
   id: string;
@@ -13,6 +14,8 @@ export interface MessageRow {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
   tool_name: string | null;
+  tool_calls: string | null;
+  tool_call_id: string | null;
   created_at: string;
 }
 
@@ -37,20 +40,31 @@ export function getSession(db: Db, id: string): SessionRow | null {
 export function listMessages(db: Db, sessionId: string): MessageRow[] {
   return db
     .query(
-      "SELECT id, session_id, role, content, tool_name, created_at FROM messages WHERE session_id = ? ORDER BY id",
+      "SELECT id, session_id, role, content, tool_name, tool_calls, tool_call_id, created_at FROM messages WHERE session_id = ? ORDER BY id",
     )
     .all(sessionId) as MessageRow[];
 }
 
 export function appendMessage(
   db: Db,
-  message: { sessionId: string; role: MessageRow["role"]; content: string; toolName?: string },
+  message: {
+    sessionId: string;
+    role: MessageRow["role"];
+    content: string;
+    toolName?: string;
+    toolCalls?: PersistedToolCall[];
+    toolCallId?: string;
+  },
 ): void {
-  db.query("INSERT INTO messages (session_id, role, content, tool_name) VALUES (?, ?, ?, ?)").run(
+  db.query(
+    "INSERT INTO messages (session_id, role, content, tool_name, tool_calls, tool_call_id) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(
     message.sessionId,
     message.role,
     message.content,
     message.toolName ?? null,
+    message.toolCalls ? JSON.stringify(message.toolCalls) : null,
+    message.toolCallId ?? null,
   );
   db.query("UPDATE sessions SET updated_at = ? WHERE id = ?").run(new Date().toISOString(), message.sessionId);
 }

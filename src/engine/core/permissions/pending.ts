@@ -1,28 +1,51 @@
 import { randomUUID } from "node:crypto";
 
-export class PendingPermissions {
-  private readonly waiting = new Map<string, (approved: boolean) => void>();
-  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+export interface PermissionOwner {
+  sessionId?: string;
+  taskId?: string;
+}
 
-  create(requestId: string = randomUUID()): Promise<boolean> {
+export type ResolveOutcome =
+  | { ok: true; owner: PermissionOwner }
+  | { ok: false; reason: "unknown" | "ownership" };
+
+interface PendingEntry {
+  owner: PermissionOwner;
+  resolve: (approved: boolean) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+export class PendingPermissions {
+  private readonly waiting = new Map<string, PendingEntry>();
+
+  constructor(private readonly timeoutMs = 5 * 60 * 1000) {}
+
+  create(requestId: string = randomUUID(), owner: PermissionOwner = {}): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      this.waiting.set(requestId, resolve);
-      const timer = setTimeout(() => this.resolve(requestId, false), 5 * 60 * 1000);
+      const timer = setTimeout(() => this.resolve(requestId, false), this.timeoutMs);
       timer.unref?.();
-      this.timers.set(requestId, timer);
+      this.waiting.set(requestId, { owner, resolve, timer });
     });
   }
 
-  resolve(requestId: string, approved: boolean): boolean {
-    const resolve = this.waiting.get(requestId);
-    if (!resolve) return false;
-    this.waiting.delete(requestId);
-    const timer = this.timers.get(requestId);
-    if (timer) {
-      clearTimeout(timer);
-      this.timers.delete(requestId);
+  resolve(requestId: string, approved: boolean, claimed?: PermissionOwner): ResolveOutcome {
+    const entry = this.waiting.get(requestId);
+    if (!entry) return { ok: false, reason: "unknown" };
+    if (claimed) {
+      if ((claimed.sessionId ?? undefined) !== (entry.owner.sessionId ?? undefined)) {
+        return { ok: false, reason: "ownership" };
+      }
+      if ((claimed.taskId ?? undefined) !== (entry.owner.taskId ?? undefined)) {
+        return { ok: false, reason: "ownership" };
+      }
     }
-    resolve(approved);
-    return true;
+    this.waiting.delete(requestId);
+    clearTimeout(entry.timer);
+    entry.resolve(approved);
+    return { ok: true, owner: entry.owner };
+  }
+
+  owner(requestId: string): PermissionOwner | undefined {
+    return this.waiting.get(requestId)?.owner;
   }
 }

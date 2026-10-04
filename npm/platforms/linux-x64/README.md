@@ -1,3 +1,3 @@
-# @mimon/linux-x64
+# @mohamed-taaouch/linux-x64
 
-Platform binary for the mimon CLI. Installed automatically by `mimon`.
+mimon CLI binary for linux-x64.

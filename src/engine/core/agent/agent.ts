@@ -4,12 +4,11 @@ import type { ModelRouter } from "../../models/router";
 import type { ToolContext } from "../../tools/types";
 import type { ToolRegistry } from "../../tools/registry";
 import type { AuditWriter } from "../audit/audit";
-import { createTask, updateTaskResult, updateTaskState } from "../audit/audit";
+import { createTask, transitionTaskState, updateTaskResult } from "../audit/audit";
 import type { PermissionEngine } from "../permissions/engine";
 import { runCheck } from "../verifier/verifier";
 import type { PublishEvent } from "./loop";
 import { runTurn, type TurnResult } from "./loop";
-import { runPlanner } from "./planner";
 import { getSession } from "./state";
 
 export interface AgentDeps {
@@ -115,26 +114,14 @@ export class Agent {
       this.deps.audit.write(type, payload, { sessionId, taskId: row.id });
     audit("task.created", { task, role });
 
-    const setState = (state: "planning" | "executing" | "verifying" | "completed") => {
-      updateTaskState(this.deps.db, row.id, state);
-      publish("state.changed", { taskId: row.id, state });
-      audit("task.state", { state });
+    const setState = (state: "executing" | "verifying" | "completed") => {
+      const from = transitionTaskState(this.deps.db, row.id, state);
+      publish("state.changed", { taskId: row.id, from, state });
+      audit("task.state", { from, state });
     };
 
     const controller = this.aborts.create(row.id, sessionId);
     try {
-      setState("planning");
-      const plan = await runPlanner(
-        this.deps.router.resolve(role),
-        this.deps.numCtx,
-        this.deps.temperature,
-        task,
-        controller.signal,
-        publish,
-      );
-      updateTaskResult(this.deps.db, row.id, { plan });
-      audit("task.plan", { plan });
-
       setState("executing");
       const result = await runTurn(
         {
@@ -143,6 +130,7 @@ export class Agent {
           tools: this.deps.tools,
           toolContext: { ...this.deps.toolContext, signal: controller.signal },
           publish,
+          audit: this.deps.audit,
           numCtx: this.deps.numCtx,
           temperature: this.deps.temperature,
           maxSteps: this.deps.maxSteps,
@@ -154,31 +142,37 @@ export class Agent {
         images,
       );
 
-      setState("verifying");
       if (this.deps.checkCommand) {
+        setState("verifying");
         const check = await runCheck(this.deps.checkCommand, this.deps.toolContext.workspaceRoot, controller.signal);
-        publish("verify.result", { ok: check.ok, command: this.deps.checkCommand, output: check.output });
-        audit("task.verify", { ok: check.ok, command: this.deps.checkCommand });
+        publish("verify.result", { status: check.status, ok: check.ok, command: this.deps.checkCommand, output: check.output });
+        audit("task.verify", { status: check.status, ok: check.ok, command: this.deps.checkCommand });
         if (!check.ok) {
-          throw new Error("verification failed: check command did not pass");
+          throw new Error(`verification ${check.status}: check command did not pass`);
         }
       }
       setState("completed");
       updateTaskResult(this.deps.db, row.id, {
-        state: "completed",
-        result: JSON.stringify({ answer: result.answer, steps: result.steps }),
+        result: JSON.stringify({ answer: result.answer, steps: result.steps, verified: Boolean(this.deps.checkCommand) }),
       });
-      audit("task.completed", { steps: result.steps });
+      audit("task.completed", { steps: result.steps, verified: Boolean(this.deps.checkCommand) });
       return { ...result, taskId: row.id };
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const target = controller.signal.aborted ? "aborted" : "failed";
+      try {
+        const from = transitionTaskState(this.deps.db, row.id, target);
+        publish("state.changed", { taskId: row.id, from, state: target });
+        audit("task.state", { from, state: target });
+      } catch {
+        // already terminal (e.g. completed before a post-completion write failed) — keep the terminal state
+      }
       if (controller.signal.aborted) {
-        updateTaskResult(this.deps.db, row.id, { state: "aborted" });
+        updateTaskResult(this.deps.db, row.id, { result: JSON.stringify({ aborted: true }) });
         publish("turn.aborted", { taskId: row.id, reason: "aborted by user" });
         audit("task.aborted", {});
         throw new TurnError("task aborted", row.id, 409);
       }
-      updateTaskResult(this.deps.db, row.id, { state: "failed" });
-      const reason = error instanceof Error ? error.message : String(error);
       publish("turn.failed", { taskId: row.id, reason });
       audit("task.failed", { reason });
       throw new TurnError(reason, row.id, 500);

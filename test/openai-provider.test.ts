@@ -57,7 +57,7 @@ describe("OpenAICompatProvider", () => {
     expect(chunks).toEqual([
       { type: "token", text: "Hel" },
       { type: "token", text: "lo" },
-      { type: "tool_call", call: { name: "fs.read", arguments: { path: "a.txt" } } },
+      { type: "tool_call", call: { id: "call_1", name: "fs.read", arguments: { path: "a.txt" } } },
       {
         type: "usage",
         usage: { promptTokens: 12, completionTokens: 7, evalDurationNs: 0, totalDurationNs: 0 },
