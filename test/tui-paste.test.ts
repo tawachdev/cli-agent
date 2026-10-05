@@ -10,9 +10,10 @@ class MockTty implements Tty {
   }
 }
 
-function makeTui(): { tui: Tui; tty: MockTty; submitted: string[] } {
+function makeTui(): { tui: Tui; tty: MockTty; submitted: string[]; wizardKeys: Array<{ name: string; key: string }> } {
   const tty = new MockTty();
   const submitted: string[] = [];
+  const wizardKeys: Array<{ name: string; key: string }> = [];
   const tui = new Tui(tty, {
     onSubmit: (t) => submitted.push(t),
     onCommand: () => {},
@@ -23,13 +24,13 @@ function makeTui(): { tui: Tui; tty: MockTty; submitted: string[] } {
     onRemoveKey: () => {},
     onTestProvider: () => {},
     onBindModel: () => {},
-    onWizardKey: () => {},
+    onWizardKey: (name, key) => wizardKeys.push({ name, key }),
     onBrandName: () => {},
     onBrandColors: () => {},
     onBrandReset: () => {},
     onAddProvider: () => {},
   });
-  return { tui, tty, submitted };
+  return { tui, tty, submitted, wizardKeys };
 }
 
 function feed(tui: Tui, chunk: string): void {
@@ -77,5 +78,43 @@ describe("bracketed paste", () => {
     for (const ch of " done") tui.handleKey({ kind: "char", ch });
     tui.handleKey({ kind: "enter" });
     expect(submitted).toEqual(["paste done"]);
+  });
+});
+
+describe("paste lands in the focused field", () => {
+  it("pasting an API key in the wizard key field fills the key, not the chat", () => {
+    const { tui, submitted, wizardKeys } = makeTui();
+    tui.show();
+    tui.openWizard([{ name: "gemini", models: ["gemini-3-flash-preview"], keySet: false }]);
+    tui.handleKey({ kind: "enter" });
+    feed(tui, "\x1b[200~AQ.ab8-TEST-KEY-123\x1b[201~");
+    tui.handleKey({ kind: "enter" });
+    expect(wizardKeys).toEqual([{ name: "gemini", key: "AQ.ab8-TEST-KEY-123" }]);
+    expect(submitted).toEqual([]);
+  });
+
+  it("returns to the chat prompt right after the wizard key entry", () => {
+    const { tui, submitted, wizardKeys } = makeTui();
+    tui.show();
+    tui.openWizard([{ name: "glm", models: ["glm-4.6"], keySet: false }]);
+    tui.handleKey({ kind: "enter" });
+    for (const ch of "typed-key") tui.handleKey({ kind: "char", ch });
+    tui.handleKey({ kind: "enter" });
+    expect(wizardKeys).toEqual([{ name: "glm", key: "typed-key" }]);
+    for (const ch of "now i type in chat") tui.handleKey({ kind: "char", ch });
+    tui.handleKey({ kind: "enter" });
+    expect(submitted).toEqual(["now i type in chat"]);
+  });
+
+  it("pasting a base url in the add-provider form fills the url field, not the chat", () => {
+    const { tui, submitted } = makeTui();
+    tui.show();
+    tui.openWizard([]);
+    feed(tui, "n");
+    tui.handleKey({ kind: "enter" });
+    feed(tui, "\x1b[200~https://api.example.com/v1\x1b[201~");
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    expect(submitted).toEqual([]);
   });
 });

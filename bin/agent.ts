@@ -154,7 +154,7 @@ async function main(): Promise<void> {
     const refreshProviders = (): void => {
       if (!ui) return;
       getProviders()
-        .then((list) => ui?.openProviders(list))
+        .then((list) => ui?.updateProviders(list))
         .catch(() => {});
     };
     const applyBrand = (name: string, colors: string[]): void => {
@@ -221,16 +221,16 @@ async function main(): Promise<void> {
             ui?.notice("· testing " + name + "/" + model + "…");
             const result = await testProvider(name, model);
             if (result["ok"] !== true) {
-              ui?.notice("✘ key saved but the test failed: " + String(result["error"] ?? "unknown") + " — recheck it in /providers");
+              ui?.notice("✘ key saved but the test failed: " + String(result["error"] ?? "unknown") + " — /setup to retry");
               refreshProviders();
               return;
             }
             const binding = name + "/" + model;
             for (const role of ["mimon1", "mimon2", "mimon3", "mimonMax"]) await putBinding(role, binding);
-            ui?.notice("✓ ready — " + binding + " now drives all " + brandName() + " tiers (change any time in /model)");
+            ui?.notice("✓ done — " + binding + " drives all " + brandName() + " tiers · you're in chat, just type (change any time in /model)");
             refreshProviders();
           } catch (error) {
-            ui?.notice("✘ " + (error instanceof Error ? error.message : "setup failed"));
+            ui?.notice("✘ " + (error instanceof Error ? error.message : "setup failed") + " — /setup to retry");
             refreshProviders();
           }
         })();

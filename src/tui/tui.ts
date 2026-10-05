@@ -835,6 +835,15 @@ export class Tui {
     this.refresh();
   }
 
+  // refresh provider data in place — never steals focus from the chat prompt
+  updateProviders(providers: ProviderEntry[]): void {
+    this.providers = providers;
+    if (this.openProvider) {
+      this.openProvider = providers.find((p) => p.name === this.openProvider?.name) ?? null;
+    }
+    if (this.view === "providers" || this.view === "provider") this.refresh();
+  }
+
   private providerAddLines(): string[] {
     const labels = ["name (a-z, 0-9, -)", "base url (https://…)", "models (comma separated)"];
     const body: string[] = [];
@@ -1353,9 +1362,29 @@ export class Tui {
       return;
     }
     if (this.pasting) {
-      if (key.kind === "paste-end") this.pasting = false;
-      else if (key.kind === "char") this.insertPasteText(key.ch);
-      else if (key.kind === "enter" || key.kind === "unknown") this.insertPasteText("\n");
+      if (key.kind === "paste-end") {
+        this.pasting = false;
+        return;
+      }
+      const text = key.kind === "char" ? key.ch : key.kind === "enter" || key.kind === "unknown" ? "\n" : null;
+      if (text === null) return;
+      if (this.view === "keyInput") {
+        if (text !== "\n") {
+          this.keyBuffer += text;
+          this.refresh();
+        }
+        return;
+      }
+      if (this.view === "providerAdd") {
+        const field = this.addFields[this.addFieldIndex];
+        if (text !== "\n" && field !== undefined && field.length < 200) {
+          this.addFields[this.addFieldIndex] = field + text;
+          this.addError = "";
+          this.refresh();
+        }
+        return;
+      }
+      this.insertPasteText(text);
       return;
     }
     if (key.kind === "paste-start") {
@@ -1407,11 +1436,16 @@ export class Tui {
         const name = this.openProvider?.name ?? "";
         const keyValue = this.keyBuffer;
         this.keyBuffer = "";
-        if (this.wizardMode) this.openProvider = null;
-        this.view = this.wizardMode ? "providers" : "provider";
-        this.refresh();
+        const wizard = this.wizardMode;
+        if (wizard) {
+          this.openProvider = null;
+          this.exitWizard();
+        } else {
+          this.view = "provider";
+          this.refresh();
+        }
         if (name && keyValue) {
-          if (this.wizardMode) this.hooks.onWizardKey(name, keyValue);
+          if (wizard) this.hooks.onWizardKey(name, keyValue);
           else this.hooks.onSetKey(name, keyValue);
         }
       } else if (key.kind === "escape") {
