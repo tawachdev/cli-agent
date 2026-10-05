@@ -115,6 +115,7 @@ const server = Bun.serve({
     info: {
       model: registry.splitBinding(bindings.get("mimon2")).def ? bindings.get("mimon2") : "not connected (/setup)",
       numCtx: config.numCtx,
+      workspaceRoot: config.workspaceRoot,
       version: PRODUCT_VERSION,
     },
     bindings,

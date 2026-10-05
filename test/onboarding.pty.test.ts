@@ -105,7 +105,7 @@ beforeAll(async () => {
       streams: new StreamRegistry(),
       pending,
       audit,
-      info: { model: "pty-e2e", numCtx: 4096, version: "0.1.5" },
+      info: { workspaceRoot: workspace, model: "pty-e2e", numCtx: 4096, version: "0.1.5" },
       bindings,
       registry,
       workspaceRoot: workspace,
@@ -127,7 +127,7 @@ describe("interactive wizard journey over a real pty", () => {
     async () => {
       const script = join(import.meta.dir, "..", "scripts", "pty-wizard-test.py");
       const agentTs = join(import.meta.dir, "..", "bin", "agent.ts");
-      const proc = Bun.spawn(["python3", script, process.execPath, agentTs, `http://127.0.0.1:${backend!.port}`, GOOD_KEY], {
+      const proc = Bun.spawn(["python3", script, process.execPath, agentTs, `http://127.0.0.1:${backend!.port}`, GOOD_KEY, workspace], {
         stdout: "pipe",
         stderr: "pipe",
       });

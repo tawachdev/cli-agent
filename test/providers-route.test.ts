@@ -87,7 +87,7 @@ function buildApp(options: { workspaceRoot: string; env: Record<string, string |
     streams: new StreamRegistry(),
     pending,
     audit,
-    info: { model: "test-model", numCtx: 4096, version: "0.2.0" },
+    info: { workspaceRoot: "/tmp", model: "test-model", numCtx: 4096, version: "0.2.0" },
     bindings,
     registry: options.registry,
     workspaceRoot: options.workspaceRoot,

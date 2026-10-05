@@ -24,7 +24,7 @@ export interface ServerDeps {
   streams: StreamRegistry;
   pending: PendingPermissions;
   audit: AuditWriter;
-  info: { model: string; numCtx: number; version: string };
+  info: { model: string; numCtx: number; version: string; workspaceRoot: string };
   bindings: BindingsStore;
   registry: ProviderRegistry;
   workspaceRoot: string;

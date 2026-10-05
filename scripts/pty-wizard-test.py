@@ -4,11 +4,13 @@ BUN = sys.argv[1]
 AGENT_TS = sys.argv[2]
 AGENT_URL = sys.argv[3]
 GOOD_KEY = sys.argv[4]
+WORKSPACE = sys.argv[5]
 
 import fcntl, termios, struct
 pid, master = pty.fork()
 if pid == 0:
     env = dict(os.environ, TERM="xterm-256color", AGENT_URL=AGENT_URL)
+    os.chdir(WORKSPACE)
     os.execve(BUN, [BUN, "run", AGENT_TS], env)
 
 buf = ""

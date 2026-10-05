@@ -5,7 +5,7 @@ import type { ModelRole } from "../shared/types";
 import { renderImage, type LoadedImage } from "./images";
 import { C, chip, fit, fmtSecs, meter, panel, WIDTH, wrap, type Tty } from "./tui";
 
-const rawUrl = process.env.AGENT_URL ?? "http://127.0.0.1:7800";
+const rawUrl = process.env.AGENT_URL ?? `http://127.0.0.1:${process.env.AGENT_PORT ?? "7800"}`;
 const baseUrl = new URL(rawUrl);
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
 
@@ -192,10 +192,11 @@ export class Chat {
     this.sessionId = (result["session"] as { id: string }).id;
   }
 
-  async healthCheck(): Promise<void> {
+  async healthCheck(): Promise<Record<string, unknown>> {
     const health = await request("/health");
     if (!health["ok"]) throw new Error("unhealthy");
     numCtx = Number(health["numCtx"] ?? 16384);
+    return health;
   }
 
   private printDashboard(): void {

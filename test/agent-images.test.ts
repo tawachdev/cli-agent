@@ -131,7 +131,7 @@ describe("images on the /agent/run route", () => {
       streams: new StreamRegistry(),
       pending,
       audit,
-      info: { model: "fake", numCtx: 4096, version: "0.2.0" },
+      info: { workspaceRoot: "/tmp", model: "fake", numCtx: 4096, version: "0.2.0" },
       bindings: {
         get: () => "fake",
         source: () => "default",

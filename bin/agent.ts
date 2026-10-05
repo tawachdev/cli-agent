@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { exit, stdin, stdout } from "node:process";
@@ -359,10 +360,35 @@ async function main(): Promise<void> {
     cleanup = () => rl.close();
   }
 
+  const engineMatchesThisWorkspace = async (): Promise<boolean> => {
+    try {
+      const health = await chat.healthCheck();
+      const engineRoot = health["workspaceRoot"];
+      return typeof engineRoot === "string" && realpathSync(engineRoot) === realpathSync(process.cwd());
+    } catch {
+      return false;
+    }
+  };
   try {
+    let reuse = false;
     try {
       await chat.healthCheck();
+      reuse = true;
     } catch {
+      reuse = false;
+    }
+    if (reuse) {
+      if (!(await engineMatchesThisWorkspace())) {
+        stdout.write(
+          C.red +
+            "\n  an engine is already running on " + backendOrigin + " for a different workspace.\n" +
+            "  tools there will not reach this folder. stop it first, or run this folder on its own port:\n" +
+            "    AGENT_PORT=7801 " + (process.argv[1] ?? "mimon") + "\n\n" + C.reset,
+        );
+        cleanup();
+        exit(1);
+      }
+    } else {
 
       const compiled = !process.execPath.endsWith("bun") && !process.execPath.includes("/bun-");
       const backendEnv = {

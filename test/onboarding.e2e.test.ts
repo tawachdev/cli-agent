@@ -118,7 +118,7 @@ function startBackend(workspaceRoot: string, upstreamUrl: string): { server: Ret
       streams: new StreamRegistry(),
       pending,
       audit,
-      info: { model: "e2e", numCtx: 4096, version: "0.1.5" },
+      info: { workspaceRoot: workspaceRoot, model: "e2e", numCtx: 4096, version: "0.1.5" },
       bindings,
       registry,
       workspaceRoot,
@@ -159,6 +159,7 @@ afterAll(() => {
 
 function runCli(task: string): Promise<{ stdout: string; exitCode: number }> {
   const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "bin", "agent.ts"), task], {
+    cwd: world!.workspace,
     env: { ...process.env, AGENT_URL: world!.backend.url },
     stdout: "pipe",
     stderr: "pipe",
