@@ -140,7 +140,8 @@ describe("interactive wizard journey over a real pty", () => {
       expect(stdout).toContain("OK: prompt ready");
       expect(stdout).toContain("OK: wizard opened via /setup");
       expect(stdout).toContain("OK: mockmind selected in wizard");
-      expect(stdout).toContain("OK: key tested and tiers bound");
+      expect(stdout).toContain("OK: key tested — model picker open");
+      expect(stdout).toContain("OK: model picked and tiers bound, back in chat");
       expect(stdout).toContain("OK: answer streamed in the box");
       expect(stdout).toContain("RESULT: PASS");
     },

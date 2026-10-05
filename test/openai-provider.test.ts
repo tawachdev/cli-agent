@@ -25,7 +25,7 @@ function startMockOpenAI(sse: string): { url: string; stop: () => void; requests
 const TOOL_CALL_STREAM = [
   'data: {"choices":[{"delta":{"role":"assistant","content":"Hel"}}]}',
   'data: {"choices":[{"delta":{"content":"lo"}}]}',
-  'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"fs.read","arguments":""}}]}}]}',
+  'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","extra_content":{"google":{"thought_signature":"sig-abc"}},"function":{"name":"fs.read","arguments":""}}]}}]}',
   'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"path\\":"}}]}}]}',
   'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"a.txt\\"}"}}]}}]}',
   'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
@@ -57,7 +57,7 @@ describe("OpenAICompatProvider", () => {
     expect(chunks).toEqual([
       { type: "token", text: "Hel" },
       { type: "token", text: "lo" },
-      { type: "tool_call", call: { id: "call_1", name: "fs.read", arguments: { path: "a.txt" } } },
+      { type: "tool_call", call: { id: "call_1", name: "fs.read", arguments: { path: "a.txt" }, thoughtSignature: "sig-abc" } },
       {
         type: "usage",
         usage: { promptTokens: 12, completionTokens: 7, evalDurationNs: 0, totalDurationNs: 0 },

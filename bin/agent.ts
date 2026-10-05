@@ -14,6 +14,7 @@ import {
   deleteProviderKey,
   getBindings,
   getBrand,
+  getProviderModels,
   getProviders,
   getSetupStatus,
   putBinding,
@@ -216,22 +217,42 @@ async function main(): Promise<void> {
           try {
             await putProviderKey(name, key);
             const def = (await getProviders()).find((p) => p.name === name);
-            const model = def?.models[0] ?? "";
-            if (!model) throw new Error(name + " exposes no models to bind");
-            ui?.notice("· testing " + name + "/" + model + "…");
-            const result = await testProvider(name, model);
-            if (result["ok"] !== true) {
-              ui?.notice("✘ key saved but the test failed: " + String(result["error"] ?? "unknown") + " — /setup to retry");
+            const fallback = def?.models[0] ?? "";
+            if (!fallback) throw new Error(name + " exposes no models to bind");
+            const models = await getProviderModels(name);
+            const ordered = models.length > 0 ? models : fallback ? [fallback] : [];
+            let working = "";
+            for (const model of ordered.slice(0, 4)) {
+              ui?.notice("· testing " + name + "/" + model + "…");
+              const result = await testProvider(name, model);
+              if (result["ok"] === true) {
+                working = model;
+                break;
+              }
+              ui?.notice("· " + model + " unavailable — trying the next one");
+            }
+            if (!working) {
+              ui?.notice("✘ key saved but every model test failed (quota or permissions?) — /setup to retry");
               refreshProviders();
               return;
             }
+            ui?.notice("✓ key works — pick the model to run:");
+            ui?.openModelPick(name, ordered, working);
+          } catch (error) {
+            ui?.notice("✘ " + (error instanceof Error ? error.message : "setup failed") + " — /setup to retry");
+            refreshProviders();
+          }
+        })();
+      },
+      onWizardModel: (name, model) => {
+        void (async () => {
+          try {
             const binding = name + "/" + model;
             for (const role of ["mimon1", "mimon2", "mimon3", "mimonMax"]) await putBinding(role, binding);
             ui?.notice("✓ done — " + binding + " drives all " + brandName() + " tiers · you're in chat, just type (change any time in /model)");
             refreshProviders();
           } catch (error) {
-            ui?.notice("✘ " + (error instanceof Error ? error.message : "setup failed") + " — /setup to retry");
-            refreshProviders();
+            ui?.notice("✘ " + (error instanceof Error ? error.message : "bind failed") + " — /model to retry");
           }
         })();
       },

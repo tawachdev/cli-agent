@@ -115,6 +115,20 @@ export class AnthropicProvider implements ModelProvider {
     private readonly label: string,
   ) {}
 
+  async listModels(): Promise<string[]> {
+    const response = await fetch(`${this.baseUrl}/models`, {
+      headers: { "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" },
+    });
+    if (!response.ok) {
+      throw new Error(`${this.label} models error ${response.status}`);
+    }
+    const body = (await response.json()) as { data?: Array<{ id?: string }> };
+    return (body.data ?? [])
+      .map((entry) => entry.id ?? "")
+      .filter((id) => id.length > 0)
+      .sort();
+  }
+
   async *complete(req: GenerateRequest, signal?: AbortSignal): AsyncGenerator<StreamChunk> {
     const response = await this.request(req, signal);
     if (!response.body) {

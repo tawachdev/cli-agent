@@ -59,6 +59,16 @@ export function createProvidersRoute(registry: ProviderRegistry, audit: AuditWri
     audit.write("provider.key_deleted", { provider: name });
     return c.json({ ok: true });
   });
+  route.get("/:name/models", async (c) => {
+    const name = c.req.param("name");
+    if (!registry.has(name)) return c.json({ ok: false, error: "unknown provider" }, 404);
+    try {
+      const models = await registry.listModels(name);
+      return c.json({ ok: true, models });
+    } catch (error) {
+      return c.json({ ok: false, error: (error as Error).message }, 400);
+    }
+  });
   route.post("/:name/test", async (c) => {
     const name = c.req.param("name");
     if (!registry.has(name)) return c.json({ ok: false, error: "unknown provider" }, 404);

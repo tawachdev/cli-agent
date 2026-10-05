@@ -38,7 +38,7 @@ function freshDb() {
   return db;
 }
 
-const CALL_A = { id: "call_aaa", name: "fs.read", arguments: { path: "src/index.ts" } };
+const CALL_A = { id: "call_aaa", name: "fs.read", arguments: { path: "src/index.ts" }, thoughtSignature: "sig-gemini-aaa" };
 const CALL_B = { id: "call_bbb", name: "shell.exec", arguments: { command: "bun test src/index.test.ts", timeout: 30 } };
 
 function seedToolTurn(db: ReturnType<typeof openDb>, sessionId: string): void {
@@ -159,6 +159,9 @@ describe("provider serialization of canonical history", () => {
 
     const toolMessages = messages.filter((m) => m["role"] === "tool");
     expect(toolMessages.map((m) => m["tool_call_id"])).toEqual([CALL_A.id, CALL_B.id]);
+
+    const firstCall = calls[0] as { extra_content?: { google?: { thought_signature?: string } } };
+    expect(firstCall.extra_content?.google?.thought_signature).toBe("sig-gemini-aaa");
   });
 
   it("Anthropic: tool_use blocks keep ids and input; tool_result blocks reference their tool_use_id", async () => {

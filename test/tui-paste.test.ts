@@ -10,10 +10,11 @@ class MockTty implements Tty {
   }
 }
 
-function makeTui(): { tui: Tui; tty: MockTty; submitted: string[]; wizardKeys: Array<{ name: string; key: string }> } {
+function makeTui(): { tui: Tui; tty: MockTty; submitted: string[]; wizardKeys: Array<{ name: string; key: string }>; wizardModels: Array<{ name: string; model: string }> } {
   const tty = new MockTty();
   const submitted: string[] = [];
   const wizardKeys: Array<{ name: string; key: string }> = [];
+  const wizardModels: Array<{ name: string; model: string }> = [];
   const tui = new Tui(tty, {
     onSubmit: (t) => submitted.push(t),
     onCommand: () => {},
@@ -25,12 +26,13 @@ function makeTui(): { tui: Tui; tty: MockTty; submitted: string[]; wizardKeys: A
     onTestProvider: () => {},
     onBindModel: () => {},
     onWizardKey: (name, key) => wizardKeys.push({ name, key }),
+    onWizardModel: (name, model) => wizardModels.push({ name, model }),
     onBrandName: () => {},
     onBrandColors: () => {},
     onBrandReset: () => {},
     onAddProvider: () => {},
   });
-  return { tui, tty, submitted, wizardKeys };
+  return { tui, tty, submitted, wizardKeys, wizardModels };
 }
 
 function feed(tui: Tui, chunk: string): void {
@@ -116,5 +118,31 @@ describe("paste lands in the focused field", () => {
     tui.handleKey({ kind: "down" });
     tui.handleKey({ kind: "enter" });
     expect(submitted).toEqual([]);
+  });
+});
+
+describe("model picker after wizard key", () => {
+  it("binds the picked model to all tiers and returns to chat", () => {
+    const { tui, wizardModels, submitted } = makeTui();
+    tui.show();
+    tui.openModelPick("gemini", ["gemini-3-flash-preview", "gemini-3.1-pro-preview", "gemini-flash-latest"]);
+    tui.handleKey({ kind: "down" });
+    tui.handleKey({ kind: "enter" });
+    expect(wizardModels).toEqual([{ name: "gemini", model: "gemini-3.1-pro-preview" }]);
+    expect(submitted).toEqual([]);
+    for (const ch of "back in chat") tui.handleKey({ kind: "char", ch });
+    tui.handleKey({ kind: "enter" });
+    expect(submitted).toEqual(["back in chat"]);
+  });
+
+  it("keeps the current binding on escape", () => {
+    const { tui, wizardModels } = makeTui();
+    tui.show();
+    tui.openModelPick("gemini", ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]);
+    tui.handleKey({ kind: "escape" });
+    expect(wizardModels).toEqual([]);
+    tui.handleKey({ kind: "enter" });
+    tui.handleKey({ kind: "enter" });
+    expect(wizardModels).toEqual([]);
   });
 });

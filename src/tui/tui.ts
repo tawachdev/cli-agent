@@ -297,6 +297,7 @@ export interface TuiHooks {
   onTestProvider(name: string, model: string): void;
   onBindModel(role: string, binding: string): void;
   onWizardKey(name: string, key: string): void;
+  onWizardModel(name: string, model: string): void;
   onBrandName(name: string): void;
   onBrandColors(colors: string[]): void;
   onBrandReset(): void;
@@ -307,7 +308,7 @@ export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
   private cursor = 0;
-  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "brandCustomColor" | "brandGrid256" | "providerAdd" | "help" = "prompt";
+  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "brandCustomColor" | "brandGrid256" | "providerAdd" | "modelPick" | "help" = "prompt";
   private menuIndex = 0;
   private pickerIndex = 1;
   private shown = false;
@@ -359,6 +360,10 @@ export class Tui {
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
   private pasting = false;
   private pasteBreak = false;
+  private modelPickProvider = "";
+  private modelPickList: string[] = [];
+  private modelPickIndex = 0;
+  private modelPickOffset = 0;
 
 
   constructor(
@@ -633,6 +638,7 @@ export class Tui {
       : this.view === "brandCustomColor" ? this.customColorLines()
       : this.view === "brandGrid256" ? this.brandGridLines()
       : this.view === "providerAdd" ? this.providerAddLines()
+      : this.view === "modelPick" ? this.modelPickLines()
       : [];
     const lines: string[] = [];
     let minimal = true;
@@ -825,6 +831,17 @@ export class Tui {
     this.refresh();
   }
 
+  openModelPick(provider: string, models: string[], preferred?: string): void {
+    this.modelPickProvider = provider;
+    this.modelPickList = models;
+    this.modelPickIndex = preferred ? Math.max(0, models.indexOf(preferred)) : 0;
+    this.modelPickOffset = 0;
+    if (models.length === 0) return;
+    this.clampModelPickOffset();
+    this.view = "modelPick";
+    this.refresh();
+  }
+
   openProviders(providers: ProviderEntry[]): void {
     this.providers = providers;
     if (this.openProvider) {
@@ -842,6 +859,33 @@ export class Tui {
       this.openProvider = providers.find((p) => p.name === this.openProvider?.name) ?? null;
     }
     if (this.view === "providers" || this.view === "provider") this.refresh();
+  }
+
+  private clampModelPickOffset(): void {
+    const window = 10;
+    if (this.modelPickIndex < this.modelPickOffset) this.modelPickOffset = this.modelPickIndex;
+    if (this.modelPickIndex >= this.modelPickOffset + window) {
+      this.modelPickOffset = this.modelPickIndex - window + 1;
+    }
+  }
+
+  private modelPickLines(): string[] {
+    const body: string[] = [];
+    const budget = Math.max(6, this.usable - 4);
+    const window = 10;
+    const start = this.modelPickOffset;
+    const end = Math.min(this.modelPickList.length, start + window);
+    body.push(C.dim + trunc("pick a model — it drives all tiers (change later in /model)", budget) + C.reset);
+    for (let i = start; i < end; i++) {
+      const active = i === this.modelPickIndex;
+      const marker = active ? C.teal + "❯ " + C.reset : "  ";
+      body.push(marker + (active ? C.cream + this.modelPickList[i]! + C.reset : this.modelPickList[i]!));
+    }
+    if (this.modelPickList.length > window) {
+      body.push(C.dim + `${this.modelPickIndex + 1}/${this.modelPickList.length}` + C.reset);
+    }
+    body.push(C.dim + trunc("↑↓ move · enter select · esc keep current", budget) + C.reset);
+    return body;
   }
 
   private providerAddLines(): string[] {
@@ -1452,6 +1496,39 @@ export class Tui {
         this.keyBuffer = "";
         if (this.wizardMode) this.openProvider = null;
         this.view = this.wizardMode ? "providers" : "provider";
+        this.refresh();
+      }
+      return;
+    }
+    if (this.view === "modelPick") {
+      const count = this.modelPickList.length;
+      if (count === 0) {
+        this.view = "prompt";
+        this.refresh();
+        return;
+      }
+      if (key.kind === "up") {
+        this.modelPickIndex = (this.modelPickIndex + count - 1) % count;
+        this.clampModelPickOffset();
+        this.refresh();
+        return;
+      }
+      if (key.kind === "down") {
+        this.modelPickIndex = (this.modelPickIndex + 1) % count;
+        this.clampModelPickOffset();
+        this.refresh();
+        return;
+      }
+      if (key.kind === "enter") {
+        const model = this.modelPickList[this.modelPickIndex]!;
+        const name = this.modelPickProvider;
+        this.view = "prompt";
+        this.refresh();
+        this.hooks.onWizardModel(name, model);
+        return;
+      }
+      if (key.kind === "escape") {
+        this.view = "prompt";
         this.refresh();
       }
       return;

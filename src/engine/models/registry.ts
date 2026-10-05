@@ -48,6 +48,8 @@ export const BUILTIN_PROVIDERS: ProviderDef[] = [
   },
 ];
 
+const NON_CHAT_MODEL = /(tts|image|audio|embedding|antigravity|veo|imagen|flash-lite-native)/i;
+
 const PRIVATE_V4 = /^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
 
 function isPrivateAddress(address: string): boolean {
@@ -233,6 +235,28 @@ export class ProviderRegistry {
   deleteKey(name: string): void {
     if (!this.defs.has(name)) throw new Error(`unknown provider: ${name}`);
     this.keystore.delete(name);
+  }
+
+  async listModels(name: string): Promise<string[]> {
+    const def = this.defs.get(name);
+    if (!def) throw new Error(`unknown provider: ${name}`);
+    const key = this.keystore.get(name);
+    if (!key) throw new Error(`no API key for "${name}"`);
+    const provider = instantiate(def, key);
+    if (!provider.listModels) return def.models;
+    try {
+      const live = await provider.listModels();
+      // curated defaults first so the wizard lands on a known-good chat model,
+      // then the rest of the live list minus entries that cannot chat
+      const curated = def.models.filter((model) => live.includes(model));
+      const rest = live.filter(
+        (model) => !curated.includes(model) && !NON_CHAT_MODEL.test(model),
+      );
+      const merged = [...curated, ...rest];
+      return merged.length > 0 ? merged : def.models;
+    } catch {
+      return def.models;
+    }
   }
 
   async test(name: string, model: string): Promise<{ ok: boolean; error?: string }> {

@@ -70,6 +70,9 @@ export function keylessProviderBindings(
 export const getProviders = (): Promise<ProviderInfo[]> =>
   request("/providers").then((r) => r["providers"] as ProviderInfo[]);
 
+export const getProviderModels = (name: string): Promise<string[]> =>
+  request(`/providers/${name}/models`).then((r) => (r["models"] as string[]) ?? []);
+
 export const getBindings = (): Promise<RoleBinding[]> =>
   request("/models").then((r) => r["roles"] as RoleBinding[]);
 

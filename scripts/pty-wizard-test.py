@@ -54,7 +54,8 @@ steps = [
     (r"Ask anything", 20, "prompt ready"),
     (r"welcome to mimon", 10, "wizard opened via /setup"),
     (r"API key for mockmind", 10, "mockmind selected in wizard"),
-    (r"done — .* drives all .* tiers", 25, "key tested and tiers bound, back in chat"),
+    (r"pick a model", 25, "key tested — model picker open"),
+    (r"done — .* drives all .* tiers", 25, "model picked and tiers bound, back in chat"),
     (r"Labas khouya", 40, "answer streamed in the box"),
 ]
 
@@ -69,9 +70,11 @@ send("\r")
 wait_for(*steps[2])
 send(GOOD_KEY + "\r")
 wait_for(*steps[3])
+send("\r")
+wait_for(*steps[4])
 time.sleep(0.4)
 send("salam\r")
-wait_for(*steps[4])
+wait_for(*steps[5])
 drain(1.0)
 try:
     os.write(master, b"\x03")

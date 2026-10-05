@@ -16,6 +16,7 @@ interface OpenAIDelta {
       tool_calls?: Array<{
         index: number;
         id?: string;
+        extra_content?: { google?: { thought_signature?: string } };
         function?: { name?: string; arguments?: string };
       }>;
     };
@@ -28,6 +29,7 @@ interface PendingToolCall {
   id: string;
   name: string;
   arguments: string;
+  signature: string;
 }
 
 interface OpenAIToolMessage {
@@ -86,6 +88,9 @@ function toOpenAIMessages(messages: ChatMessage[]): Record<string, unknown>[] {
             id: call.id ?? `mimon_call_${call.name}`,
             type: "function",
             function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) },
+            ...(call.thoughtSignature
+              ? { extra_content: { google: { thought_signature: call.thoughtSignature } } }
+              : {}),
           })),
         });
       } else if (message.content) {
@@ -125,7 +130,12 @@ function toToolCalls(pending: Map<number, PendingToolCall>): ToolCall[] {
         args = {};
       }
     }
-    calls.push({ id: pendingCall.id, name: pendingCall.name, arguments: args });
+    calls.push({
+      id: pendingCall.id,
+      name: pendingCall.name,
+      arguments: args,
+      ...(pendingCall.signature ? { thoughtSignature: pendingCall.signature } : {}),
+    });
   }
   return calls;
 }
@@ -173,11 +183,15 @@ export class OpenAICompatProvider implements ModelProvider {
               if (fragment.id) existing.id = fragment.id;
               if (fragment.function?.name) existing.name = fragment.function.name;
               if (fragment.function?.arguments) existing.arguments += fragment.function.arguments;
+              if (fragment.extra_content?.google?.thought_signature) {
+                existing.signature = fragment.extra_content.google.thought_signature;
+              }
             } else {
               pending.set(fragment.index, {
                 id: fragment.id ?? `call_${fragment.index}`,
                 name: fragment.function?.name ?? "",
                 arguments: fragment.function?.arguments ?? "",
+                signature: fragment.extra_content?.google?.thought_signature ?? "",
               });
             }
           }
@@ -204,6 +218,23 @@ export class OpenAICompatProvider implements ModelProvider {
     }
     if (usage) yield usage;
     yield { type: "done", stopReason };
+  }
+
+  async listModels(): Promise<string[]> {
+    const response = await fetch(`${this.baseUrl}/models`, {
+      headers: { authorization: `Bearer ${this.apiKey}` },
+    });
+    if (!response.ok) {
+      throw new Error(`${this.label} models error ${response.status}`);
+    }
+    const body = (await response.json()) as { data?: Array<{ id?: string }> };
+    return [
+      ...new Set(
+        (body.data ?? [])
+          .map((entry) => (entry.id ?? "").replace(/^models\//, ""))
+          .filter((id) => id.length > 0),
+      ),
+    ].sort();
   }
 
   private async request(req: GenerateRequest, signal?: AbortSignal): Promise<Response> {

@@ -75,6 +75,7 @@ describe("in-frame image preview", () => {
     const tui = new Tui(tty, {
       onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {},
       onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {},
+    onWizardModel: () => {},
       onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {},
     });
     tui.show();

@@ -9,12 +9,14 @@ export interface ToolCall {
   id?: string;
   name: string;
   arguments: Record<string, unknown>;
+  thoughtSignature?: string;
 }
 
 export interface PersistedToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+  thoughtSignature?: string;
 }
 
 export function parseToolCalls(raw: string | null | undefined): PersistedToolCall[] {
@@ -65,4 +67,5 @@ export type StreamChunk =
 
 export interface ModelProvider {
   complete(req: GenerateRequest, signal?: AbortSignal): AsyncIterable<StreamChunk>;
+  listModels?(): Promise<string[]>;
 }

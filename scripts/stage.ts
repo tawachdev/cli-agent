@@ -38,6 +38,7 @@ function section(title: string, columns: number, drive: (tui: Tui) => void): voi
     onTestProvider: () => {},
     onBindModel: () => {},
     onWizardKey: () => {},
+    onWizardModel: () => {},
     onBrandName: () => {},
     onBrandColors: () => {},
     onBrandReset: () => {},

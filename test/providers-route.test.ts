@@ -38,6 +38,9 @@ function startMockOpenAI(): { url: string; stop: () => void; requests: CapturedR
         headers: Object.fromEntries(request.headers.entries()),
         body: await request.json().catch(() => null),
       });
+      if (new URL(request.url).pathname.endsWith("/models")) {
+        return Response.json({ data: [{ id: "mock-large" }, { id: "mock-small" }] });
+      }
       return new Response(OPENAI_SSE, { headers: { "content-type": "text/event-stream" } });
     },
   });
@@ -329,5 +332,54 @@ describe("model bindings via /models routes", () => {
     const rows = auditRows(db);
     expect(rows.map((r) => r.type)).toContain("model.binding_set");
     db.close();
+  });
+});
+
+describe("GET /providers/:name/models", () => {
+  function makeProviderApp(): { app: ReturnType<typeof createServer>; mock: ReturnType<typeof startMockOpenAI>; workspace: string } {
+    const workspace = mkdtempSync(join(tmpdir(), "mimon-models-"));
+    const mock = startMockOpenAI();
+    mkdirSync(join(workspace, ".agent"), { recursive: true });
+    writeFileSync(
+      join(workspace, ".agent", "providers.json"),
+      JSON.stringify([{ name: "mockmind", kind: "openai", baseUrl: mock.url, models: ["mock-large"] }]),
+    );
+    const registry = new ProviderRegistry(new InMemoryKeyStore(), [
+      { name: "mockmind", kind: "openai", baseUrl: mock.url, models: ["mock-large"] },
+    ]);
+    const { app } = buildApp({ workspaceRoot: workspace, env: {}, registry });
+    return { app, mock, workspace };
+  }
+
+  it("returns the live model list from the upstream provider", async () => {
+    const { app } = makeProviderApp();
+    await app.request("/providers/mockmind/key", {
+      method: "PUT",
+      body: JSON.stringify({ key: "sk-live" }),
+    });
+    const res = await app.request("/providers/mockmind/models");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; models: string[] };
+    expect(body.ok).toBe(true);
+    expect(body.models).toEqual(["mock-large", "mock-small"]);
+  });
+
+  it("falls back to the configured models when upstream fails", async () => {
+    const { app, mock } = makeProviderApp();
+    await app.request("/providers/mockmind/key", {
+      method: "PUT",
+      body: JSON.stringify({ key: "sk-live" }),
+    });
+    mock.stop();
+    const res = await app.request("/providers/mockmind/models");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; models: string[] };
+    expect(body.models).toContain("mock-large");
+  });
+
+  it("rejects an unknown provider", async () => {
+    const { app } = makeProviderApp();
+    const res = await app.request("/providers/nope/models");
+    expect(res.status).toBe(404);
   });
 });

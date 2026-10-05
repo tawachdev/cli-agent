@@ -102,6 +102,7 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
       id: call.id ?? `turn${step}_call${index + 1}`,
       name: call.name,
       arguments: call.arguments,
+      ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}),
     }));
     appendMessage(deps.db, {
       sessionId: deps.sessionId,
