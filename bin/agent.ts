@@ -244,6 +244,19 @@ async function main(): Promise<void> {
           }
         })();
       },
+      onTierModelPick: (role) => {
+        void (async () => {
+          try {
+            const roles = await getBindings();
+            const current = roles.find((entry) => entry.role === role)?.model ?? "";
+            const provider = current.split("/")[0] || "gemini";
+            const models = await getProviderModels(provider);
+            ui?.openModelPick(provider, models, current.split("/")[1] ?? undefined, role);
+          } catch (error) {
+            ui?.notice("✘ " + (error instanceof Error ? error.message : "could not list models") + " — /providers to check the key");
+          }
+        })();
+      },
       onWizardModel: (name, model) => {
         void (async () => {
           try {

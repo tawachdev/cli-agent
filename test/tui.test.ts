@@ -48,6 +48,7 @@ interface Captured {
   binds: Array<{ role: string; binding: string }>;
   wizardKeys: Array<{ name: string; key: string }>;
   wizardModels: Array<{ name: string; model: string }>;
+  tierPicks: string[];
   brandNames: string[];
   brandColors: string[][];
   brandResets: number;
@@ -70,6 +71,7 @@ function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captu
     binds: [],
     wizardKeys: [],
     wizardModels: [],
+    tierPicks: [],
     brandNames: [],
     brandColors: [],
     brandResets: 0,
@@ -91,6 +93,7 @@ function makeTui(columns = 100, rows = 30): { tui: Tui; tty: MockTty; cap: Captu
     onBindModel: (role, binding) => cap.binds.push({ role, binding }),
     onWizardKey: (name, key) => cap.wizardKeys.push({ name, key }),
     onWizardModel: (name, model) => cap.wizardModels.push({ name, model }),
+    onTierModelPick: (role) => cap.tierPicks.push(role),
       onBrandName: (name) => cap.brandNames.push(name),
       onBrandColors: (colors) => cap.brandColors.push(colors),
       onBrandReset: () => {
@@ -283,7 +286,7 @@ describe("model picker", () => {
     expect(t).toContain("MIMON MAX");
   });
 
-  it("selects MIMON MAX with arrows and enter", () => {
+  it("selects MIMON MAX with arrows and enter, then asks for its model", () => {
     const { tui, tty, cap } = makeTui();
     tui.show();
     tui.openPicker();
@@ -292,7 +295,8 @@ describe("model picker", () => {
     tui.handleKey({ kind: "enter" });
     expect(cap.tiers.map((t) => t.id)).toEqual(["mimonMax"]);
     expect(tui.tier.id).toBe("mimonMax");
-    expect(tty.text()).toContain("✓ model set to MIMON MAX");
+    expect(cap.tierPicks).toEqual(["mimonMax"]);
+    expect(tty.text()).toContain("select model");
   });
 
   it("closes on escape without changing the tier", () => {
@@ -869,7 +873,8 @@ describe("render byte budget", () => {
   it("typing one character rewrites a bounded number of bytes", () => {
     const tty = new CountingTty();
     const tui = new Tui(tty, { onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {}, onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {},
-    onWizardModel: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
+    onWizardModel: () => {},
+    onTierModelPick: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
     tui.enableHero("0.1.0");
     tui.show();
     type(tui, "hello worl");
@@ -881,7 +886,8 @@ describe("render byte budget", () => {
   it("one grid arrow rewrites a bounded number of bytes", () => {
     const tty = new CountingTty();
     const tui = new Tui(tty, { onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {}, onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {},
-    onWizardModel: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
+    onWizardModel: () => {},
+    onTierModelPick: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {} });
     tui.show();
     tui.openBrand({ name: "MEMO", colors: ["teal", "gold"] });
     tui.handleKey({ kind: "down" });

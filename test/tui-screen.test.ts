@@ -171,6 +171,7 @@ function makeVt(rows: number, cols: number): { vt: VirtualTerminal; tui: Tui; ca
     onBindModel: () => {},
     onWizardKey: () => {},
     onWizardModel: () => {},
+    onTierModelPick: () => {},
     onBrandName: () => {},
     onBrandColors: () => {},
     onBrandReset: () => {},
@@ -239,7 +240,7 @@ describe("virtual terminal resize storm", () => {
     vt.resize(26, 24);
     await tui.onResizeAsync();
     key(tui, "enter");
-    expect(vt.screen()).toContain("set to MIMON");
+    expect(vt.screen()).toContain("select mod");
     for (const line of vt.screen().split("\n")) {
       expect(line.length).toBeLessThanOrEqual(70);
     }

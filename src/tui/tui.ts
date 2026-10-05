@@ -298,6 +298,7 @@ export interface TuiHooks {
   onBindModel(role: string, binding: string): void;
   onWizardKey(name: string, key: string): void;
   onWizardModel(name: string, model: string): void;
+  onTierModelPick(role: string): void;
   onBrandName(name: string): void;
   onBrandColors(colors: string[]): void;
   onBrandReset(): void;
@@ -364,6 +365,7 @@ export class Tui {
   private modelPickList: string[] = [];
   private modelPickIndex = 0;
   private modelPickOffset = 0;
+  private modelPickRole = "";
 
 
   constructor(
@@ -831,11 +833,12 @@ export class Tui {
     this.refresh();
   }
 
-  openModelPick(provider: string, models: string[], preferred?: string): void {
+  openModelPick(provider: string, models: string[], preferred?: string, role?: string): void {
     this.modelPickProvider = provider;
     this.modelPickList = models;
     this.modelPickIndex = preferred ? Math.max(0, models.indexOf(preferred)) : 0;
     this.modelPickOffset = 0;
+    this.modelPickRole = role ?? "";
     if (models.length === 0) return;
     this.clampModelPickOffset();
     this.view = "modelPick";
@@ -1307,10 +1310,9 @@ export class Tui {
 
   private pickTier(): void {
     const t = TIERS[this.pickerIndex]!;
-    this.view = "prompt";
     this.setTier(t);
     this.hooks.onTierChange(t);
-    this.notice("✓ model set to " + t.label);
+    this.hooks.onTierModelPick(t.id);
   }
 
   private applyColorPick(entry: string): void {
@@ -1522,9 +1524,11 @@ export class Tui {
       if (key.kind === "enter") {
         const model = this.modelPickList[this.modelPickIndex]!;
         const name = this.modelPickProvider;
+        const role = this.modelPickRole;
         this.view = "prompt";
         this.refresh();
-        this.hooks.onWizardModel(name, model);
+        if (role) this.hooks.onBindModel(role, name + "/" + model);
+        else this.hooks.onWizardModel(name, model);
         return;
       }
       if (key.kind === "escape") {

@@ -27,6 +27,7 @@ function makeTui(): { tui: Tui; tty: MockTty; submitted: string[]; wizardKeys: A
     onBindModel: () => {},
     onWizardKey: (name, key) => wizardKeys.push({ name, key }),
     onWizardModel: (name, model) => wizardModels.push({ name, model }),
+    onTierModelPick: () => {},
     onBrandName: () => {},
     onBrandColors: () => {},
     onBrandReset: () => {},

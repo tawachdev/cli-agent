@@ -39,6 +39,7 @@ function section(title: string, columns: number, drive: (tui: Tui) => void): voi
     onBindModel: () => {},
     onWizardKey: () => {},
     onWizardModel: () => {},
+    onTierModelPick: () => {},
     onBrandName: () => {},
     onBrandColors: () => {},
     onBrandReset: () => {},
