@@ -1,14 +1,18 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sniffImageMime } from "../shared/images";
 import { MAX_IMAGE_BYTES } from "./images";
 
 export type ClipboardRead = () => Promise<Uint8Array>;
 
-const MACOS_PNG_SCRIPT =
-  'ObjC.import("AppKit");' +
-  "const data = $.NSPasteboard.generalPasteboard.dataForType($.NSPasteboardTypePNG);" +
-  'data ? String(data.base64EncodedString()) : ""';
+function macosSaveScript(dest: string): string {
+  return (
+    'ObjC.import("AppKit");' +
+    "const data = $.NSPasteboard.generalPasteboard.dataForType($.NSPasteboardTypePNG);" +
+    'data ? String(data.writeToFileAtomically($("' + dest + '"), true)) : "false"'
+  );
+}
 
 const EXTENSIONS: Record<string, string> = {
   "image/png": "png",
@@ -18,15 +22,24 @@ const EXTENSIONS: Record<string, string> = {
   "image/bmp": "bmp",
 };
 
-async function osascriptRead(): Promise<Uint8Array> {
-  const proc = Bun.spawn(["osascript", "-l", "JavaScript", "-e", MACOS_PNG_SCRIPT], {
+async function osascriptWrite(dest: string): Promise<boolean> {
+  const proc = Bun.spawn(["osascript", "-l", "JavaScript", "-e", macosSaveScript(dest)], {
     stdout: "pipe",
     stderr: "ignore",
   });
   const out = await new Response(proc.stdout).text();
   await proc.exited;
-  if (proc.exitCode !== 0) return new Uint8Array();
-  return new Uint8Array(Buffer.from(out.trim(), "base64"));
+  return proc.exitCode === 0 && out.trim() === "true";
+}
+
+async function darwinRead(): Promise<Uint8Array> {
+  const scratch = join(tmpdir(), "mimon-clipboard-" + Date.now() + ".png");
+  if (!(await osascriptWrite(scratch))) return new Uint8Array();
+  try {
+    return new Uint8Array(readFileSync(scratch));
+  } finally {
+    rmSync(scratch, { force: true });
+  }
 }
 
 async function xclipRead(): Promise<Uint8Array> {
@@ -40,7 +53,7 @@ async function xclipRead(): Promise<Uint8Array> {
 }
 
 export function platformRead(): Promise<Uint8Array> {
-  if (process.platform === "darwin") return osascriptRead();
+  if (process.platform === "darwin") return darwinRead();
   if (process.platform === "linux") return xclipRead();
   return Promise.resolve(new Uint8Array());
 }
