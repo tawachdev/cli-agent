@@ -16,9 +16,9 @@
 
 | Path | Command |
 |------|---------|
-| one shot, nothing installed | `npx mimon-cli "summarize this folder"` |
+| one shot, nothing installed | `npx mimon "summarize this folder"` |
 | self-contained binary | `curl -fsSL https://raw.githubusercontent.com/tawachdev/cli-agent/main/install.sh \| sh` then `agent` |
-| package manager | `npm i -g mimon-cli` then `mimon` |
+| package manager | `npm i -g mimon` then `mimon` |
 
 The binary is self-contained (runtime embedded — macOS/Linux, arm64/x64, nothing else to install). First launch opens the setup wizard: pick a provider (anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint), paste its API key — the key is tested live and bound to all four model tiers. Nothing else is required.
 
