@@ -29,6 +29,18 @@ describe("half-block pixel preview", () => {
     const jpg = { ...asLoaded(buildPng(2, 2, () => [1, 2, 3])), mime: "image/jpeg" as const };
     expect(pixelPreviewLines(jpg)).toEqual([]);
   });
+
+  it("averages each cell region so thin features tint the cell instead of vanishing", () => {
+    const png = buildPng(24, 24, (_x, y) => (y >= 13 && y < 19 ? [0, 200, 0] : [255, 255, 255]));
+    const lines = pixelPreviewLines({ ...asLoaded(png), mime: "image/png" as const }, 8, 1);
+    expect(lines).toHaveLength(1);
+    const m = lines[0]!.match(/\x1b\[38;2;(\d+);(\d+);(\d+);48;2;(\d+);(\d+);(\d+)m/) ?? [];
+    expect(m).toHaveLength(7);
+    const nums = m.map(Number);
+    const [, tr, tg, tb, br, bg, bb] = nums as unknown as number[];
+    expect([tr, tg, tb]).toEqual([255, 255, 255]);
+    expect([br, bg, bb]).toEqual([104, 244, 104]);
+  });
 });
 
 describe("image paths containing spaces", () => {

@@ -206,18 +206,47 @@ export function pixelPreviewLines(image: LoadedImage, maxCols = 40, maxRows = 12
     rows = maxRows;
     cols = Math.max(8, Math.round(rows * 2 * ratio));
   }
+  const boost = (color: [number, number, number]): [number, number, number] => {
+    const lum = 0.3 * color[0]! + 0.6 * color[1]! + 0.1 * color[2]!;
+    return [
+      Math.max(0, Math.min(255, Math.round(lum + (color[0]! - lum) * 1.4))),
+      Math.max(0, Math.min(255, Math.round(lum + (color[1]! - lum) * 1.4))),
+      Math.max(0, Math.min(255, Math.round(lum + (color[2]! - lum) * 1.4))),
+    ];
+  };
+  const regionColor = (x0: number, y0: number, x1: number, y1: number): [number, number, number] => {
+    const sx0 = Math.max(0, Math.floor(x0));
+    const sy0 = Math.max(0, Math.floor(y0));
+    const sx1 = Math.min(pixels.width, Math.ceil(x1));
+    const sy1 = Math.min(pixels.height, Math.ceil(y1));
+    const stride = Math.max(1, Math.floor(Math.max(sx1 - sx0, sy1 - sy0) / 24));
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let n = 0;
+    for (let y = sy0; y < sy1; y += stride) {
+      for (let x = sx0; x < sx1; x += stride) {
+        const o = (y * pixels.width + x) * 4;
+        r += pixels.data[o]!;
+        g += pixels.data[o + 1]!;
+        b += pixels.data[o + 2]!;
+        n += 1;
+      }
+    }
+    if (n === 0) return [0, 0, 0];
+    return boost([Math.round(r / n), Math.round(g / n), Math.round(b / n)]);
+  };
   const lines: string[] = [];
   for (let ry = 0; ry < rows; ry++) {
     let line = "";
     for (let cx = 0; cx < cols; cx++) {
-      const px = Math.min(pixels.width - 1, Math.floor((cx + 0.5) * pixels.width / cols));
-      const pyTop = Math.min(pixels.height - 1, Math.floor((ry * 2 + 0.5) * pixels.height / (rows * 2)));
-      const pyBot = Math.min(pixels.height - 1, Math.floor((ry * 2 + 1.5) * pixels.height / (rows * 2)));
-      const top = (pyTop * pixels.width + px) * 4;
-      const bot = (pyBot * pixels.width + px) * 4;
+      const x0 = cx * pixels.width / cols;
+      const x1 = (cx + 1) * pixels.width / cols;
+      const top = regionColor(x0, ry * 2 * pixels.height / (rows * 2), x1, (ry * 2 + 1) * pixels.height / (rows * 2));
+      const bot = regionColor(x0, (ry * 2 + 1) * pixels.height / (rows * 2), x1, (ry * 2 + 2) * pixels.height / (rows * 2));
       line +=
-        "\x1b[38;2;" + pixels.data[top]! + ";" + pixels.data[top + 1]! + ";" + pixels.data[top + 2]! +
-        ";48;2;" + pixels.data[bot]! + ";" + pixels.data[bot + 1]! + ";" + pixels.data[bot + 2]! + "m▀";
+        "\x1b[38;2;" + top[0] + ";" + top[1] + ";" + top[2] +
+        ";48;2;" + bot[0] + ";" + bot[1] + ";" + bot[2] + "m▀";
     }
     lines.push(line + C.reset);
   }

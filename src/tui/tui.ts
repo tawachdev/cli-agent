@@ -1189,7 +1189,7 @@ export class Tui {
     const entry = this.pendingImages.find((p) => p.path === path);
     if (entry && images[0]) {
       entry.image = images[0]!;
-      entry.preview = pixelPreviewLines(images[0]!, Math.min(40, Math.max(12, this.innerWidth() - 8)), 12);
+      entry.preview = pixelPreviewLines(images[0]!, Math.min(64, Math.max(12, this.innerWidth() - 8)), 12);
       this.refresh();
     } else if (entry && errors[0]) {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
