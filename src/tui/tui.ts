@@ -352,6 +352,7 @@ export class Tui {
   private statusExtra = "";
   private inlineSeq = 0;
   private inlinePayloads = new Map<string, string>();
+  private imageFeed: Array<{ token: string; rows: number; start: number }> = [];
   private customColorBuffer = "";
   private customColorError = "";
   private gridIndex = 0;
@@ -680,8 +681,9 @@ export class Tui {
       }
       const inner = Math.max(10, this.innerWidth() - 6);
       const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
+      const imageRows = this.imageFeed.reduce((n, block) => n + block.rows, 0);
       const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0) + menu.length + overlay.length;
-      const budget = Math.max(1, this.rows - footerLines - fixedCount);
+      const budget = Math.max(1, this.rows - footerLines - fixedCount - imageRows);
       const visuals: string[] = [];
       for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < budget; i--) {
         const wrapped = wrap(this.chatLines[i]!, inner);
@@ -690,6 +692,11 @@ export class Tui {
         }
       }
       for (const visual of visuals) lines.push(this.boxLine("  " + visual));
+      for (const block of this.imageFeed) {
+        block.start = lines.length;
+        lines.push(block.token);
+        for (let pad = 1; pad < block.rows; pad++) lines.push("");
+      }
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
       for (const pending of this.pendingImages) {
         if (pending.preview.length === 0 && !pending.image) continue;
@@ -771,7 +778,12 @@ export class Tui {
     this.lastCols = cols;
     this.lastRows = rowsNow;
     const frame = this.buildLines();
-    const dropped = Math.max(0, frame.length - rowsNow);
+    let dropped = Math.max(0, frame.length - rowsNow);
+    for (const block of this.imageFeed) {
+      while (block.start >= 0 && block.start < dropped && dropped < block.start + block.rows) {
+        dropped = block.start + block.rows;
+      }
+    }
     const budget = Math.max(8, cols - 1);
     const view = frame.slice(dropped).map((line) => (visibleLen(line) <= budget ? line : C.reset + plainClip(line, budget)));
     const inputRow = Math.max(0, Math.min(this.inputRow - dropped, view.length - 1));
@@ -813,6 +825,7 @@ export class Tui {
   }
 
   historyImage(image: LoadedImage): void {
+    try {
     const id = ++this.inlineSeq;
     const token = "\x00IMG" + id + "\x00";
     const support = this.options.imageSupport ?? imageSupport();
@@ -833,10 +846,11 @@ export class Tui {
       ? itermImagePayload(image, byHeight ? rows : cols, byHeight)
       : kittyImagePayload(image, byHeight ? rows : cols, byHeight);
     this.inlinePayloads.set(token, payload);
-    this.chatLines.push(token);
-    for (let pad = 1; pad < rows; pad++) this.chatLines.push("");
-    this.chatStreamOpen = false;
+    this.imageFeed.push({ token, rows, start: -1 });
     this.refresh();
+    } catch (error) {
+      this.notice("✘ inline image: " + (error instanceof Error ? error.message : String(error)));
+    }
   }
 
   private cursorColumn(): number {
