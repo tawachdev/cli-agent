@@ -20,10 +20,9 @@ class MockTty implements Tty {
   }
 }
 
-function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, support: ImageSupport = "none", inlineImages = true): { tui: Tui; tty: MockTty; submitted: string[]; toggles: boolean[] } {
+function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, support: ImageSupport = "none"): { tui: Tui; tty: MockTty; submitted: string[] } {
   const tty = new MockTty();
   const submitted: string[] = [];
-  const toggles: boolean[] = [];
   const tui = new Tui(tty, {
     onSubmit: (t) => submitted.push(t),
     onCommand: () => {},
@@ -41,8 +40,8 @@ function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, su
     onBrandColors: () => {},
     onBrandReset: () => {},
     onAddProvider: () => {},
-  }, { imageSupport: support, inlineImages, onInlineImagesChange: (enabled) => toggles.push(enabled), ...(clipboardSave ? { clipboardSave } : {}) });
-  return { tui, tty, submitted, toggles };
+  }, { imageSupport: support, ...(clipboardSave ? { clipboardSave } : {}) });
+  return { tui, tty, submitted };
 }
 
 function paste(tui: Tui, text: string): void {
@@ -184,8 +183,8 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
   });
 });
 
-describe("protocol terminals render the real image at attach", () => {
-  it("emits the inline-image payload and skips block rows", async () => {
+describe("protocol terminals keep the prompt quiet at attach", () => {
+  it("shows only the chip until the turn history renders the image", async () => {
     const dir = join(tmpdir(), "mimon-clip-iterm");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "real.png");
@@ -195,7 +194,7 @@ describe("protocol terminals render the real image at attach", () => {
     paste(tui, file);
     await settle();
     const raw = tty.chunks.join("");
-    expect(raw).toContain("\x1b]1337;File=inline=1");
+    expect(raw).not.toContain("\x1b]1337;File=inline=1");
     expect(raw).toContain("▤1");
     expect(raw).not.toContain("▀");
     expect(tui.hasPendingImages()).toBe(true);
@@ -203,27 +202,22 @@ describe("protocol terminals render the real image at attach", () => {
   });
 });
 
-describe("inline image display is on by default", () => {
-  it("shows the image at attach and ctrl+o turns display off", async () => {
-    const dir = join(tmpdir(), "mimon-clip-optout");
+describe("inline images render through the send path", () => {
+  it("stays silent at attach and renders when the turn history takes the image", async () => {
+    const dir = join(tmpdir(), "mimon-clip-send");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "first.png");
     writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
-    const { tui, tty, toggles } = makeTui(undefined, "iterm");
+    const { tui, tty } = makeTui(undefined, "iterm");
     tui.show();
     paste(tui, file);
     await settle();
+    expect(tty.chunks.join("")).not.toContain("]1337;File=inline=1");
+    expect(tty.chunks.join("")).toContain("attached");
+    const loaded = tui.takePendingImages()[0]!;
+    tui.historyImage(loaded);
+    await settle();
     expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
-    expect(toggles).toEqual([]);
-    tui.handleKey({ kind: "ctrl-o" });
-    await settle();
-    expect(toggles).toEqual([false]);
-    const second = join(dir, "second.png");
-    writeFileSync(second, buildPng(12, 8, () => [10, 60, 120]));
-    paste(tui, second);
-    await settle();
-    expect(tty.chunks.join("")).not.toContain("c2Vjb25kLnBuZw");
-    expect(tty.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")).toContain("inline images off");
     rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -1,7 +1,7 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline/promises";
-import { cwd, exit, stdin, stdout } from "node:process";
+import { exit, stdin, stdout } from "node:process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,23 +164,6 @@ async function main(): Promise<void> {
       process.env.AGENT_COLORS = colors.join(",");
       tui.refreshBrand();
     };
-    const settingsPath = join(cwd(), ".agent", "settings.json");
-    const readInlineImages = (): boolean => {
-      try {
-        return JSON.parse(readFileSync(settingsPath, "utf8"))["inlineImages"] !== false;
-      } catch {
-        return true;
-      }
-    };
-    const persistInlineImages = (enabled: boolean): void => {
-      let settings: Record<string, unknown> = {};
-      try {
-        settings = JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
-      } catch {}
-      settings["inlineImages"] = enabled;
-      mkdirSync(join(cwd(), ".agent"), { recursive: true });
-      writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-    };
     const tui = new Tui(tty, {
       onSubmit: (t) => {
         void handleTurn(t);
@@ -328,9 +311,6 @@ async function main(): Promise<void> {
             refreshProviders();
           });
       },
-    }, {
-      inlineImages: readInlineImages(),
-      onInlineImagesChange: persistInlineImages,
     });
     ui = tui;
     chat.permissionAsk = () => tui.permission();

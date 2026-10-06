@@ -312,8 +312,6 @@ export interface TuiHooks {
 export interface TuiOptions {
   clipboardSave?: (destDir: string) => Promise<string | null>;
   imageSupport?: ImageSupport;
-  inlineImages?: boolean;
-  onInlineImagesChange?: (enabled: boolean) => void;
 }
 
 const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
@@ -355,7 +353,6 @@ export class Tui {
   private statusExtra = "";
   private inlineSeq = 0;
   private inlinePayloads = new Map<string, string>();
-  private inlineImages: boolean;
   private imageFeed: Array<{ token: string; rows: number; start: number }> = [];
   private customColorBuffer = "";
   private customColorError = "";
@@ -390,9 +387,7 @@ export class Tui {
     private readonly tty: Tty,
     private readonly hooks: TuiHooks,
     private readonly options: TuiOptions = {},
-  ) {
-    this.inlineImages = options.inlineImages ?? true;
-  }
+  ) {}
 
   private get cols(): number {
     return this.tty.columns > 0 ? this.tty.columns : 40;
@@ -830,19 +825,6 @@ export class Tui {
     return null;
   }
 
-  setInlineImages(enabled: boolean): void {
-    this.inlineImages = enabled;
-    this.options.onInlineImagesChange?.(enabled);
-    if (enabled) {
-      for (const pending of this.pendingImages) {
-        if (pending.image) this.historyImage(pending.image);
-      }
-    }
-    this.notice(enabled
-      ? "✓ inline images on"
-      : "✓ inline images off — attachments still reach the model");
-  }
-
   historyImage(image: LoadedImage): void {
     try {
     const id = ++this.inlineSeq;
@@ -1276,8 +1258,7 @@ export class Tui {
         this.refresh();
       } else {
         entry.preview = [];
-        if (this.inlineImages) this.historyImage(images[0]!);
-        else this.refresh();
+        this.refresh();
       }
     } else if (entry && errors[0]) {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
@@ -1953,9 +1934,6 @@ export class Tui {
         this.input = "/";
         this.cursor = 1;
         this.menuIndex = 0;
-        break;
-      case "ctrl-o":
-        this.setInlineImages(!this.inlineImages);
         break;
       case "escape":
         this.input = "";
