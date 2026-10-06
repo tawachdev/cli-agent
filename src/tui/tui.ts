@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
 import { existsSync } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
-import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, pixelPreviewLines, renderImage, type LoadedImage, type LocatedImage } from "./images";
+import { imageChipName, imageSupport, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, pixelPreviewLines, renderImage, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -310,6 +310,7 @@ export interface TuiHooks {
 
 export interface TuiOptions {
   clipboardSave?: (destDir: string) => Promise<string | null>;
+  imageSupport?: ImageSupport;
 }
 
 const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
@@ -1189,7 +1190,14 @@ export class Tui {
     const entry = this.pendingImages.find((p) => p.path === path);
     if (entry && images[0]) {
       entry.image = images[0]!;
-      entry.preview = pixelPreviewLines(images[0]!, Math.min(64, Math.max(12, this.innerWidth() - 8)), Math.max(4, Math.min(16, this.rows - 8)));
+      const support = this.options.imageSupport ?? imageSupport();
+      if (support === "none") {
+        entry.preview = pixelPreviewLines(images[0]!, Math.min(64, Math.max(12, this.innerWidth() - 8)), Math.max(4, Math.min(16, this.rows - 8)));
+      } else {
+        entry.preview = [];
+        this.refresh();
+        renderImage(this.tty, images[0]!, Math.min(60, this.innerWidth()), Math.max(4, this.rows - 6), support);
+      }
       this.refresh();
     } else if (entry && errors[0]) {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);

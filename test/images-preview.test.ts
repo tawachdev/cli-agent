@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { asLoaded, buildPng } from "./helpers/png";
-import { locateImagePaths, pixelPreviewLines } from "../src/tui/images";
+import { itermImagePayload, kittyImagePayload, locateImagePaths, pixelPreviewLines, renderImage } from "../src/tui/images";
 import { Tui, type Tty } from "../src/tui/tui";
 
 function visible(s: string): number {
@@ -64,6 +64,24 @@ describe("image paths containing spaces", () => {
   });
 });
 
+describe("inline image payloads", () => {
+  it("iterm payload switches between width and height modes", () => {
+    const img = { ...asLoaded(buildPng(4, 4, () => [1, 2, 3])), mime: "image/png" as const };
+    expect(itermImagePayload(img, 20)).toContain(";width=20;");
+    expect(itermImagePayload(img, 12, true)).toContain(";height=12;");
+    expect(kittyImagePayload(img, 20)).toContain("c=20,");
+    expect(kittyImagePayload(img, 9, true)).toContain("r=9,");
+  });
+
+  it("renderImage caps tall portraits by height instead of width", () => {
+    const tall = buildPng(10, 100, () => [9, 9, 9]);
+    const img = { ...asLoaded(tall), mime: "image/png" as const, width: 10, height: 100 };
+    const chunks: string[] = [];
+    renderImage({ write: (d) => chunks.push(d), columns: 80, rows: 30 }, img, 60, 10, "iterm");
+    expect(chunks.join("")).toContain(";height=10;");
+  });
+});
+
 describe("in-frame image preview", () => {
   class FrameTty implements Tty {
     chunks: string[] = [];
@@ -86,7 +104,7 @@ describe("in-frame image preview", () => {
     onWizardModel: () => {},
     onTierModelPick: () => {},
       onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {},
-    });
+    }, { imageSupport: "none" });
     tui.show();
     for (const ch of "see " + file) tui.handleKey({ kind: "char", ch });
     await new Promise((resolve) => setTimeout(resolve, 30));

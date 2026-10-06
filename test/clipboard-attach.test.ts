@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildPng } from "./helpers/png";
 import { saveClipboardImage } from "../src/tui/clipboard";
+import type { ImageSupport } from "../src/tui/images";
 import { decodeChunk, Tui, type Tty } from "../src/tui/tui";
 
 function pngBytes(width = 8, height = 8): Uint8Array {
@@ -19,7 +20,7 @@ class MockTty implements Tty {
   }
 }
 
-function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>): { tui: Tui; tty: MockTty; submitted: string[] } {
+function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, support: ImageSupport = "none"): { tui: Tui; tty: MockTty; submitted: string[] } {
   const tty = new MockTty();
   const submitted: string[] = [];
   const tui = new Tui(tty, {
@@ -39,7 +40,7 @@ function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>): {
     onBrandColors: () => {},
     onBrandReset: () => {},
     onAddProvider: () => {},
-  }, clipboardSave ? { clipboardSave } : {});
+  }, { imageSupport: support, ...(clipboardSave ? { clipboardSave } : {}) });
   return { tui, tty, submitted };
 }
 
@@ -177,6 +178,25 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
     const escaped = "/var/folders/67/guaranteed-missing-" + (Date.now() + 2) + "/T/TemporaryItems/NSIRD_cap/Screenshot\\ 2026-10-06.png";
     paste(tui, escaped);
     await settle();
+    expect(tui.hasPendingImages()).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("protocol terminals render the real image at attach", () => {
+  it("emits the inline-image payload and skips block rows", async () => {
+    const dir = join(tmpdir(), "mimon-clip-iterm");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "real.png");
+    writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
+    const { tui, tty } = makeTui(undefined, "iterm");
+    tui.show();
+    paste(tui, file);
+    await settle();
+    const raw = tty.chunks.join("");
+    expect(raw).toContain("\x1b]1337;File=inline=1");
+    expect(raw).toContain("▤1");
+    expect(raw).not.toContain("▀");
     expect(tui.hasPendingImages()).toBe(true);
     rmSync(dir, { recursive: true, force: true });
   });

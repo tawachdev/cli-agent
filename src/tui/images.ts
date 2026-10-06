@@ -136,13 +136,14 @@ export function imageSupport(env: Record<string, string | undefined> = process.e
   return "none";
 }
 
-export function itermImagePayload(image: LoadedImage, widthCells: number): string {
+export function itermImagePayload(image: LoadedImage, cells: number, byHeight = false): string {
   const name = Buffer.from(image.name).toString("base64");
   return (
     "\x1b]1337;File=inline=1;preserveAspectRatio=1;size=" +
     image.bytes +
-    ";width=" +
-    widthCells +
+    ";" +
+    (byHeight ? "height=" : "width=") +
+    cells +
     ";name=" +
     name +
     ":" +
@@ -151,14 +152,15 @@ export function itermImagePayload(image: LoadedImage, widthCells: number): strin
   );
 }
 
-export function kittyImagePayload(image: LoadedImage, widthCells: number): string {
+export function kittyImagePayload(image: LoadedImage, cells: number, byHeight = false): string {
   const chunks: string[] = [];
+  const geometry = byHeight ? "r=" + cells + "," : "c=" + cells + ",";
   for (let i = 0; i < image.base64.length; i += KITTY_CHUNK) {
     const last = i + KITTY_CHUNK >= image.base64.length;
-    const control = i === 0 ? "f=100,a=T,q=2,c=" + widthCells + "," : "q=2,";
+    const control = i === 0 ? "f=100,a=T,q=2," + geometry : "q=2,";
     chunks.push("\x1b_G" + control + "m=" + (last ? 0 : 1) + ";" + image.base64.slice(i, i + KITTY_CHUNK) + "\x1b\\");
   }
-  if (chunks.length === 0) chunks.push("\x1b_Gf=100,a=T,q=2,c=" + widthCells + ",m=0;\x1b\\");
+  if (chunks.length === 0) chunks.push("\x1b_Gf=100,a=T,q=2," + geometry + "m=0;\x1b\\");
   return chunks.join("");
 }
 
@@ -183,13 +185,17 @@ function trunc(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, Math.max(0, max));
 }
 
-export function renderImage(tty: Tty, image: LoadedImage, maxWidthCells = 60): void {
-  const width = Math.max(10, Math.min(maxWidthCells, tty.columns > 0 ? tty.columns - 6 : 60));
-  const support = imageSupport();
+export function renderImage(tty: Tty, image: LoadedImage, maxWidthCells = 60, maxHeightCells?: number, support: ImageSupport = imageSupport()): void {
+  let width = Math.max(10, Math.min(maxWidthCells, tty.columns > 0 ? tty.columns - 6 : 60));
+  let byHeight = false;
+  if (maxHeightCells !== undefined && image.width !== null && image.height !== null && image.height > 0) {
+    const rows = Math.round((width * image.height) / image.width);
+    if (rows > maxHeightCells) byHeight = true;
+  }
   if (support === "iterm") {
-    tty.write(itermImagePayload(image, width) + "\n");
+    tty.write(itermImagePayload(image, byHeight ? maxHeightCells! : width, byHeight) + "\n");
   } else if (support === "kitty") {
-    tty.write(kittyImagePayload(image, width) + "\n");
+    tty.write(kittyImagePayload(image, byHeight ? maxHeightCells! : width, byHeight) + "\n");
   } else {
     tty.write(fallbackPanel(image, tty.columns > 0 ? tty.columns : 80));
   }
