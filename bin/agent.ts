@@ -167,9 +167,9 @@ async function main(): Promise<void> {
     const settingsPath = join(cwd(), ".agent", "settings.json");
     const readInlineImages = (): boolean => {
       try {
-        return JSON.parse(readFileSync(settingsPath, "utf8"))["inlineImages"] === true;
+        return JSON.parse(readFileSync(settingsPath, "utf8"))["inlineImages"] !== false;
       } catch {
-        return false;
+        return true;
       }
     };
     const persistInlineImages = (enabled: boolean): void => {

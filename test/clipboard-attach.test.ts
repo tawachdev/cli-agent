@@ -20,7 +20,7 @@ class MockTty implements Tty {
   }
 }
 
-function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, support: ImageSupport = "none", inlineImages = false): { tui: Tui; tty: MockTty; submitted: string[]; toggles: boolean[] } {
+function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, support: ImageSupport = "none", inlineImages = true): { tui: Tui; tty: MockTty; submitted: string[]; toggles: boolean[] } {
   const tty = new MockTty();
   const submitted: string[] = [];
   const toggles: boolean[] = [];
@@ -190,7 +190,7 @@ describe("protocol terminals render the real image at attach", () => {
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "real.png");
     writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
-    const { tui, tty } = makeTui(undefined, "iterm", true);
+    const { tui, tty } = makeTui(undefined, "iterm");
     tui.show();
     paste(tui, file);
     await settle();
@@ -203,23 +203,27 @@ describe("protocol terminals render the real image at attach", () => {
   });
 });
 
-describe("inline image display is opt-in", () => {
-  it("keeps the payload silent until ctrl+o turns display on", async () => {
-    const dir = join(tmpdir(), "mimon-clip-optin");
+describe("inline image display is on by default", () => {
+  it("shows the image at attach and ctrl+o turns display off", async () => {
+    const dir = join(tmpdir(), "mimon-clip-optout");
     mkdirSync(dir, { recursive: true });
-    const file = join(dir, "real.png");
+    const file = join(dir, "first.png");
     writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
     const { tui, tty, toggles } = makeTui(undefined, "iterm");
     tui.show();
     paste(tui, file);
     await settle();
-    expect(tty.chunks.join("")).not.toContain("]1337;File=inline=1");
-    expect(tui.hasPendingImages()).toBe(true);
+    expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
+    expect(toggles).toEqual([]);
     tui.handleKey({ kind: "ctrl-o" });
     await settle();
-    expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
-    expect(toggles).toEqual([true]);
-    expect(tty.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")).toContain("inline images on");
+    expect(toggles).toEqual([false]);
+    const second = join(dir, "second.png");
+    writeFileSync(second, buildPng(12, 8, () => [10, 60, 120]));
+    paste(tui, second);
+    await settle();
+    expect(tty.chunks.join("")).not.toContain("c2Vjb25kLnBuZw");
+    expect(tty.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")).toContain("inline images off");
     rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -356,7 +356,6 @@ export class Tui {
   private inlineSeq = 0;
   private inlinePayloads = new Map<string, string>();
   private inlineImages: boolean;
-  private inlineHintShown = false;
   private imageFeed: Array<{ token: string; rows: number; start: number }> = [];
   private customColorBuffer = "";
   private customColorError = "";
@@ -392,7 +391,7 @@ export class Tui {
     private readonly hooks: TuiHooks,
     private readonly options: TuiOptions = {},
   ) {
-    this.inlineImages = options.inlineImages ?? false;
+    this.inlineImages = options.inlineImages ?? true;
   }
 
   private get cols(): number {
@@ -840,7 +839,7 @@ export class Tui {
       }
     }
     this.notice(enabled
-      ? "✓ inline images on — new attachments display in the terminal"
+      ? "✓ inline images on"
       : "✓ inline images off — attachments still reach the model");
   }
 
@@ -1277,15 +1276,8 @@ export class Tui {
         this.refresh();
       } else {
         entry.preview = [];
-        if (this.inlineImages) {
-          this.historyImage(images[0]!);
-        } else {
-          this.refresh();
-          if (!this.inlineHintShown) {
-            this.inlineHintShown = true;
-            this.notice("▤ image reaches the model · press ctrl+o to display it inline");
-          }
-        }
+        if (this.inlineImages) this.historyImage(images[0]!);
+        else this.refresh();
       }
     } else if (entry && errors[0]) {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
