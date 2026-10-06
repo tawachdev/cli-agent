@@ -242,7 +242,7 @@ function tipsList(): string[] {
 
 export type Key =
   | { kind: "char"; ch: string }
-  | { kind: "enter" | "backspace" | "delete" | "up" | "down" | "left" | "right" | "home" | "end" | "escape" | "tab" | "ctrl-c" | "ctrl-p" | "unknown" | "paste-start" | "paste-end" };
+  | { kind: "enter" | "backspace" | "delete" | "up" | "down" | "left" | "right" | "home" | "end" | "escape" | "tab" | "ctrl-c" | "ctrl-p" | "ctrl-o" | "unknown" | "paste-start" | "paste-end" };
 
 export function decodeChunk(chunk: string): { keys: Key[]; rest: string } {
   const keys: Key[] = [];
@@ -282,6 +282,7 @@ export function decodeChunk(chunk: string): { keys: Key[]; rest: string } {
     if (ch === "\t") { keys.push({ kind: "tab" }); i += 1; continue; }
     if (ch === "\x03") { keys.push({ kind: "ctrl-c" }); i += 1; continue; }
     if (ch === "\x10") { keys.push({ kind: "ctrl-p" }); i += 1; continue; }
+    if (ch === "\x0f") { keys.push({ kind: "ctrl-o" }); i += 1; continue; }
     if (ch < " ") { keys.push({ kind: "unknown" }); i += 1; continue; }
     keys.push({ kind: "char", ch });
     i += 1;
@@ -311,6 +312,8 @@ export interface TuiHooks {
 export interface TuiOptions {
   clipboardSave?: (destDir: string) => Promise<string | null>;
   imageSupport?: ImageSupport;
+  inlineImages?: boolean;
+  onInlineImagesChange?: (enabled: boolean) => void;
 }
 
 const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
@@ -352,6 +355,8 @@ export class Tui {
   private statusExtra = "";
   private inlineSeq = 0;
   private inlinePayloads = new Map<string, string>();
+  private inlineImages: boolean;
+  private inlineHintShown = false;
   private imageFeed: Array<{ token: string; rows: number; start: number }> = [];
   private customColorBuffer = "";
   private customColorError = "";
@@ -386,7 +391,9 @@ export class Tui {
     private readonly tty: Tty,
     private readonly hooks: TuiHooks,
     private readonly options: TuiOptions = {},
-  ) {}
+  ) {
+    this.inlineImages = options.inlineImages ?? false;
+  }
 
   private get cols(): number {
     return this.tty.columns > 0 ? this.tty.columns : 40;
@@ -824,6 +831,19 @@ export class Tui {
     return null;
   }
 
+  setInlineImages(enabled: boolean): void {
+    this.inlineImages = enabled;
+    this.options.onInlineImagesChange?.(enabled);
+    if (enabled) {
+      for (const pending of this.pendingImages) {
+        if (pending.image) this.historyImage(pending.image);
+      }
+    }
+    this.notice(enabled
+      ? "✓ inline images on — new attachments display in the terminal"
+      : "✓ inline images off — attachments still reach the model");
+  }
+
   historyImage(image: LoadedImage): void {
     try {
     const id = ++this.inlineSeq;
@@ -1257,7 +1277,15 @@ export class Tui {
         this.refresh();
       } else {
         entry.preview = [];
-        this.historyImage(images[0]!);
+        if (this.inlineImages) {
+          this.historyImage(images[0]!);
+        } else {
+          this.refresh();
+          if (!this.inlineHintShown) {
+            this.inlineHintShown = true;
+            this.notice("▤ image reaches the model · press ctrl+o to display it inline");
+          }
+        }
       }
     } else if (entry && errors[0]) {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
@@ -1933,6 +1961,9 @@ export class Tui {
         this.input = "/";
         this.cursor = 1;
         this.menuIndex = 0;
+        break;
+      case "ctrl-o":
+        this.setInlineImages(!this.inlineImages);
         break;
       case "escape":
         this.input = "";

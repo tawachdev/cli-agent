@@ -20,9 +20,10 @@ class MockTty implements Tty {
   }
 }
 
-function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, support: ImageSupport = "none"): { tui: Tui; tty: MockTty; submitted: string[] } {
+function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, support: ImageSupport = "none", inlineImages = false): { tui: Tui; tty: MockTty; submitted: string[]; toggles: boolean[] } {
   const tty = new MockTty();
   const submitted: string[] = [];
+  const toggles: boolean[] = [];
   const tui = new Tui(tty, {
     onSubmit: (t) => submitted.push(t),
     onCommand: () => {},
@@ -40,8 +41,8 @@ function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, su
     onBrandColors: () => {},
     onBrandReset: () => {},
     onAddProvider: () => {},
-  }, { imageSupport: support, ...(clipboardSave ? { clipboardSave } : {}) });
-  return { tui, tty, submitted };
+  }, { imageSupport: support, inlineImages, onInlineImagesChange: (enabled) => toggles.push(enabled), ...(clipboardSave ? { clipboardSave } : {}) });
+  return { tui, tty, submitted, toggles };
 }
 
 function paste(tui: Tui, text: string): void {
@@ -189,7 +190,7 @@ describe("protocol terminals render the real image at attach", () => {
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "real.png");
     writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
-    const { tui, tty } = makeTui(undefined, "iterm");
+    const { tui, tty } = makeTui(undefined, "iterm", true);
     tui.show();
     paste(tui, file);
     await settle();
@@ -198,6 +199,27 @@ describe("protocol terminals render the real image at attach", () => {
     expect(raw).toContain("▤1");
     expect(raw).not.toContain("▀");
     expect(tui.hasPendingImages()).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("inline image display is opt-in", () => {
+  it("keeps the payload silent until ctrl+o turns display on", async () => {
+    const dir = join(tmpdir(), "mimon-clip-optin");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "real.png");
+    writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
+    const { tui, tty, toggles } = makeTui(undefined, "iterm");
+    tui.show();
+    paste(tui, file);
+    await settle();
+    expect(tty.chunks.join("")).not.toContain("]1337;File=inline=1");
+    expect(tui.hasPendingImages()).toBe(true);
+    tui.handleKey({ kind: "ctrl-o" });
+    await settle();
+    expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
+    expect(toggles).toEqual([true]);
+    expect(tty.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")).toContain("inline images on");
     rmSync(dir, { recursive: true, force: true });
   });
 });
