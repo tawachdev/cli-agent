@@ -195,6 +195,40 @@ export function renderImage(tty: Tty, image: LoadedImage, maxWidthCells = 60): v
   }
 }
 
+const XTERM16_RGB: Array<[number, number, number]> = [
+  [0, 0, 0], [205, 0, 0], [0, 205, 0], [205, 205, 0],
+  [0, 0, 238], [85, 85, 255], [205, 0, 205], [0, 205, 205],
+  [229, 229, 229], [127, 127, 127], [255, 0, 0], [0, 255, 0],
+  [255, 255, 0], [92, 92, 255], [255, 0, 255], [0, 255, 255],
+];
+const CUBE_STEPS = [0, 95, 135, 175, 215, 255];
+const PALETTE256: Array<[number, number, number]> = Array.from({ length: 256 }, (_v, i): [number, number, number] => {
+  if (i < 16) return XTERM16_RGB[i]!;
+  if (i < 232) {
+    const n = i - 16;
+    return [CUBE_STEPS[Math.floor(n / 36)]!, CUBE_STEPS[Math.floor(n / 6) % 6]!, CUBE_STEPS[n % 6]!];
+  }
+  const v = 8 + (i - 232) * 10;
+  return [v, v, v];
+});
+
+function nearestPaletteIndex(r: number, g: number, b: number): number {
+  let best = 16;
+  let bestDist = Infinity;
+  for (let i = 0; i < 256; i++) {
+    const p = PALETTE256[i]!;
+    const dr = r - p[0]!;
+    const dg = g - p[1]!;
+    const db = b - p[2]!;
+    const dist = dr * dr + dg * dg + db * db;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  }
+  return best;
+}
+
 export function pixelPreviewLines(image: LoadedImage, maxCols = 40, maxRows = 12): string[] {
   if (image.mime !== "image/png") return [];
   const pixels = decodePng(image.base64);
@@ -206,47 +240,72 @@ export function pixelPreviewLines(image: LoadedImage, maxCols = 40, maxRows = 12
     rows = maxRows;
     cols = Math.max(8, Math.round(rows * 2 * ratio));
   }
-  const boost = (color: [number, number, number]): [number, number, number] => {
-    const lum = 0.3 * color[0]! + 0.6 * color[1]! + 0.1 * color[2]!;
-    return [
-      Math.max(0, Math.min(255, Math.round(lum + (color[0]! - lum) * 1.4))),
-      Math.max(0, Math.min(255, Math.round(lum + (color[1]! - lum) * 1.4))),
-      Math.max(0, Math.min(255, Math.round(lum + (color[2]! - lum) * 1.4))),
-    ];
-  };
-  const regionColor = (x0: number, y0: number, x1: number, y1: number): [number, number, number] => {
-    const sx0 = Math.max(0, Math.floor(x0));
-    const sy0 = Math.max(0, Math.floor(y0));
-    const sx1 = Math.min(pixels.width, Math.ceil(x1));
-    const sy1 = Math.min(pixels.height, Math.ceil(y1));
-    const stride = Math.max(1, Math.floor(Math.max(sx1 - sx0, sy1 - sy0) / 24));
-    let r = 0;
-    let g = 0;
-    let b = 0;
-    let n = 0;
-    for (let y = sy0; y < sy1; y += stride) {
-      for (let x = sx0; x < sx1; x += stride) {
-        const o = (y * pixels.width + x) * 4;
-        r += pixels.data[o]!;
-        g += pixels.data[o + 1]!;
-        b += pixels.data[o + 2]!;
-        n += 1;
+  const gridRows = rows * 2;
+  const grid: Array<[number, number, number]> = [];
+  for (let gy = 0; gy < gridRows; gy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const x0 = cx * pixels.width / cols;
+      const x1 = (cx + 1) * pixels.width / cols;
+      const y0 = gy * pixels.height / gridRows;
+      const y1 = (gy + 1) * pixels.height / gridRows;
+      const sx0 = Math.max(0, Math.floor(x0));
+      const sy0 = Math.max(0, Math.floor(y0));
+      const sx1 = Math.min(pixels.width, Math.ceil(x1));
+      const sy1 = Math.min(pixels.height, Math.ceil(y1));
+      const stride = Math.max(1, Math.floor(Math.max(sx1 - sx0, sy1 - sy0) / 24));
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let n = 0;
+      for (let y = sy0; y < sy1; y += stride) {
+        for (let x = sx0; x < sx1; x += stride) {
+          const o = (y * pixels.width + x) * 4;
+          r += pixels.data[o]!;
+          g += pixels.data[o + 1]!;
+          b += pixels.data[o + 2]!;
+          n += 1;
+        }
       }
+      grid.push(n === 0 ? [0, 0, 0] : [r / n, g / n, b / n]);
     }
-    if (n === 0) return [0, 0, 0];
-    return boost([Math.round(r / n), Math.round(g / n), Math.round(b / n)]);
-  };
+  }
+  const idx: number[] = [];
+  for (let gy = 0; gy < gridRows; gy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const at = (x: number, y: number): [number, number, number] | null =>
+        x < 0 || x >= cols || y >= gridRows ? null : grid[y * cols + x]!;
+      const me = at(cx, gy)!;
+      const pick = nearestPaletteIndex(
+        Math.max(0, Math.min(255, Math.round(me[0]!))),
+        Math.max(0, Math.min(255, Math.round(me[1]!))),
+        Math.max(0, Math.min(255, Math.round(me[2]!))),
+      );
+      idx.push(pick);
+      const p = PALETTE256[pick]!;
+      const er = me[0]! - p[0]!;
+      const eg = me[1]! - p[1]!;
+      const eb = me[2]! - p[2]!;
+      const push = (x: number, y: number, share: number): void => {
+        const target = at(x, y);
+        if (target) {
+          target[0] = target[0]! + (er * share);
+          target[1] = target[1]! + (eg * share);
+          target[2] = target[2]! + (eb * share);
+        }
+      };
+      push(cx + 1, gy, 7 / 16);
+      push(cx - 1, gy + 1, 3 / 16);
+      push(cx, gy + 1, 5 / 16);
+      push(cx + 1, gy + 1, 1 / 16);
+    }
+  }
   const lines: string[] = [];
   for (let ry = 0; ry < rows; ry++) {
     let line = "";
     for (let cx = 0; cx < cols; cx++) {
-      const x0 = cx * pixels.width / cols;
-      const x1 = (cx + 1) * pixels.width / cols;
-      const top = regionColor(x0, ry * 2 * pixels.height / (rows * 2), x1, (ry * 2 + 1) * pixels.height / (rows * 2));
-      const bot = regionColor(x0, (ry * 2 + 1) * pixels.height / (rows * 2), x1, (ry * 2 + 2) * pixels.height / (rows * 2));
-      line +=
-        "\x1b[38;2;" + top[0] + ";" + top[1] + ";" + top[2] +
-        ";48;2;" + bot[0] + ";" + bot[1] + ";" + bot[2] + "m▀";
+      const top = idx[ry * 2 * cols + cx]!;
+      const bot = idx[(ry * 2 + 1) * cols + cx]!;
+      line += "\x1b[38;5;" + top + ";48;5;" + bot + "m▀";
     }
     lines.push(line + C.reset);
   }

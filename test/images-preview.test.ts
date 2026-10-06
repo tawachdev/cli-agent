@@ -11,35 +11,31 @@ function visible(s: string): number {
 }
 
 describe("half-block pixel preview", () => {
-  it("renders truecolor half-block rows, bounded, with reset", () => {
+  it("renders 256-color half-block rows, bounded, with reset", () => {
     const png = buildPng(8, 8, (x, y) => [200, 10 * x, 10 * y]);
     const lines = pixelPreviewLines({ ...asLoaded(png), mime: "image/png" as const }, 10, 4);
     expect(lines.length).toBeGreaterThan(1);
     expect(lines.length).toBeLessThanOrEqual(4);
     for (const line of lines) {
       expect(line).toContain("▀");
-      expect(line).toContain("\x1b[38;2;");
-      expect(line).toContain(";48;2;");
+      expect(line).toContain("\x1b[38;5;");
+      expect(line).toContain(";48;5;");
       expect(visible(line)).toBeLessThanOrEqual(10);
       expect(line.endsWith("\x1b[0m")).toBe(true);
     }
   });
 
+  it("dithers a red/white checkerboard into crisp distinct palette cells", () => {
+    const png = buildPng(8, 8, (x, y) => ((x + y) % 2 === 0 ? [255, 0, 0] : [255, 255, 255]));
+    const lines = pixelPreviewLines({ ...asLoaded(png), mime: "image/png" as const }, 8, 4);
+    const all = lines.join("");
+    expect(all).toContain("\x1b[38;5;10;");
+    expect(all).toContain("\x1b[38;5;231;");
+  });
+
   it("returns nothing for non-png images — the chip path handles them", () => {
     const jpg = { ...asLoaded(buildPng(2, 2, () => [1, 2, 3])), mime: "image/jpeg" as const };
     expect(pixelPreviewLines(jpg)).toEqual([]);
-  });
-
-  it("averages each cell region so thin features tint the cell instead of vanishing", () => {
-    const png = buildPng(24, 24, (_x, y) => (y >= 13 && y < 19 ? [0, 200, 0] : [255, 255, 255]));
-    const lines = pixelPreviewLines({ ...asLoaded(png), mime: "image/png" as const }, 8, 1);
-    expect(lines).toHaveLength(1);
-    const m = lines[0]!.match(/\x1b\[38;2;(\d+);(\d+);(\d+);48;2;(\d+);(\d+);(\d+)m/) ?? [];
-    expect(m).toHaveLength(7);
-    const nums = m.map(Number);
-    const [, tr, tg, tb, br, bg, bb] = nums as unknown as number[];
-    expect([tr, tg, tb]).toEqual([255, 255, 255]);
-    expect([br, bg, bb]).toEqual([104, 244, 104]);
   });
 });
 
