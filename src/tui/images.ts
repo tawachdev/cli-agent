@@ -41,10 +41,10 @@ export function locateImagePaths(text: string): LocatedImage[] {
       let w = scanStart - 1;
       while (w > 0 && /\S/.test(text[w - 1]!)) w--;
       const candidate = text.slice(w, match.index + match[0].length);
-      if (
-        (candidate.startsWith("/") || candidate.startsWith("~/") || candidate.startsWith("./")) &&
-        existsSync(expandHome(candidate))
-      ) {
+      const unescaped = candidate.replace(/\\(.)/g, "$1");
+      const looksPath = candidate.startsWith("/") || candidate.startsWith("~/") || candidate.startsWith("./");
+      const pastePromise = unescaped.includes("/TemporaryItems/");
+      if (looksPath && (pastePromise || existsSync(expandHome(unescaped)))) {
         start = w;
         original = candidate;
       }

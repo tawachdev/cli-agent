@@ -52,7 +52,7 @@ async function settle(ms = 40): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const DEAD_PATH = "/var/folders/67/rv7357616932gtb5t4d07qxw0000gn/T/TemporaryItems/NSIRD_screendump.png";
+const DEAD_PATH = "/var/folders/67/guaranteed-missing-" + Date.now() + "/T/TemporaryItems/NSIRD_nofile.png";
 
 describe("saveClipboardImage", () => {
   it("writes validated clipboard bytes and returns the saved path", async () => {
@@ -144,5 +144,40 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
     for (const ch of " and more text") tui.handleKey({ kind: "char", ch });
     await settle(80);
     expect(calls).toBe(1);
+  });
+
+  it("pastes the full screencaptureui path with spaces without truncation", async () => {
+    const dir = join(tmpdir(), "mimon-clip-long");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "shot.png");
+    const { tui } = makeTui(async () => {
+      writeFileSync(file, buildPng(8, 8, () => [5, 50, 90]));
+      return file;
+    });
+    tui.show();
+    const full = "/var/folders/67/guaranteed-missing-" + (Date.now() + 1) + "/T/TemporaryItems/NSIRD_cap/Screenshot 2026-10-06 at 12.40.53.png";
+    expect(full.length).toBeGreaterThan(94);
+    paste(tui, full);
+    await settle();
+    expect(tui.hasPendingImages()).toBe(true);
+    expect(tui.takePendingImages()[0]!.path).toBe(file);
+    tui.handleKey({ kind: "enter" });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("pastes a backslash-escaped drag-drop path the same way", async () => {
+    const dir = join(tmpdir(), "mimon-clip-escaped");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "dropped shot.png");
+    const { tui } = makeTui(async () => {
+      writeFileSync(file, buildPng(8, 8, () => [90, 40, 5]));
+      return file;
+    });
+    tui.show();
+    const escaped = "/var/folders/67/guaranteed-missing-" + (Date.now() + 2) + "/T/TemporaryItems/NSIRD_cap/Screenshot\\ 2026-10-06.png";
+    paste(tui, escaped);
+    await settle();
+    expect(tui.hasPendingImages()).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
   });
 });

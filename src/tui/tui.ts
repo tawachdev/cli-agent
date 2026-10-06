@@ -19,6 +19,7 @@ export interface Tty {
 
 const WIDE_CHAR = /[\u1100-\u115F\u2329\u232A\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF01-\uFF60\uFFE0-\uFFE6\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F7E0}-\u{1F7EB}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{20000}-\u{2FFFD}\u{30000}-\u{3FFFD}]/u;
 const ZERO_WIDTH = /[\p{M}\u200B\u200C\u200D\u2060\uFEFF]/u;
+const PASTE_INPUT_CAP = 4096;
 
 function charWidth(ch: string): number {
   if (ZERO_WIDTH.test(ch)) return 0;
@@ -1140,8 +1141,8 @@ export class Tui {
     resolve?.(answer);
   }
 
-  private insert(ch: string): void {
-    if (visibleLen(this.input) >= this.usable - 6) return;
+  private insert(ch: string, cap: number): void {
+    if (visibleLen(this.input) >= cap) return;
     this.input = this.input.slice(0, this.cursor) + ch + this.input.slice(this.cursor);
     this.cursor += 1;
     this.menuIndex = 0;
@@ -1153,10 +1154,10 @@ export class Tui {
     if (ch === "\n") {
       if (this.pasteBreak) return;
       this.pasteBreak = true;
-      this.insert(" ");
+      this.insert(" ", PASTE_INPUT_CAP);
     } else {
       this.pasteBreak = false;
-      this.insert(ch);
+      this.insert(ch, PASTE_INPUT_CAP);
     }
     this.refresh();
   }
@@ -1820,7 +1821,7 @@ export class Tui {
     const menuOpen = this.input.startsWith("/") && this.filtered().length > 0;
     switch (key.kind) {
       case "char":
-        this.insert(key.ch);
+        this.insert(key.ch, this.usable - 6);
         break;
       case "backspace":
         if (this.cursor > 0) {
