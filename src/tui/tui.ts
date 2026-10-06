@@ -796,6 +796,8 @@ export class Tui {
       for (let i = 0; i < view.length; i++) {
         if (prev[i] === view[i]) continue;
         parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
+        const payload = this.inlinePayloadAt(view[i]!);
+        if (payload) parts.push("\x1b[" + (i + 1) + ";4H" + payload);
       }
     } else {
       for (let i = 0; i < view.length; i++) {
@@ -803,7 +805,7 @@ export class Tui {
       }
       parts.push("\x1b[J");
     }
-    if (this.inlinePayloads.size > 0) {
+    if (fullDraw && this.inlinePayloads.size > 0) {
       for (let i = 0; i < view.length; i++) {
         const payload = this.inlinePayloadAt(view[i]!);
         if (payload) parts.push("\x1b[" + (i + 1) + ";4H" + payload);
