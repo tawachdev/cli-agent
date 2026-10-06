@@ -147,6 +147,7 @@ export class Chat {
   lastWasStream = false;
   ui: {
     printAbove(lines: string[]): void;
+    historyImage?(image: LoadedImage): void;
     stream(text: string): void;
     streamStart(): void;
     streamEnd(): void;
@@ -419,7 +420,10 @@ export class Chat {
     }
     const tag = images.length > 0 ? C.dim + "  +" + images.length + " image" + (images.length > 1 ? "s" : "") + C.reset : "";
     if (!this.ui) this.tty.write(C.inverse + C.bold + " YOU " + C.reset + " " + task + tag + "\n");
-    for (const image of images) renderImage(this.tty, image);
+    for (const image of images) {
+      if (this.ui) this.ui.historyImage?.(image);
+      else renderImage(this.tty, image);
+    }
     const payload: Record<string, unknown> = { sessionId: this.sessionId, task, role: this.role };
     if (images.length > 0) payload["images"] = images.map((image) => toDataUrl(image.mime, image.base64));
     const result = await request("/agent/run", payload);

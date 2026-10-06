@@ -320,6 +320,7 @@ async function main(): Promise<void> {
       printAbove: (lines) => {
         for (const line of lines) tui.historyPush(line);
       },
+      historyImage: (image) => tui.historyImage(image),
       stream: (text) => tui.historyStream(text),
       streamStart: () => {},
       streamEnd: () => tui.historyStreamEnd(),

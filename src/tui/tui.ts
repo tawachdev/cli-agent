@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
 import { existsSync } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
-import { imageChipName, imageSupport, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, pixelPreviewLines, renderImage, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
+import { fallbackPanel, imageChipName, imageSupport, itermImagePayload, kittyImagePayload, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, pixelPreviewLines, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -18,7 +18,7 @@ export interface Tty {
 }
 
 const WIDE_CHAR = /[\u1100-\u115F\u2329\u232A\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF01-\uFF60\uFFE0-\uFFE6\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F7E0}-\u{1F7EB}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{20000}-\u{2FFFD}\u{30000}-\u{3FFFD}]/u;
-const ZERO_WIDTH = /[\p{M}\u200B\u200C\u200D\u2060\uFEFF]/u;
+const ZERO_WIDTH = /[\p{M}\u200B\u200C\u200D\u2060\uFEFF\x00]/u;
 const PASTE_INPUT_CAP = 4096;
 
 function charWidth(ch: string): number {
@@ -350,6 +350,8 @@ export class Tui {
   private brandSingleColor = false;
   private brandCustomColors: string[] = [];
   private statusExtra = "";
+  private inlineSeq = 0;
+  private inlinePayloads = new Map<string, string>();
   private customColorBuffer = "";
   private customColorError = "";
   private gridIndex = 0;
@@ -690,7 +692,7 @@ export class Tui {
       for (const visual of visuals) lines.push(this.boxLine("  " + visual));
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
       for (const pending of this.pendingImages) {
-        if (pending.preview.length === 0) continue;
+        if (pending.preview.length === 0 && !pending.image) continue;
         lines.push(this.boxLine("  " + C.teal + "▤ " + C.reset + C.bold + pending.name + C.reset + C.dim + "  attached — sent with your next message" + C.reset));
         for (const row of pending.preview) lines.push(this.boxLine(row));
       }
@@ -776,10 +778,14 @@ export class Tui {
     const cursorCol = Math.max(0, Math.min(this.cursorCol, cols - 1));
     const prev = this.lastLines;
     const parts: string[] = ["\x1b[H"];
+    let fullDraw = true;
     if (prev.length > 0 && prev.length === view.length) {
+      fullDraw = false;
       for (let i = 0; i < view.length; i++) {
         if (prev[i] === view[i]) continue;
         parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
+        const payload = this.inlinePayloadAt(view[i]!);
+        if (payload) parts.push(payload);
       }
     } else {
       for (let i = 0; i < view.length; i++) {
@@ -787,10 +793,50 @@ export class Tui {
       }
       parts.push("\x1b[J");
     }
+    if (fullDraw && this.inlinePayloads.size > 0) {
+      for (let i = 0; i < view.length; i++) {
+        const payload = this.inlinePayloadAt(view[i]!);
+        if (payload) parts.push("\x1b[" + (i + 1) + ";1H" + payload);
+      }
+    }
     parts.push("\x1b[" + (inputRow + 1) + ";" + (cursorCol + 1) + "H");
     this.tty.write(parts.join(""));
     this.lastLines = view;
     this.shown = true;
+  }
+
+  private inlinePayloadAt(line: string): string | null {
+    for (const [token, payload] of this.inlinePayloads) {
+      if (line.includes(token)) return payload;
+    }
+    return null;
+  }
+
+  historyImage(image: LoadedImage): void {
+    const id = ++this.inlineSeq;
+    const token = "\x00IMG" + id + "\x00";
+    const support = this.options.imageSupport ?? imageSupport();
+    if (support === "none") {
+      for (const line of fallbackPanel(image, this.innerWidth()).replace(/\n$/, "").split("\n")) this.chatLines.push(line);
+      this.chatStreamOpen = false;
+      this.refresh();
+      return;
+    }
+    const cols = Math.min(60, Math.max(12, this.innerWidth() - 4));
+    let rows = 6;
+    if (image.width !== null && image.height !== null && image.width > 0) {
+      rows = Math.round((cols * image.height) / image.width);
+    }
+    const byHeight = rows > this.rows - 9;
+    if (byHeight) rows = Math.max(3, this.rows - 9);
+    const payload = support === "iterm"
+      ? itermImagePayload(image, byHeight ? rows : cols, byHeight)
+      : kittyImagePayload(image, byHeight ? rows : cols, byHeight);
+    this.inlinePayloads.set(token, payload);
+    this.chatLines.push(token);
+    for (let pad = 1; pad < rows; pad++) this.chatLines.push("");
+    this.chatStreamOpen = false;
+    this.refresh();
   }
 
   private cursorColumn(): number {
@@ -1193,12 +1239,11 @@ export class Tui {
       const support = this.options.imageSupport ?? imageSupport();
       if (support === "none") {
         entry.preview = pixelPreviewLines(images[0]!, Math.min(64, Math.max(12, this.innerWidth() - 8)), Math.max(4, Math.min(16, this.rows - 8)));
+        this.refresh();
       } else {
         entry.preview = [];
-        this.refresh();
-        renderImage(this.tty, images[0]!, Math.min(60, this.innerWidth()), Math.max(4, this.rows - 6), support);
+        this.historyImage(images[0]!);
       }
-      this.refresh();
     } else if (entry && errors[0]) {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
       this.pendingPaths.delete(path);

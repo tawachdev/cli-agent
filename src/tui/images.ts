@@ -170,7 +170,7 @@ function humanSize(bytes: number): string {
   return bytes + " B";
 }
 
-function fallbackPanel(image: LoadedImage, width: number): string {
+export function fallbackPanel(image: LoadedImage, width: number): string {
   const dims = image.width !== null && image.height !== null ? image.width + "×" + image.height : image.mime;
   const meta = [dims, humanSize(image.bytes), image.path];
   const lines = [
@@ -185,20 +185,25 @@ function trunc(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, Math.max(0, max));
 }
 
-export function renderImage(tty: Tty, image: LoadedImage, maxWidthCells = 60, maxHeightCells?: number, support: ImageSupport = imageSupport()): void {
+export function inlineImagePayload(tty: Tty, image: LoadedImage, maxWidthCells: number, maxRowsCells: number, support: ImageSupport): string {
   let width = Math.max(10, Math.min(maxWidthCells, tty.columns > 0 ? tty.columns - 6 : 60));
   let byHeight = false;
-  if (maxHeightCells !== undefined && image.width !== null && image.height !== null && image.height > 0) {
+  if (image.width !== null && image.height !== null && image.height > 0) {
     const rows = Math.round((width * image.height) / image.width);
-    if (rows > maxHeightCells) byHeight = true;
+    if (rows > maxRowsCells) byHeight = true;
   }
   if (support === "iterm") {
-    tty.write(itermImagePayload(image, byHeight ? maxHeightCells! : width, byHeight) + "\n");
-  } else if (support === "kitty") {
-    tty.write(kittyImagePayload(image, byHeight ? maxHeightCells! : width, byHeight) + "\n");
-  } else {
-    tty.write(fallbackPanel(image, tty.columns > 0 ? tty.columns : 80));
+    return itermImagePayload(image, byHeight ? maxRowsCells : width, byHeight);
   }
+  if (support === "kitty") {
+    return kittyImagePayload(image, byHeight ? maxRowsCells : width, byHeight);
+  }
+  return fallbackPanel(image, tty.columns > 0 ? tty.columns : 80);
+}
+
+export function renderImage(tty: Tty, image: LoadedImage, maxWidthCells = 60, maxHeightCells?: number, support: ImageSupport = imageSupport()): void {
+  const heightCap = maxHeightCells ?? Math.max(4, (tty.rows > 0 ? tty.rows : 24) - 4);
+  tty.write(inlineImagePayload(tty, image, maxWidthCells, heightCap, support) + "\n");
 }
 
 const XTERM16_RGB: Array<[number, number, number]> = [
