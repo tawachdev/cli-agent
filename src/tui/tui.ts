@@ -1,7 +1,9 @@
-import { stdout } from "node:process";
+import { stdout, cwd } from "node:process";
+import { join } from "node:path";
 import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
 import { existsSync } from "node:fs";
-import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, pixelPreviewLines, renderImage, type LoadedImage } from "./images";
+import { saveClipboardImage } from "./clipboard";
+import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, pixelPreviewLines, renderImage, type LoadedImage, type LocatedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -305,6 +307,12 @@ export interface TuiHooks {
   onAddProvider(name: string, baseUrl: string, models: string[]): void;
 }
 
+export interface TuiOptions {
+  clipboardSave?: (destDir: string) => Promise<string | null>;
+}
+
+const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
+
 export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
@@ -348,6 +356,7 @@ export class Tui {
   private addError = "";
   private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null; preview: string[] }> = [];
   private pendingPaths = new Set<string>();
+  private recovering = new Set<string>();
   private history: string[] = [];
   private workingLine = "";
   private chatLines: string[] = [];
@@ -371,6 +380,7 @@ export class Tui {
   constructor(
     private readonly tty: Tty,
     private readonly hooks: TuiHooks,
+    private readonly options: TuiOptions = {},
   ) {}
 
   private get cols(): number {
@@ -1156,9 +1166,7 @@ export class Tui {
     for (const hit of located.reverse()) {
       if (this.pendingPaths.has(hit.path)) continue;
       if (!existsSync(hit.path)) {
-        if (hit.path.includes("NSIRD_")) {
-          this.notice("✘ screenshot temp file is gone — take it again with Cmd+Shift+4 (saves to Desktop) and drag the file here");
-        }
+        void this.recoverPastedImage(hit);
         continue;
       }
       if (this.pendingImages.length >= MAX_IMAGES) {
@@ -1186,6 +1194,33 @@ export class Tui {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
       this.pendingPaths.delete(path);
       this.notice("✘ " + errors[0]!);
+    }
+  }
+
+  private async recoverPastedImage(hit: LocatedImage): Promise<void> {
+    if (!hit.path.includes("TemporaryItems")) return;
+    if (this.recovering.has(hit.path) || this.pendingPaths.has(hit.path)) return;
+    if (this.pendingImages.length >= MAX_IMAGES) {
+      this.notice("✘ skipped — max " + MAX_IMAGES + " images per message");
+      return;
+    }
+    this.recovering.add(hit.path);
+    try {
+      const save = this.options.clipboardSave ?? defaultClipboardSave;
+      const saved = await save(join(cwd(), ".agent", "uploads"));
+      const current = locateImagePaths(this.input).find((l) => l.path === hit.path);
+      if (!current) return;
+      if (!saved) {
+        this.notice("✘ pasted image is gone and the clipboard holds no image — copy it again (Cmd+C), then paste here");
+        return;
+      }
+      this.input = this.input.slice(0, current.start) + this.input.slice(current.end);
+      this.cursor = Math.min(this.cursor, this.input.length);
+      this.pendingPaths.add(saved);
+      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, preview: [] });
+      await this.loadPending(saved);
+    } finally {
+      this.recovering.delete(hit.path);
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "mimon",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Personal terminal AI agent. Any model with your own API keys \u2014 local-first, no accounts, no telemetry.",
   "license": "MIT",
   "files": [

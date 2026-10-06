@@ -88,7 +88,7 @@ Custom OpenAI-compatible endpoints (Groq, OpenRouter, Together, LM Studio...) ar
 
 ## Images in the terminal
 
-Drag an image into the prompt: the path disappears, the image renders as a preview, and a `▤N` counter appears in the status bar — enter sends it (esc clears attachments). Or just type a path:
+Drag an image into the prompt — or paste one you copied (Finder, browser, screenshot): the path disappears, the image renders as a preview, and a `▤N` counter appears in the status bar — enter sends it (esc clears attachments). Or just type a path:
 
 ```sh
 mimon "what does /path/to/screenshot.png show?"
