@@ -796,8 +796,6 @@ export class Tui {
       for (let i = 0; i < view.length; i++) {
         if (prev[i] === view[i]) continue;
         parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
-        const payload = this.inlinePayloadAt(view[i]!);
-        if (payload) parts.push(payload);
       }
     } else {
       for (let i = 0; i < view.length; i++) {
@@ -805,10 +803,10 @@ export class Tui {
       }
       parts.push("\x1b[J");
     }
-    if (fullDraw && this.inlinePayloads.size > 0) {
+    if (this.inlinePayloads.size > 0) {
       for (let i = 0; i < view.length; i++) {
         const payload = this.inlinePayloadAt(view[i]!);
-        if (payload) parts.push("\x1b[" + (i + 1) + ";1H" + payload);
+        if (payload) parts.push("\x1b[" + (i + 1) + ";4H" + payload);
       }
     }
     parts.push("\x1b[" + (inputRow + 1) + ";" + (cursorCol + 1) + "H");
@@ -827,7 +825,7 @@ export class Tui {
   historyImage(image: LoadedImage): void {
     try {
     const id = ++this.inlineSeq;
-    const token = "\x00IMG" + id + "\x00";
+    const token = "\x00".repeat(6 + id);
     const support = this.options.imageSupport ?? imageSupport();
     if (support === "none") {
       for (const line of fallbackPanel(image, this.innerWidth()).replace(/\n$/, "").split("\n")) this.chatLines.push(line);
@@ -835,13 +833,14 @@ export class Tui {
       this.refresh();
       return;
     }
-    const cols = Math.min(60, Math.max(12, this.innerWidth() - 4));
+    const cols = Math.max(8, Math.min(22, Math.floor(this.innerWidth() / 4)));
+    const rowCap = Math.max(4, Math.min(9, Math.floor(this.rows / 3)));
     let rows = 6;
     if (image.width !== null && image.height !== null && image.width > 0) {
       rows = Math.round((cols * image.height) / image.width);
     }
-    const byHeight = rows > this.rows - 9;
-    if (byHeight) rows = Math.max(3, this.rows - 9);
+    const byHeight = rows > rowCap;
+    if (byHeight) rows = rowCap;
     const payload = support === "iterm"
       ? itermImagePayload(image, byHeight ? rows : cols, byHeight)
       : kittyImagePayload(image, byHeight ? rows : cols, byHeight);
