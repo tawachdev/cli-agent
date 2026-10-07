@@ -48,6 +48,38 @@ function makeRequest(): GenerateRequest {
 }
 
 describe("OpenAICompatProvider", () => {
+  it("treats the SSE [DONE] marker as terminal even if the socket stays open", async () => {
+    const socketGate = { release: (): void => {} };
+    let released = false;
+    const requests: CapturedRequest[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        requests.push({ headers: Object.fromEntries(request.headers.entries()), body: null });
+        const body = new ReadableStream({
+          start(controller) {
+            const enc = new TextEncoder();
+            controller.enqueue(enc.encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'));
+            controller.enqueue(enc.encode("data: [DONE]\n\n"));
+            socketGate.release = () => controller.close();
+          },
+        });
+        return new Response(body, { headers: { "content-type": "text/event-stream" } });
+      },
+    });
+    const provider = new OpenAICompatProvider(`http://127.0.0.1:${server.port}`, "k", "held-open");
+    const collected = await Promise.race([
+      collect(provider.complete(makeRequest())),
+      new Promise<StreamChunk[]>((resolve) => setTimeout(() => resolve([{ type: "done", stopReason: "timeout" } as StreamChunk]), 3000)),
+    ]);
+    if (!released) socketGate.release();
+    released = true;
+    server.stop(true);
+    const done = collected.filter((c) => c.type === "done");
+    expect(done).toHaveLength(1);
+    expect((done[0] as { stopReason?: string }).stopReason).toBe("stop");
+  });
+
   it("streams tokens, accumulated tool calls, usage and done", async () => {
     const mock = startMockOpenAI(TOOL_CALL_STREAM);
     const provider = new OpenAICompatProvider(mock.url, "sk-test", "fake");

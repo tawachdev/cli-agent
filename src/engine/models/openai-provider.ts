@@ -156,6 +156,7 @@ export class OpenAICompatProvider implements ModelProvider {
     let stopReason = "stop";
     let usage: StreamChunk | null = null;
     let buffer = "";
+    let streamDone = false;
     for await (const piece of response.body) {
       buffer += new TextDecoder().decode(piece);
       let newline = buffer.indexOf("\n");
@@ -163,7 +164,11 @@ export class OpenAICompatProvider implements ModelProvider {
         const line = buffer.slice(0, newline).trim();
         buffer = buffer.slice(newline + 1);
         const data = line.startsWith("data:") ? line.slice(5).trim() : "";
-        if (data && data !== "[DONE]") {
+        if (data === "[DONE]") {
+          streamDone = true;
+          break;
+        }
+        if (data) {
           let chunk: OpenAIDelta;
           try {
             chunk = JSON.parse(data) as OpenAIDelta;
@@ -212,6 +217,7 @@ export class OpenAICompatProvider implements ModelProvider {
         }
         newline = buffer.indexOf("\n");
       }
+      if (streamDone) break;
     }
     for (const call of toToolCalls(pending)) {
       yield { type: "tool_call", call };

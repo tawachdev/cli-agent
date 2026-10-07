@@ -361,6 +361,8 @@ export class Tui {
   private brandSingleColor = false;
   private brandCustomColors: string[] = [];
   private statusExtra = "";
+  private typeahead = "";
+
   private customColorBuffer = "";
   private customColorError = "";
   private gridIndex = 0;
@@ -848,6 +850,13 @@ export class Tui {
 
   endBusy(): void {
     this.busy = false;
+    if (this.typeahead !== "") {
+      const queued = this.typeahead;
+      this.typeahead = "";
+      for (const ch of queued) this.insertPasteText(ch);
+      this.show();
+      return;
+    }
     this.show();
   }
 
@@ -1502,7 +1511,14 @@ export class Tui {
       return;
     }
     if (this.busy) {
-      if (key.kind === "escape") this.hooks.onAbort();
+      if (key.kind === "escape") {
+        this.typeahead = "";
+        this.hooks.onAbort();
+        return;
+      }
+      if (key.kind === "char") this.typeahead += key.ch;
+      else if (key.kind === "backspace") this.typeahead = this.typeahead.slice(0, -1);
+      else if (key.kind === "enter") this.typeahead += "\n";
       return;
     }
     if (this.view === "help") {
@@ -1841,7 +1857,7 @@ export class Tui {
     const menuOpen = this.input.startsWith("/") && this.filtered().length > 0;
     switch (key.kind) {
       case "char":
-        this.insert(key.ch, this.usable - 6);
+        this.insert(key.ch, PASTE_INPUT_CAP);
         break;
       case "backspace":
         if (this.cursor > 0) {

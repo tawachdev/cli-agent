@@ -1082,3 +1082,38 @@ describe("add provider flow", () => {
     expect(tty.text()).toContain("cloud providers");
   });
 });
+
+describe("typeahead while busy", () => {
+  it("buffers keys typed during a turn and lands them when it ends", () => {
+    const { tui, tty, cap } = makeTui();
+    tui.show();
+    tui.beginBusy();
+    for (const ch of "hello") tui.handleKey({ kind: "char", ch });
+    expect(cap.submitted).toEqual([]);
+    tui.endBusy();
+    type(tui, " world");
+    tui.handleKey({ kind: "enter" });
+    expect(cap.submitted).toEqual(["hello world"]);
+    void tty;
+  });
+
+  it("escape during a busy turn drops the buffered keys", () => {
+    const { tui, cap } = makeTui();
+    tui.show();
+    tui.beginBusy();
+    for (const ch of "abc") tui.handleKey({ kind: "char", ch });
+    tui.handleKey({ kind: "escape" });
+    tui.endBusy();
+    tui.handleKey({ kind: "enter" });
+    expect(cap.submitted).toEqual([]);
+  });
+
+  it("keeps typing a long image path past the old input cap", () => {
+    const { tui, cap } = makeTui();
+    tui.show();
+    const long = "a".repeat(120) + " /tmp/shot.png";
+    for (const ch of long) tui.handleKey({ kind: "char", ch });
+    tui.handleKey({ kind: "enter" });
+    expect(cap.submitted).toEqual([long]);
+  });
+});

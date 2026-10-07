@@ -149,3 +149,9 @@ const shutdown = (): void => {
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+if (process.ppid > 1) {
+  setInterval(() => {
+    if (process.ppid === 1) shutdown();
+  }, 2000);
+  process.on("disconnect", shutdown);
+}
