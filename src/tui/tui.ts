@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
 import { existsSync } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
-import { fallbackPanel, imageChipName, imageSupport, itermImagePayload, kittyImagePayload, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, pixelPreviewLines, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
+import { spawn } from "node:child_process";
+import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type LoadedImage, type LocatedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -311,10 +312,19 @@ export interface TuiHooks {
 
 export interface TuiOptions {
   clipboardSave?: (destDir: string) => Promise<string | null>;
-  imageSupport?: ImageSupport;
+  openImage?: (image: LoadedImage) => void;
 }
 
 const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
+
+const defaultOpenImage = (image: LoadedImage): void => {
+  const tool = process.platform === "darwin" ? "open" : process.platform === "linux" ? "xdg-open" : null;
+  if (!tool || !existsSync(image.path)) return;
+  try {
+    const child = spawn(tool, [image.path], { stdio: "ignore", detached: true });
+    child.unref();
+  } catch {}
+};
 
 export class Tui {
   tier: MimonTier = TIERS[1]!;
@@ -351,9 +361,6 @@ export class Tui {
   private brandSingleColor = false;
   private brandCustomColors: string[] = [];
   private statusExtra = "";
-  private inlineSeq = 0;
-  private inlinePayloads = new Map<string, string>();
-  private imageFeed: Array<{ token: string; rows: number; start: number }> = [];
   private customColorBuffer = "";
   private customColorError = "";
   private gridIndex = 0;
@@ -682,9 +689,8 @@ export class Tui {
       }
       const inner = Math.max(10, this.innerWidth() - 6);
       const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
-      const imageRows = this.imageFeed.reduce((n, block) => n + block.rows, 0);
       const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0) + menu.length + overlay.length;
-      const budget = Math.max(1, this.rows - footerLines - fixedCount - imageRows);
+      const budget = Math.max(1, this.rows - footerLines - fixedCount);
       const visuals: string[] = [];
       for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < budget; i--) {
         const wrapped = wrap(this.chatLines[i]!, inner);
@@ -693,11 +699,6 @@ export class Tui {
         }
       }
       for (const visual of visuals) lines.push(this.boxLine("  " + visual));
-      for (const block of this.imageFeed) {
-        block.start = lines.length;
-        lines.push(block.token);
-        for (let pad = 1; pad < block.rows; pad++) lines.push("");
-      }
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
       for (const pending of this.pendingImages) {
         if (pending.preview.length === 0 && !pending.image) continue;
@@ -779,12 +780,7 @@ export class Tui {
     this.lastCols = cols;
     this.lastRows = rowsNow;
     const frame = this.buildLines();
-    let dropped = Math.max(0, frame.length - rowsNow);
-    for (const block of this.imageFeed) {
-      while (block.start >= 0 && block.start < dropped && dropped < block.start + block.rows) {
-        dropped = block.start + block.rows;
-      }
-    }
+    const dropped = Math.max(0, frame.length - rowsNow);
     const budget = Math.max(8, cols - 1);
     const view = frame.slice(dropped).map((line) => (visibleLen(line) <= budget ? line : C.reset + plainClip(line, budget)));
     const inputRow = Math.max(0, Math.min(this.inputRow - dropped, view.length - 1));
@@ -797,8 +793,6 @@ export class Tui {
       for (let i = 0; i < view.length; i++) {
         if (prev[i] === view[i]) continue;
         parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
-        const payload = this.inlinePayloadAt(view[i]!);
-        if (payload) parts.push("\x1b[" + (i + 1) + ";4H" + payload);
       }
     } else {
       for (let i = 0; i < view.length; i++) {
@@ -806,53 +800,10 @@ export class Tui {
       }
       parts.push("\x1b[J");
     }
-    if (fullDraw && this.inlinePayloads.size > 0) {
-      for (let i = 0; i < view.length; i++) {
-        const payload = this.inlinePayloadAt(view[i]!);
-        if (payload) parts.push("\x1b[" + (i + 1) + ";4H" + payload);
-      }
-    }
     parts.push("\x1b[" + (inputRow + 1) + ";" + (cursorCol + 1) + "H");
     this.tty.write(parts.join(""));
     this.lastLines = view;
     this.shown = true;
-  }
-
-  private inlinePayloadAt(line: string): string | null {
-    for (const [token, payload] of this.inlinePayloads) {
-      if (line.includes(token)) return payload;
-    }
-    return null;
-  }
-
-  historyImage(image: LoadedImage): void {
-    try {
-    const id = ++this.inlineSeq;
-    const token = "\x00".repeat(6 + id);
-    const support = this.options.imageSupport ?? imageSupport();
-    if (support === "none") {
-      for (const line of fallbackPanel(image, this.innerWidth()).replace(/\n$/, "").split("\n")) this.chatLines.push(line);
-      this.chatStreamOpen = false;
-      this.refresh();
-      return;
-    }
-    const cols = Math.max(8, Math.min(22, Math.floor(this.innerWidth() / 4)));
-    const rowCap = Math.max(4, Math.min(9, Math.floor(this.rows / 3)));
-    let rows = 6;
-    if (image.width !== null && image.height !== null && image.width > 0) {
-      rows = Math.round((cols * image.height) / image.width);
-    }
-    const byHeight = rows > rowCap;
-    if (byHeight) rows = rowCap;
-    const payload = support === "iterm"
-      ? itermImagePayload(image, byHeight ? rows : cols, byHeight)
-      : kittyImagePayload(image, byHeight ? rows : cols, byHeight);
-    this.inlinePayloads.set(token, payload);
-    this.imageFeed.push({ token, rows, start: -1 });
-    this.refresh();
-    } catch (error) {
-      this.notice("✘ inline image: " + (error instanceof Error ? error.message : String(error)));
-    }
   }
 
   private cursorColumn(): number {
@@ -1247,19 +1198,19 @@ export class Tui {
     if (located.length > 0) this.refresh();
   }
 
+  openImage(image: LoadedImage): void {
+    const opener = this.options.openImage ?? defaultOpenImage;
+    opener(image);
+  }
+
   private async loadPending(path: string): Promise<void> {
     const { images, errors } = await loadImagesFromPaths([path]);
     const entry = this.pendingImages.find((p) => p.path === path);
     if (entry && images[0]) {
       entry.image = images[0]!;
-      const support = this.options.imageSupport ?? imageSupport();
-      if (support === "none") {
-        entry.preview = pixelPreviewLines(images[0]!, Math.min(64, Math.max(12, this.innerWidth() - 8)), Math.max(4, Math.min(16, this.rows - 8)));
-        this.refresh();
-      } else {
-        entry.preview = [];
-        this.refresh();
-      }
+      entry.preview = [];
+      this.refresh();
+      this.openImage(images[0]!);
     } else if (entry && errors[0]) {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
       this.pendingPaths.delete(path);

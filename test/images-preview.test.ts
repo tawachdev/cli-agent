@@ -92,7 +92,7 @@ describe("in-frame image preview", () => {
     }
   }
 
-  it("attached png renders as pixels inside the box — no protocol escapes, no scroll", async () => {
+  it("attached png shows a quiet chip — no block rows, no protocol escapes", async () => {
     const dir = join(tmpdir(), "mimon-frame-img");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "drop.png");
@@ -104,24 +104,18 @@ describe("in-frame image preview", () => {
     onWizardModel: () => {},
     onTierModelPick: () => {},
       onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {},
-    }, { imageSupport: "none" });
+    });
     tui.show();
     for (const ch of "see " + file) tui.handleKey({ kind: "char", ch });
     await new Promise((resolve) => setTimeout(resolve, 30));
     const raw = tty.chunks.join("");
     expect(raw).not.toContain("\x1b]1337;");
     expect(raw).not.toContain("\x1b_G");
+    expect(raw).not.toContain("▀");
     const frame = raw.slice(raw.lastIndexOf("\x1b[H"));
     const plainFrame = frame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
     expect(plainFrame).toContain("▤ drop.png");
-    expect(frame).toContain("▀");
-    const plain = frame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "\n");
-    const lines = plain.split("\n").filter((l) => l.length > 0);
-    const top = lines.findIndex((l) => l.includes("╭"));
-    const bottom = lines.findIndex((l) => l.includes("╰"));
-    const previewIdx = lines.findIndex((l) => l.includes("▤"));
-    expect(previewIdx).toBeGreaterThan(top);
-    expect(previewIdx).toBeLessThan(bottom);
+    expect(plainFrame).toContain("attached");
     expect(tui.hasPendingImages()).toBe(true);
     rmSync(dir, { recursive: true, force: true });
   });

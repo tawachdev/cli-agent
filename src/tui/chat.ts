@@ -2,7 +2,7 @@ import { stdout } from "node:process";
 import { brandName } from "../shared/brand";
 import { toDataUrl } from "../shared/images";
 import type { ModelRole } from "../shared/types";
-import { renderImage, type LoadedImage } from "./images";
+import type { LoadedImage } from "./images";
 import { C, chip, fit, fmtSecs, meter, panel, WIDTH, wrap, type Tty } from "./tui";
 
 const rawUrl = process.env.AGENT_URL ?? `http://127.0.0.1:${process.env.AGENT_PORT ?? "7800"}`;
@@ -147,7 +147,6 @@ export class Chat {
   lastWasStream = false;
   ui: {
     printAbove(lines: string[]): void;
-    historyImage?(image: LoadedImage): void;
     stream(text: string): void;
     streamStart(): void;
     streamEnd(): void;
@@ -420,10 +419,6 @@ export class Chat {
     }
     const tag = images.length > 0 ? C.dim + "  +" + images.length + " image" + (images.length > 1 ? "s" : "") + C.reset : "";
     if (!this.ui) this.tty.write(C.inverse + C.bold + " YOU " + C.reset + " " + task + tag + "\n");
-    for (const image of images) {
-      if (this.ui) this.ui.historyImage?.(image);
-      else renderImage(this.tty, image);
-    }
     const payload: Record<string, unknown> = { sessionId: this.sessionId, task, role: this.role };
     if (images.length > 0) payload["images"] = images.map((image) => toDataUrl(image.mime, image.base64));
     const result = await request("/agent/run", payload);

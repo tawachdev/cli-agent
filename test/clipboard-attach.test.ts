@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildPng } from "./helpers/png";
 import { saveClipboardImage } from "../src/tui/clipboard";
-import type { ImageSupport } from "../src/tui/images";
 import { decodeChunk, Tui, type Tty } from "../src/tui/tui";
 
 function pngBytes(width = 8, height = 8): Uint8Array {
@@ -20,7 +19,12 @@ class MockTty implements Tty {
   }
 }
 
-function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, support: ImageSupport = "none"): { tui: Tui; tty: MockTty; submitted: string[] } {
+interface TuiHarnessOptions {
+  clipboardSave?: (destDir: string) => Promise<string | null>;
+  opened?: string[];
+}
+
+function makeTui(options: TuiHarnessOptions = {}): { tui: Tui; tty: MockTty; submitted: string[] } {
   const tty = new MockTty();
   const submitted: string[] = [];
   const tui = new Tui(tty, {
@@ -40,7 +44,10 @@ function makeTui(clipboardSave?: (destDir: string) => Promise<string | null>, su
     onBrandColors: () => {},
     onBrandReset: () => {},
     onAddProvider: () => {},
-  }, { imageSupport: support, ...(clipboardSave ? { clipboardSave } : {}) });
+  }, {
+    ...(options.clipboardSave ? { clipboardSave: options.clipboardSave } : {}),
+    ...(options.opened ? { openImage: (image) => options.opened!.push(image.path) } : {}),
+  });
   return { tui, tty, submitted };
 }
 
@@ -89,10 +96,12 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "recovered.png");
     const dests: string[] = [];
-    const { tui, tty } = makeTui(async (dest) => {
-      dests.push(dest);
-      writeFileSync(file, buildPng(8, 8, () => [10, 20, 30]));
-      return file;
+    const { tui, tty } = makeTui({
+      clipboardSave: async (dest) => {
+        dests.push(dest);
+        writeFileSync(file, buildPng(8, 8, () => [10, 20, 30]));
+        return file;
+      },
     });
     tui.show();
     paste(tui, DEAD_PATH);
@@ -103,14 +112,12 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
     expect(tui.takePendingImages()[0]!.path).toBe(file);
     const frame = tty.chunks.join("").slice(tty.chunks.join("").lastIndexOf("\x1b[H"));
     const plainFrame = frame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
-    expect(plainFrame).toContain("▤ recovered.png");
-    expect(frame).toContain("▀");
-    expect(tui.takePendingImages()).toEqual([]);
+    expect(plainFrame).toContain("recovered.png");
     rmSync(dir, { recursive: true, force: true });
   });
 
   it("keeps the path and explains when the clipboard holds no image", async () => {
-    const { tui, tty, submitted } = makeTui(async () => null);
+    const { tui, tty, submitted } = makeTui({ clipboardSave: async () => null });
     tui.show();
     paste(tui, DEAD_PATH);
     await settle();
@@ -123,9 +130,11 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
 
   it("does not consult the clipboard for ordinary missing paths", async () => {
     let calls = 0;
-    const { tui } = makeTui(async () => {
-      calls += 1;
-      return null;
+    const { tui } = makeTui({
+      clipboardSave: async () => {
+        calls += 1;
+        return null;
+      },
     });
     tui.show();
     paste(tui, "/tmp/definitely-missing-dir/shot.png");
@@ -136,9 +145,11 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
 
   it("recovers each dead path only once while typing continues", async () => {
     let calls = 0;
-    const { tui } = makeTui(async () => {
-      calls += 1;
-      return null;
+    const { tui } = makeTui({
+      clipboardSave: async () => {
+        calls += 1;
+        return null;
+      },
     });
     tui.show();
     for (const ch of DEAD_PATH) tui.handleKey({ kind: "char", ch });
@@ -151,9 +162,11 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
     const dir = join(tmpdir(), "mimon-clip-long");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "shot.png");
-    const { tui } = makeTui(async () => {
-      writeFileSync(file, buildPng(8, 8, () => [5, 50, 90]));
-      return file;
+    const { tui } = makeTui({
+      clipboardSave: async () => {
+        writeFileSync(file, buildPng(8, 8, () => [5, 50, 90]));
+        return file;
+      },
     });
     tui.show();
     const full = "/var/folders/67/guaranteed-missing-" + (Date.now() + 1) + "/T/TemporaryItems/NSIRD_cap/Screenshot 2026-10-06 at 12.40.53.png";
@@ -162,7 +175,6 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
     await settle();
     expect(tui.hasPendingImages()).toBe(true);
     expect(tui.takePendingImages()[0]!.path).toBe(file);
-    tui.handleKey({ kind: "enter" });
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -170,9 +182,11 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
     const dir = join(tmpdir(), "mimon-clip-escaped");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "dropped shot.png");
-    const { tui } = makeTui(async () => {
-      writeFileSync(file, buildPng(8, 8, () => [90, 40, 5]));
-      return file;
+    const { tui } = makeTui({
+      clipboardSave: async () => {
+        writeFileSync(file, buildPng(8, 8, () => [90, 40, 5]));
+        return file;
+      },
     });
     tui.show();
     const escaped = "/var/folders/67/guaranteed-missing-" + (Date.now() + 2) + "/T/TemporaryItems/NSIRD_cap/Screenshot\\ 2026-10-06.png";
@@ -183,41 +197,21 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
   });
 });
 
-describe("protocol terminals keep the prompt quiet at attach", () => {
-  it("shows only the chip until the turn history renders the image", async () => {
-    const dir = join(tmpdir(), "mimon-clip-iterm");
+describe("attachments open in the system viewer", () => {
+  it("opens each loaded image once and never writes terminal payloads", async () => {
+    const dir = join(tmpdir(), "mimon-clip-open");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "real.png");
     writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
-    const { tui, tty } = makeTui(undefined, "iterm");
+    const opened: string[] = [];
+    const { tui, tty } = makeTui({ opened });
     tui.show();
     paste(tui, file);
     await settle();
-    const raw = tty.chunks.join("");
-    expect(raw).not.toContain("\x1b]1337;File=inline=1");
-    expect(raw).toContain("▤1");
-    expect(raw).not.toContain("▀");
-    expect(tui.hasPendingImages()).toBe(true);
-    rmSync(dir, { recursive: true, force: true });
-  });
-});
-
-describe("inline images render through the send path", () => {
-  it("stays silent at attach and renders when the turn history takes the image", async () => {
-    const dir = join(tmpdir(), "mimon-clip-send");
-    mkdirSync(dir, { recursive: true });
-    const file = join(dir, "first.png");
-    writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
-    const { tui, tty } = makeTui(undefined, "iterm");
-    tui.show();
-    paste(tui, file);
-    await settle();
+    expect(opened).toEqual([file]);
     expect(tty.chunks.join("")).not.toContain("]1337;File=inline=1");
     expect(tty.chunks.join("")).toContain("attached");
-    const loaded = tui.takePendingImages()[0]!;
-    tui.historyImage(loaded);
-    await settle();
-    expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
+    expect(tui.hasPendingImages()).toBe(true);
     rmSync(dir, { recursive: true, force: true });
   });
 });
