@@ -4,7 +4,7 @@ const PNG_1X1 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Chat, keylessProviderBindings } from "../src/tui/chat";
+import { Chat, keylessProviderBindings, looksLikeModelMissing, wizardModelCandidates } from "../src/tui/chat";
 import {
   decodeChunk,
   splash,
@@ -1115,5 +1115,36 @@ describe("typeahead while busy", () => {
     for (const ch of long) tui.handleKey({ kind: "char", ch });
     tui.handleKey({ kind: "enter" });
     expect(cap.submitted).toEqual([long]);
+  });
+});
+
+describe("wizardModelCandidates", () => {
+  it("puts the registry fallback first and dedupes the live list", () => {
+    expect(wizardModelCandidates("gemini-flash-latest", ["gemini-2.5-pro", "gemini-flash-latest", "gemini-3-flash-preview"]))
+      .toEqual(["gemini-flash-latest", "gemini-2.5-pro", "gemini-3-flash-preview"]);
+    expect(wizardModelCandidates("", ["a", "a", "b"])).toEqual(["a", "b"]);
+    expect(wizardModelCandidates("", [])).toEqual([]);
+  });
+});
+
+describe("looksLikeModelMissing", () => {
+  it("recognizes model-not-found failures but not auth or quota", () => {
+    expect(looksLikeModelMissing("gemini error 404: [{\"error\":{\"code\":404")).toBe(true);
+    expect(looksLikeModelMissing("model not found for this key")).toBe(true);
+    expect(looksLikeModelMissing("gemini error 429: quota exceeded")).toBe(false);
+    expect(looksLikeModelMissing("gemini error 400: API key not valid")).toBe(false);
+  });
+});
+
+describe("queued submit while busy", () => {
+  it("enter during a turn sends the queued message when the turn ends", () => {
+    const { tui, cap } = makeTui();
+    tui.show();
+    tui.beginBusy();
+    for (const ch of "one more: reply APPLE") tui.handleKey({ kind: "char", ch });
+    tui.handleKey({ kind: "enter" });
+    expect(cap.submitted).toEqual([]);
+    tui.endBusy();
+    expect(cap.submitted).toEqual(["one more: reply APPLE"]);
   });
 });

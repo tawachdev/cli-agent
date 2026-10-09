@@ -362,6 +362,7 @@ export class Tui {
   private brandCustomColors: string[] = [];
   private statusExtra = "";
   private typeahead = "";
+  private submitQueued = false;
 
   private customColorBuffer = "";
   private customColorError = "";
@@ -854,8 +855,20 @@ export class Tui {
       const queued = this.typeahead;
       this.typeahead = "";
       for (const ch of queued) this.insertPasteText(ch);
-      this.show();
-      return;
+    }
+    const shouldSubmit = this.submitQueued;
+    this.submitQueued = false;
+    if (shouldSubmit) {
+      const task = this.input.trim();
+      if (task) {
+        if (this.history[this.history.length - 1] !== task) this.history.push(task);
+        this.historyIndex = null;
+        this.input = "";
+        this.cursor = 0;
+        this.beginBusy();
+        this.hooks.onSubmit(task);
+        return;
+      }
     }
     this.show();
   }
@@ -1513,12 +1526,13 @@ export class Tui {
     if (this.busy) {
       if (key.kind === "escape") {
         this.typeahead = "";
+        this.submitQueued = false;
         this.hooks.onAbort();
         return;
       }
       if (key.kind === "char") this.typeahead += key.ch;
       else if (key.kind === "backspace") this.typeahead = this.typeahead.slice(0, -1);
-      else if (key.kind === "enter") this.typeahead += "\n";
+      else if (key.kind === "enter") this.submitQueued = true;
       return;
     }
     if (this.view === "help") {

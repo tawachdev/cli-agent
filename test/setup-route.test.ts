@@ -37,7 +37,7 @@ function buildApp(options: { workspaceRoot: string; registry: ProviderRegistry }
   });
   const agent = new Agent({
     db,
-    router: new ModelRouter(() => ({ provider: new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"), model: "test-model" })),
+    router: new ModelRouter(() => ({ provider: new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"), providerName: "fake", model: "test-model" })),
     tools: new ToolRegistry(permissions),
     toolContext: { workspaceRoot: options.workspaceRoot },
     numCtx: 4096,

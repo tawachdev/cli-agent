@@ -38,7 +38,7 @@ describe("history compaction", () => {
     const events: string[] = [];
     const result = await compactHistory(
       {
-        binding: { provider, model: "m" },
+        binding: { provider, providerName: "fake", model: "m" },
         numCtx: 16384,
         temperature: 0.2,
         publish: (type) => events.push(type),
@@ -69,7 +69,7 @@ describe("history compaction", () => {
     const events: string[] = [];
     const result = await compactHistory(
       {
-        binding: { provider, model: "m" },
+        binding: { provider, providerName: "fake", model: "m" },
         numCtx: 4096,
         temperature: 0.2,
         publish: (type) => events.push(type),

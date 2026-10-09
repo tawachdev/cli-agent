@@ -12,6 +12,8 @@ import { ModelRouter } from "../models/router";
 import { KeychainKeyStore } from "../models/keystore";
 import { loadExtraProviders, ProviderRegistry } from "../models/registry";
 import { BindingsStore, RUNNABLE_ROLES, type RunnableRole } from "../models/bindings";
+import type { StreamChunk } from "../models/types";
+import type { ModelBinding } from "../models/router";
 import type { ModelRole } from "../models/types";
 import { ToolRegistry } from "../tools/registry";
 import { fsReadTool } from "../tools/fs/read";
@@ -62,6 +64,53 @@ const router = new ModelRouter((role: ModelRole) => {
       : config.models.coder;
   return registry.resolve(binding);
 });
+const unboundRoles = RUNNABLE_ROLES.filter((role) => bindings.source(role) === "default");
+if (unboundRoles.length > 0) {
+  const keyed = registry.list().filter((provider) => provider.keySet && provider.models.length > 0);
+  let chosen: (typeof keyed)[number] | undefined;
+  for (const provider of keyed) {
+    try {
+      const { provider: probed } = registry.resolve(`${provider.name}/${provider.models[0]!}`);
+      const stream: AsyncIterator<StreamChunk> = probed.complete(
+        {
+          model: provider.models[0]!,
+          messages: [{ role: "user", content: "ping" }],
+          numCtx: 512,
+          temperature: 0,
+        },
+        AbortSignal.timeout(5000),
+      )[Symbol.asyncIterator]();
+      const first = await stream.next();
+      if (!first.done) {
+        chosen = provider;
+        break;
+      }
+    } catch {
+      continue;
+    }
+  }
+  if (!chosen && keyed.length > 0) chosen = keyed[0];
+  if (chosen) {
+    for (const role of unboundRoles) await bindings.set(role, `${chosen.name}/${chosen.models[0]!}`);
+    logger.info("auto-bound unbound roles after live probe", { provider: chosen.name, roles: unboundRoles });
+  }
+}
+const failover = (role: ModelRole, failed: ModelBinding, reason: string): ModelBinding | null => {
+  if (!/\b401\b|\b403\b|\b503\b|Unable to connect|ECONNREFUSED|fetch failed|high demand/i.test(reason)) return null;
+  const candidates = registry.list().filter((provider) => provider.keySet && provider.models.length > 0);
+  const idx = candidates.findIndex((provider) => provider.name === failed.providerName);
+  const ordered = idx >= 0 ? [...candidates.slice(idx + 1), ...candidates.slice(0, idx + 1)] : candidates;
+  const runnable = RUNNABLE_ROLES.includes(role as RunnableRole) ? (role as RunnableRole) : null;
+  for (const candidate of ordered) {
+    const binding = `${candidate.name}/${candidate.models[0]!}`;
+    const resolved = registry.resolve(binding);
+    if (resolved.providerName === failed.providerName) continue;
+    if (runnable) void bindings.set(runnable, binding);
+    logger.info("provider failover", { role, binding, reason: reason.slice(0, 80) });
+    return resolved;
+  }
+  return null;
+};
 const tools = new ToolRegistry(permissions);
 tools.register(fsReadTool);
 tools.register(fsListTool);
@@ -91,6 +140,7 @@ for (const plugin of plugins) {
 const agent = new Agent({
   db,
   router,
+  failover,
   tools,
   toolContext: { workspaceRoot: config.workspaceRoot },
   numCtx: config.numCtx,

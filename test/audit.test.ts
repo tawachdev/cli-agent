@@ -49,7 +49,7 @@ describe("audit trail", () => {
     ]);
     const agent = new Agent({
       db,
-      router: new ModelRouter(() => ({ provider, model: "fake" })),
+      router: new ModelRouter(() => ({ provider, providerName: "fake", model: "fake" })),
       tools,
       toolContext: { workspaceRoot: "/tmp" },
       numCtx: 4096,
@@ -83,7 +83,7 @@ describe("audit trail", () => {
     const provider = new OpenAICompatProvider("http://127.0.0.1:1", key, "unreachable-fake");
     const agent = new Agent({
       db,
-      router: new ModelRouter(() => ({ provider, model: "fake" })),
+      router: new ModelRouter(() => ({ provider, providerName: "fake", model: "fake" })),
       tools,
       toolContext: { workspaceRoot: "/tmp" },
       numCtx: 4096,

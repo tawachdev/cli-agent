@@ -211,7 +211,7 @@ describe("compaction preserves tool-call semantics", () => {
         yield { type: "token", text: "summary of old steps" };
       },
     };
-    const binding: ModelBinding = { provider: summarizer, model: "fake" };
+    const binding: ModelBinding = { provider: summarizer, providerName: "fake", model: "fake" };
     const events: Array<{ type: string; payload: unknown }> = [];
     const { history: compacted } = await compactHistory(
       { binding, numCtx: 1024, temperature: 0.2, publish: (type, payload) => events.push({ type, payload }) },

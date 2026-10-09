@@ -2,6 +2,7 @@ import type { ModelProvider, ModelRole } from "./types";
 
 export interface ModelBinding {
   provider: ModelProvider;
+  providerName: string;
   model: string;
 }
 

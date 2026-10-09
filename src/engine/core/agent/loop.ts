@@ -13,6 +13,7 @@ export type PublishEvent = (type: string, payload: unknown) => void;
 export interface TurnDeps {
   db: Db;
   binding: ModelBinding;
+  failover?: (failed: ModelBinding, reason: string) => ModelBinding | null;
   tools: ToolRegistry;
   toolContext: { workspaceRoot: string; signal?: AbortSignal };
   publish: PublishEvent;
@@ -50,40 +51,63 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
   let usage: TokenUsage | null = null;
   const ids = { sessionId: deps.sessionId, taskId: deps.taskId };
 
+  const callWithFailover = async <T>(run: (binding: ModelBinding) => Promise<T>): Promise<T> => {
+    let active = deps.binding;
+    for (;;) {
+      try {
+        return await run(active);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        if (deps.signal?.aborted) throw error;
+        if (!/\b401\b|\b403\b|\b503\b|Unable to connect|ECONNREFUSED|fetch failed|high demand/i.test(reason) || !deps.failover) throw error;
+        const next = deps.failover?.(active, reason);
+        if (!next) throw error;
+        active = next;
+        deps.publish("provider.failover", { reason: reason.slice(0, 120) });
+      }
+    }
+  };
+
   for (let step = 1; step <= maxSteps; step++) {
-    const compacted = await compactHistory(
-      {
-        binding: deps.binding,
-        numCtx: deps.numCtx,
-        temperature: deps.temperature ?? 0.2,
-        signal: deps.signal,
-        publish: deps.publish,
-      },
-      workingHistory,
+    const compacted = await callWithFailover((binding) =>
+      compactHistory(
+        {
+          binding,
+          numCtx: deps.numCtx,
+          temperature: deps.temperature ?? 0.2,
+          signal: deps.signal,
+          publish: deps.publish,
+        },
+        workingHistory,
+      ),
     );
     workingHistory = compacted.history;
     const turnCalls: ToolCall[] = [];
     let turnContent = "";
-    for await (const chunk of deps.binding.provider.complete(
-      {
-        model: deps.binding.model,
-        messages: workingHistory,
-        tools: specs,
-        numCtx: deps.numCtx,
-        temperature: deps.temperature,
-      },
-      deps.signal,
-    )) {
-      if (chunk.type === "token") {
-        turnContent += chunk.text;
-        deps.publish("token.delta", { text: chunk.text });
-      } else if (chunk.type === "tool_call") {
-        turnCalls.push(chunk.call);
-      } else if (chunk.type === "usage") {
-        usage = chunk.usage;
-        deps.publish("usage", chunk.usage);
+    await callWithFailover(async (binding) => {
+      turnContent = "";
+      turnCalls.length = 0;
+      for await (const chunk of binding.provider.complete(
+        {
+          model: binding.model,
+          messages: workingHistory,
+          tools: specs,
+          numCtx: deps.numCtx,
+          temperature: deps.temperature,
+        },
+        deps.signal,
+      )) {
+        if (chunk.type === "token") {
+          turnContent += chunk.text;
+          deps.publish("token.delta", { text: chunk.text });
+        } else if (chunk.type === "tool_call") {
+          turnCalls.push(chunk.call);
+        } else if (chunk.type === "usage") {
+          usage = chunk.usage;
+          deps.publish("usage", chunk.usage);
+        }
       }
-    }
+    });
 
     if (turnCalls.length === 0) {
       if (turnContent) {

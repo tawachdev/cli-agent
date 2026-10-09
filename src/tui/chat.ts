@@ -52,6 +52,19 @@ export interface RoleBinding {
   source: "env" | "file" | "default";
 }
 
+export function wizardModelCandidates(fallback: string, live: string[]): string[] {
+  const seen = new Set<string>();
+  return [fallback, ...live].filter((model) => {
+    if (!model || seen.has(model)) return false;
+    seen.add(model);
+    return true;
+  });
+}
+
+export function looksLikeModelMissing(message: string): boolean {
+  return /\b404\b/.test(message) || message.toLowerCase().includes("not found");
+}
+
 export function keylessProviderBindings(
   roles: RoleBinding[],
   providers: ProviderInfo[],

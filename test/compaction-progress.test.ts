@@ -18,7 +18,7 @@ describe("compaction progress", () => {
     ];
     const result = await compactHistory(
       {
-        binding: { provider, model: "m" },
+        binding: { provider, providerName: "fake", model: "m" },
         numCtx: 512,
         temperature: 0.2,
         publish: () => {},

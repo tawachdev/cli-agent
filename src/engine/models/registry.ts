@@ -44,7 +44,7 @@ export const BUILTIN_PROVIDERS: ProviderDef[] = [
     name: "gemini",
     kind: "openai",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    models: ["gemini-3-flash-preview", "gemini-3.1-pro-preview", "gemini-flash-latest", "gemini-2.5-pro"],
+    models: ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-pro"],
   },
 ];
 
@@ -213,13 +213,13 @@ export class ProviderRegistry {
       if (!this.fallback) {
         throw new Error("no provider connected — open /setup and connect one (bring its API key)");
       }
-      return { provider: this.fallback, model: binding };
+      return { provider: this.fallback, providerName: "", model: binding };
     }
     const apiKey = this.keystore.get(def.name);
     if (!apiKey) {
       throw new Error(`no API key for "${def.name}" — /providers → set key, or set ${envKeyName(def.name)}`);
     }
-    return { provider: instantiate(def, apiKey), model };
+    return { provider: instantiate(def, apiKey), providerName: def.name, model };
   }
 
   hasKey(name: string): boolean {

@@ -9,11 +9,13 @@ import type { PermissionEngine } from "../permissions/engine";
 import { runCheck } from "../verifier/verifier";
 import type { PublishEvent } from "./loop";
 import { runTurn, type TurnResult } from "./loop";
+import type { ModelBinding } from "../../models/router";
 import { getSession } from "./state";
 
 export interface AgentDeps {
   db: Db;
   router: ModelRouter;
+  failover?: (role: ModelRole, failed: ModelBinding, reason: string) => ModelBinding | null;
   tools: ToolRegistry;
   toolContext: ToolContext;
   numCtx: number;
@@ -127,6 +129,7 @@ export class Agent {
         {
           db: this.deps.db,
           binding: this.deps.router.resolve(role),
+        failover: (failed, reason) => this.deps.failover?.(role, failed, reason) ?? null,
           tools: this.deps.tools,
           toolContext: { ...this.deps.toolContext, signal: controller.signal },
           publish,

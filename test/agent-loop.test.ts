@@ -43,7 +43,7 @@ function makeAgent(
   tools.register(fsReadTool);
   return new Agent({
     db,
-    router: new ModelRouter(() => ({ provider, model: "fake" })),
+    router: new ModelRouter(() => ({ provider, providerName: "fake", model: "fake" })),
     tools,
     toolContext: { workspaceRoot: "/tmp" },
     numCtx: 4096,

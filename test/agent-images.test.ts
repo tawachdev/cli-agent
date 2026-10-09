@@ -39,7 +39,7 @@ function makeAgent(db: Db, provider: ModelProvider): Agent {
   const permissions = new PermissionEngine(defaultPolicyFile(), pending, audit);
   return new Agent({
     db,
-    router: new ModelRouter(() => ({ provider, model: "fake" })),
+    router: new ModelRouter(() => ({ provider, providerName: "fake", model: "fake" })),
     tools: new ToolRegistry(permissions),
     toolContext: { workspaceRoot: "/tmp" },
     numCtx: 4096,
@@ -97,7 +97,7 @@ describe("images through the agent", () => {
     const result = await runTurn(
       {
         db,
-        binding: { provider, model: "fake" },
+        binding: { provider, providerName: "fake", model: "fake" },
         tools: new ToolRegistry(permissions),
         toolContext: { workspaceRoot: "/tmp" },
         publish: () => {},
@@ -142,7 +142,7 @@ describe("images on the /agent/run route", () => {
         has: () => false,
         list: () => [],
         splitBinding: () => ({ def: null, model: "fake" }),
-        resolve: () => ({ provider, model: "fake" }),
+        resolve: () => ({ provider, providerName: "fake", model: "fake" }),
         setKey: () => {},
         deleteKey: () => {},
         test: async () => ({ ok: true }),
