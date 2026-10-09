@@ -34,4 +34,4 @@ for plat in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
 done
 
 publish_if_new "$PWD/npm/main"
-echo "published: npx mimon works"
+echo "published: npx mimon-cli works"

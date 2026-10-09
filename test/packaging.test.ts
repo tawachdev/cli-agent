@@ -35,7 +35,7 @@ describe("packaging consistency", () => {
   it("leaves no obsolete package scopes anywhere", () => {
     expect(wrapper).not.toContain("@tawachdev");
     expect(wrapper).toContain("@mohamed-taaouch/");
-    expect(wrapper).toContain("npm i -g mimon");
+    expect(wrapper).toContain("npm i -g mimon-cli");
     expect(local["optionalDependencies"]).toMatchObject({
       "@mohamed-taaouch/darwin-arm64": "file:../platforms/darwin-arm64",
     });
