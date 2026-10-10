@@ -35,7 +35,7 @@ describe("GET /health", () => {
       mimonMax: "test-model",
     });
     const agent = new Agent({
-  agentName: "TEST",
+  agentName: () => "TEST",
       db,
       router: new ModelRouter(() => ({ provider: registry.resolve("test-model").provider, providerName: "test", model: "test-model" })),
       tools: new ToolRegistry(permissions),

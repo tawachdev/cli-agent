@@ -48,7 +48,7 @@ describe("audit trail", () => {
       [{ type: "token", text: "done" }],
     ]);
     const agent = new Agent({
-      agentName: "TEST",
+      agentName: () => "TEST",
       db,
       router: new ModelRouter(() => ({ provider, providerName: "fake", model: "fake" })),
       tools,
@@ -83,7 +83,7 @@ describe("audit trail", () => {
     const key = "sk-marker-key-never-leak-123456";
     const provider = new OpenAICompatProvider("http://127.0.0.1:1", key, "unreachable-fake");
     const agent = new Agent({
-      agentName: "TEST",
+      agentName: () => "TEST",
       db,
       router: new ModelRouter(() => ({ provider, providerName: "fake", model: "fake" })),
       tools,

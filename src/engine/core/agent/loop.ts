@@ -12,7 +12,7 @@ export type PublishEvent = (type: string, payload: unknown) => void;
 
 export interface TurnDeps {
   db: Db;
-  agentName: string;
+  agentName: () => string;
   binding: ModelBinding;
   failover?: (failed: ModelBinding, reason: string) => ModelBinding | null;
   tools: ToolRegistry;
@@ -47,7 +47,7 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
   appendMessage(deps.db, { sessionId: deps.sessionId, role: "user", content: task });
 
   const history: ChatMessage[] = [
-    { role: "system", content: systemPrompt(deps.agentName) },
+    { role: "system", content: systemPrompt(deps.agentName()) },
     ...listMessages(deps.db, deps.sessionId).map(toChatMessage),
   ];
   if (images.length > 0) attachImages(history, images);

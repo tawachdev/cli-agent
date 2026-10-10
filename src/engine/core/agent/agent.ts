@@ -13,7 +13,7 @@ import type { ModelBinding } from "../../models/router";
 import { getSession } from "./state";
 
 export interface AgentDeps {
-  agentName: string;
+  agentName: () => string;
   db: Db;
   router: ModelRouter;
   failover?: (role: ModelRole, failed: ModelBinding, reason: string) => ModelBinding | null;

@@ -139,7 +139,7 @@ for (const plugin of plugins) {
 }
 const brandStore = new BrandStore(config.workspaceRoot, process.env);
 const agent = new Agent({
-  agentName: brandStore.effective().name,
+  agentName: () => brandStore.effective().name,
   db,
   router,
   failover,
