@@ -211,9 +211,14 @@ const shutdown = (): void => {
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-if (process.ppid > 1) {
+const parentPid = process.ppid;
+if (parentPid > 1) {
   setInterval(() => {
-    if (process.ppid === 1) shutdown();
+    try {
+      process.kill(parentPid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") shutdown();
+    }
   }, 2000);
   process.on("disconnect", shutdown);
 }

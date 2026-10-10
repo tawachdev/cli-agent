@@ -13,9 +13,9 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@mohamed-taaouch/darwin-arm64": "0.1.12",
-    "@mohamed-taaouch/darwin-x64": "0.1.12",
-    "@mohamed-taaouch/linux-arm64": "0.1.12",
-    "@mohamed-taaouch/linux-x64": "0.1.12"
+    "@mohamed-taaouch/darwin-arm64": "0.1.13",
+    "@mohamed-taaouch/darwin-x64": "0.1.13",
+    "@mohamed-taaouch/linux-arm64": "0.1.13",
+    "@mohamed-taaouch/linux-x64": "0.1.13"
   }
 }

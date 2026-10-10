@@ -383,10 +383,12 @@ async function main(): Promise<void> {
     }
     if (reuse) {
       if (!(await engineMatchesThisWorkspace())) {
+        stdout.write("\x1b[?2004l\x1b[?1049l");
         stdout.write(
           C.red +
             "\n  an engine is already running on " + backendOrigin + " for a different workspace.\n" +
             "  tools there will not reach this folder. stop it first, or run this folder on its own port:\n" +
+            "    pkill -f mimon   (kills leftover engines, then retry)\n" +
             "    AGENT_PORT=7801 " + (process.argv[1] ?? "mimon") + "\n\n" + C.reset,
         );
         cleanup();
@@ -432,7 +434,12 @@ async function main(): Promise<void> {
       }
       if (!up) {
         stdout.write("\x1b[?2004l\x1b[?1049l");
-        stdout.write(C.red + "\n  backend did not come up at " + backendOrigin + "\n  start it manually with: bun run dev\n\n" + C.reset);
+        stdout.write(
+          C.red +
+            "\n  backend did not come up at " + backendOrigin + "\n" +
+            "  a leftover engine may hold the port. try: pkill -f mimon, then run again\n" +
+            "  or use another port: AGENT_PORT=7801 " + (process.argv[1] ?? "mimon") + "\n\n" + C.reset,
+        );
         spawnedBackend?.kill();
         cleanup();
         exit(1);
