@@ -42,6 +42,7 @@ function makeAgent(
   const tools = new ToolRegistry(permissions);
   tools.register(fsReadTool);
   return new Agent({
+    agentName: "TEST",
     db,
     router: new ModelRouter(() => ({ provider, providerName: "fake", model: "fake" })),
     tools,

@@ -58,6 +58,7 @@ function makeApp(hostname?: string) {
     },
   );
   const agent = new Agent({
+  agentName: "TEST",
     db,
     router: new ModelRouter(() => ({ provider: registry.resolve("test-model").provider, providerName: "test", model: "test-model" })),
     tools: new ToolRegistry(permissions),

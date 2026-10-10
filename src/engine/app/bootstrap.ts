@@ -137,7 +137,9 @@ const plugins = await loadPluginRoots(
 for (const plugin of plugins) {
   logger.info("plugin loaded", { ...plugin });
 }
+const brandStore = new BrandStore(config.workspaceRoot, process.env);
 const agent = new Agent({
+  agentName: brandStore.effective().name,
   db,
   router,
   failover,
@@ -151,7 +153,6 @@ const agent = new Agent({
 });
 const streams = new StreamRegistry();
 const dataDir = dirname(config.dbPath);
-const brandStore = new BrandStore(config.workspaceRoot, process.env);
 
 const server = Bun.serve({
   fetch: createServer({

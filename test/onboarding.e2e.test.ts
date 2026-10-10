@@ -98,6 +98,7 @@ function startBackend(workspaceRoot: string, upstreamUrl: string): { server: Ret
     return registry.resolve(binding);
   });
   const agent = new Agent({
+  agentName: "TEST",
     db,
     router,
     tools: new ToolRegistry(permissions),

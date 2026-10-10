@@ -85,6 +85,7 @@ beforeAll(async () => {
     return registry.resolve(binding);
   });
   const agent = new Agent({
+  agentName: "TEST",
     db,
     router,
     tools: new ToolRegistry(permissions),

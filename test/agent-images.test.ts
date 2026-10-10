@@ -38,6 +38,7 @@ function makeAgent(db: Db, provider: ModelProvider): Agent {
   const pending = { create: async () => true, resolve: () => ({ ok: false }) };
   const permissions = new PermissionEngine(defaultPolicyFile(), pending, audit);
   return new Agent({
+    agentName: "TEST",
     db,
     router: new ModelRouter(() => ({ provider, providerName: "fake", model: "fake" })),
     tools: new ToolRegistry(permissions),
@@ -96,6 +97,7 @@ describe("images through the agent", () => {
     const session = createSession(db, null);
     const result = await runTurn(
       {
+        agentName: "TEST",
         db,
         binding: { provider, providerName: "fake", model: "fake" },
         tools: new ToolRegistry(permissions),

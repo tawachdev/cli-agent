@@ -12,6 +12,7 @@ export type PublishEvent = (type: string, payload: unknown) => void;
 
 export interface TurnDeps {
   db: Db;
+  agentName: string;
   binding: ModelBinding;
   failover?: (failed: ModelBinding, reason: string) => ModelBinding | null;
   tools: ToolRegistry;
@@ -32,8 +33,13 @@ export interface TurnResult {
   usage: TokenUsage | null;
 }
 
-const SYSTEM_PROMPT =
-  "You are Mimon, a personal coding agent running fully local on this machine (never claim to be another assistant or model). Use the provided tools to gather information before answering questions about the workspace. After using tools, give your final answer in plain prose. Be concise and factual.";
+export function systemPrompt(agentName: string): string {
+  return (
+    `You are ${agentName}, a personal coding agent running fully local on this machine (never claim to be another assistant or model). ` +
+    "Use the provided tools to gather information before answering questions about the workspace. " +
+    "After using tools, give your final answer in plain prose. Be concise and factual."
+  );
+}
 
 export async function runTurn(deps: TurnDeps, task: string, images: string[] = []): Promise<TurnResult> {
   const maxSteps = deps.maxSteps ?? 6;
@@ -41,7 +47,7 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
   appendMessage(deps.db, { sessionId: deps.sessionId, role: "user", content: task });
 
   const history: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt(deps.agentName) },
     ...listMessages(deps.db, deps.sessionId).map(toChatMessage),
   ];
   if (images.length > 0) attachImages(history, images);

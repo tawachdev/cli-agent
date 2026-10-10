@@ -36,6 +36,7 @@ function buildApp(options: { workspaceRoot: string; registry: ProviderRegistry }
     mimonMax: "stub-coder",
   });
   const agent = new Agent({
+  agentName: "TEST",
     db,
     router: new ModelRouter(() => ({ provider: new OpenAICompatProvider("http://127.0.0.1:1", "stub-key", "stub"), providerName: "fake", model: "test-model" })),
     tools: new ToolRegistry(permissions),

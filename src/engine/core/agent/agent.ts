@@ -13,6 +13,7 @@ import type { ModelBinding } from "../../models/router";
 import { getSession } from "./state";
 
 export interface AgentDeps {
+  agentName: string;
   db: Db;
   router: ModelRouter;
   failover?: (role: ModelRole, failed: ModelBinding, reason: string) => ModelBinding | null;
@@ -128,7 +129,8 @@ export class Agent {
       const result = await runTurn(
         {
           db: this.deps.db,
-          binding: this.deps.router.resolve(role),
+          agentName: this.deps.agentName,
+        binding: this.deps.router.resolve(role),
         failover: (failed, reason) => this.deps.failover?.(role, failed, reason) ?? null,
           tools: this.deps.tools,
           toolContext: { ...this.deps.toolContext, signal: controller.signal },
