@@ -1,6 +1,6 @@
 {
   "name": "@mohamed-taaouch/linux-x64",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "mimon CLI binary for linux-x64",
   "license": "MIT",
   "os": [
