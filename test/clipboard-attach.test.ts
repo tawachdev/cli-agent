@@ -215,3 +215,40 @@ describe("attachments open in the system viewer", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("pasted uploads are cleaned after send", () => {
+  it("deletes clipboard-recovered files once the turn consumed them", async () => {
+    const dir = join(tmpdir(), "mimon-clip-cleanup");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "gone.png");
+    const opened: string[] = [];
+    const { tui } = makeTui({ opened, clipboardSave: async () => {
+      writeFileSync(file, buildPng(8, 8, () => [7, 7, 7]));
+      return file;
+    }});
+    tui.show();
+    paste(tui, "/var/folders/67/guaranteed-missing-" + Date.now() + "/T/TemporaryItems/NSIRD_clean.png");
+    await settle();
+    expect(tui.hasPendingImages()).toBe(true);
+    expect(existsSync(file)).toBe(true);
+    tui.takePendingImages();
+    tui.releaseSentUploads();
+    expect(existsSync(file)).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("never deletes user files that were only typed or dragged in", async () => {
+    const dir = join(tmpdir(), "mimon-clip-keep");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "user-file.png");
+    writeFileSync(file, buildPng(8, 8, () => [9, 9, 9]));
+    const { tui } = makeTui();
+    tui.show();
+    paste(tui, file);
+    await settle();
+    tui.takePendingImages();
+    tui.releaseSentUploads();
+    expect(existsSync(file)).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

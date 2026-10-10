@@ -84,6 +84,7 @@ async function main(): Promise<void> {
         const images = [...attached, ...fromText.filter((image) => !attached.some((a) => a.path === image.path))].slice(0, MAX_IMAGES);
         for (const message of errors) stdout.write(C.dim + "  · " + message + C.reset + "\n");
         await chat.run(t, images);
+        tui.releaseSentUploads();
         if (ui) ui.setRuntime(chat.ctxPct, chat.sessionId);
       } catch (error) {
         chat.onError(error instanceof Error ? error.message : "turn failed");

@@ -1,7 +1,7 @@
 import { stdout, cwd } from "node:process";
 import { join } from "node:path";
 import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
 import { spawn } from "node:child_process";
 import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type LoadedImage, type LocatedImage } from "./images";
@@ -373,6 +373,7 @@ export class Tui {
   private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null; preview: string[] }> = [];
   private pendingPaths = new Set<string>();
   private recovering = new Set<string>();
+  private ownedUploads = new Set<string>();
   private history: string[] = [];
   private workingLine = "";
   private chatLines: string[] = [];
@@ -1260,6 +1261,7 @@ export class Tui {
       this.input = this.input.slice(0, current.start) + this.input.slice(current.end);
       this.cursor = Math.min(this.cursor, this.input.length);
       this.pendingPaths.add(saved);
+      this.ownedUploads.add(saved);
       this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, preview: [] });
       await this.loadPending(saved);
     } finally {
@@ -1330,6 +1332,15 @@ export class Tui {
     this.helpLines = lines;
     this.view = "help";
     this.refresh();
+  }
+
+  releaseSentUploads(): void {
+    for (const path of this.ownedUploads) {
+      try {
+        rmSync(path, { force: true });
+      } catch {}
+    }
+    this.ownedUploads.clear();
   }
 
   takePendingImages(): LoadedImage[] {

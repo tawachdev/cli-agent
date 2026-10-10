@@ -5,6 +5,7 @@ import { createLogger } from "../shared/logger";
 import { tmpdir } from "node:os";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { openDb } from "../db/client";
 import { runMigrations } from "../db/migrate";
 import { migrations } from "../db/migrations";
@@ -93,6 +94,16 @@ if (unboundRoles.length > 0) {
   if (chosen) {
     for (const role of unboundRoles) await bindings.set(role, `${chosen.name}/${chosen.models[0]!}`);
     logger.info("auto-bound unbound roles after live probe", { provider: chosen.name, roles: unboundRoles });
+  }
+}
+const uploadsDir = join(config.workspaceRoot, ".agent", "uploads");
+if (existsSync(uploadsDir)) {
+  const cutoff = Date.now() - 48 * 3600 * 1000;
+  for (const entry of readdirSync(uploadsDir)) {
+    const filePath = join(uploadsDir, entry);
+    try {
+      if (statSync(filePath).mtimeMs < cutoff) rmSync(filePath, { force: true });
+    } catch {}
   }
 }
 const failover = (role: ModelRole, failed: ModelBinding, reason: string): ModelBinding | null => {
