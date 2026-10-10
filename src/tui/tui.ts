@@ -391,6 +391,7 @@ export class Tui {
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
   private pasting = false;
   private pasteBreak = false;
+  private pasteBuf = "";
   private modelPickProvider = "";
   private modelPickList: string[] = [];
   private modelPickIndex = 0;
@@ -1211,6 +1212,11 @@ export class Tui {
   }
 
   private insertPasteText(ch: string): void {
+    this.applyPasteChar(ch);
+    this.refresh();
+  }
+
+  private applyPasteChar(ch: string): void {
     if (ch === "\n") {
       if (this.pasteBreak) return;
       this.pasteBreak = true;
@@ -1219,7 +1225,67 @@ export class Tui {
       this.pasteBreak = false;
       this.insert(ch, PASTE_INPUT_CAP);
     }
+  }
+
+  private looksLikeBase64Image(text: string): boolean {
+    const body = text.replace(/\s+/g, "");
+    if (body.length < 500) return false;
+    const dataUrl = /^data:image\/[a-z+.-]+;base64,/.test(body);
+    if (dataUrl) return true;
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(body)) return false;
+    return body.startsWith("iVBORw0KGgo") || body.startsWith("/9j/") || body.startsWith("R0lGODlh") || body.startsWith("UklGR");
+  }
+
+  private commitPaste(): void {
+    const text = this.pasteBuf;
+    this.pasteBuf = "";
+    if (text === "") {
+      this.refresh();
+      return;
+    }
+    if (this.view === "keyInput") {
+      this.keyBuffer += text.replace(/\n+/g, " ").slice(0, 200);
+      this.refresh();
+      return;
+    }
+    if (this.view === "providerAdd") {
+      const field = this.addFields[this.addFieldIndex];
+      if (field !== undefined) {
+        this.addFields[this.addFieldIndex] = (field + text.replace(/\n+/g, " ")).slice(0, 200);
+        this.addError = "";
+      }
+      this.refresh();
+      return;
+    }
+    if (this.looksLikeBase64Image(text)) {
+      void this.attachClipboardImage();
+      return;
+    }
+    for (const ch of text) this.applyPasteChar(ch);
     this.refresh();
+  }
+
+  private async attachClipboardImage(): Promise<void> {
+    if (this.pendingImages.length >= MAX_IMAGES) {
+      this.notice("✘ skipped — max " + MAX_IMAGES + " images per message");
+      return;
+    }
+    if (this.recovering.has("clipboard")) return;
+    this.recovering.add("clipboard");
+    try {
+      const save = this.options.clipboardSave ?? defaultClipboardSave;
+      const saved = await save(join(cwd(), ".agent", "uploads"));
+      if (!saved) {
+        this.notice("✘ pasted image could not be read — copy it again (Cmd+C), then paste here");
+        return;
+      }
+      if (this.pendingPaths.has(saved)) return;
+      this.pendingPaths.add(saved);
+      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, preview: [] });
+      await this.loadPending(saved);
+    } finally {
+      this.recovering.delete("clipboard");
+    }
   }
 
   private detectAttachments(): void {
@@ -1548,32 +1614,18 @@ export class Tui {
     if (this.pasting) {
       if (key.kind === "paste-end") {
         this.pasting = false;
+        this.commitPaste();
         return;
       }
       const text = key.kind === "char" ? key.ch : key.kind === "enter" || key.kind === "unknown" ? "\n" : null;
       if (text === null) return;
-      if (this.view === "keyInput") {
-        if (text !== "\n") {
-          this.keyBuffer += text;
-          this.refresh();
-        }
-        return;
-      }
-      if (this.view === "providerAdd") {
-        const field = this.addFields[this.addFieldIndex];
-        if (text !== "\n" && field !== undefined && field.length < 200) {
-          this.addFields[this.addFieldIndex] = field + text;
-          this.addError = "";
-          this.refresh();
-        }
-        return;
-      }
-      this.insertPasteText(text);
+      if (this.pasteBuf.length < 131072) this.pasteBuf += text;
       return;
     }
     if (key.kind === "paste-start") {
       this.pasting = true;
       this.pasteBreak = false;
+      this.pasteBuf = "";
       return;
     }
     if (this.view === "permission") {

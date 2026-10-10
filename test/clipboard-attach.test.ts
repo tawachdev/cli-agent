@@ -93,6 +93,87 @@ describe("saveClipboardImage", () => {
   });
 });
 
+describe("base64 image pastes attach instead of flooding the input", () => {
+  const blobFor = (): string => Buffer.from(pngBytes(48, 48)).toString("base64");
+
+  it("attaches the clipboard image and keeps the input line clean", async () => {
+    const dir = join(tmpdir(), "mimon-b64-attach");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "clip.png");
+    let calls = 0;
+    const { tui, tty, submitted } = makeTui({
+      support: "iterm",
+      clipboardSave: async () => {
+        calls += 1;
+        writeFileSync(file, buildPng(48, 48, () => [20, 120, 200]));
+        return file;
+      },
+    });
+    tui.show();
+    const blob = blobFor();
+    expect(blob.length).toBeGreaterThan(500);
+    paste(tui, blob);
+    await settle(80);
+    expect(calls).toBe(1);
+    expect(tui.hasPendingImages()).toBe(true);
+    const out = tty.chunks.join("");
+    expect(out).toContain("]1337;File=inline=1");
+    expect(out).not.toContain(blob.slice(0, 60));
+    tui.handleKey({ kind: "enter" });
+    expect(submitted).toEqual([]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("explains and stays usable when the clipboard has no image", async () => {
+    const { tui, tty, submitted } = makeTui({ clipboardSave: async () => null });
+    tui.show();
+    paste(tui, blobFor());
+    await settle(80);
+    expect(tui.hasPendingImages()).toBe(false);
+    const plain = tty.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    expect(plain).toContain("pasted image could not be read");
+    for (const ch of "still alive") tui.handleKey({ kind: "char", ch });
+    tui.handleKey({ kind: "enter" });
+    expect(submitted).toEqual(["still alive"]);
+  });
+
+  it("passes ordinary text and multiline pastes through to the input", async () => {
+    const { tui, submitted } = makeTui();
+    tui.show();
+    paste(tui, "hello pasted text");
+    paste(tui, "line one\nline two");
+    tui.handleKey({ kind: "enter" });
+    expect(submitted).toEqual(["hello pasted textline one line two"]);
+  });
+
+  it("keeps long non-image base64 alphabet text as plain input", async () => {
+    const { tui, submitted } = makeTui();
+    tui.show();
+    const hexish = "a1b2c3d4e5f6".repeat(60);
+    expect(hexish.length).toBeGreaterThan(500);
+    paste(tui, hexish);
+    tui.handleKey({ kind: "enter" });
+    expect(submitted).toEqual([hexish]);
+  });
+
+  it("treats a data-url image paste as an image paste", async () => {
+    const dir = join(tmpdir(), "mimon-b64-dataurl");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "clip.png");
+    const { tui } = makeTui({
+      clipboardSave: async () => {
+        writeFileSync(file, buildPng(48, 48, () => [1, 2, 3]));
+        return file;
+      },
+    });
+    tui.show();
+    paste(tui, "data:image/png;base64," + blobFor());
+    await settle(80);
+    expect(tui.hasPendingImages()).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
   it("converts a dead paste-promise path into a real pending attachment", async () => {
     const dir = join(tmpdir(), "mimon-clip-tui");
