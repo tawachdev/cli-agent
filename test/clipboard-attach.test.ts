@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { buildPng } from "./helpers/png";
 import { saveClipboardImage } from "../src/tui/clipboard";
 import { decodeChunk, Tui, type Tty } from "../src/tui/tui";
+import type { ImageSupport } from "../src/tui/images";
 
 function pngBytes(width = 8, height = 8): Uint8Array {
   return new Uint8Array(buildPng(width, height, (x, y) => [x * 30, y * 30, 128]));
@@ -22,6 +23,7 @@ class MockTty implements Tty {
 interface TuiHarnessOptions {
   clipboardSave?: (destDir: string) => Promise<string | null>;
   opened?: string[];
+  support?: ImageSupport;
 }
 
 function makeTui(options: TuiHarnessOptions = {}): { tui: Tui; tty: MockTty; submitted: string[] } {
@@ -45,8 +47,9 @@ function makeTui(options: TuiHarnessOptions = {}): { tui: Tui; tty: MockTty; sub
     onBrandReset: () => {},
     onAddProvider: () => {},
   }, {
+    ...(options.support ? { imageSupport: options.support } : {}),
     ...(options.clipboardSave ? { clipboardSave: options.clipboardSave } : {}),
-    ...(options.opened ? { openImage: (image) => options.opened!.push(image.path) } : {}),
+    ...(!options.support && options.opened ? { openImage: (image) => options.opened!.push(image.path) } : {}),
   });
   return { tui, tty, submitted };
 }
@@ -198,18 +201,24 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
 });
 
 describe("attachments open in the system viewer", () => {
-  it("opens each loaded image once and never writes terminal payloads", async () => {
+  it("renders protocol images inline at attach and opens the viewer only without a protocol", async () => {
     const dir = join(tmpdir(), "mimon-clip-open");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "real.png");
     writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
     const opened: string[] = [];
-    const { tui, tty } = makeTui({ opened });
+    const { tui, tty } = makeTui({ support: "iterm" });
     tui.show();
     paste(tui, file);
     await settle();
+    expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
+    const { tui: tui2, tty: tty2 } = makeTui({ opened });
+    tui2.show();
+    paste(tui2, file);
+    await settle();
     expect(opened).toEqual([file]);
-    expect(tty.chunks.join("")).not.toContain("]1337;File=inline=1");
+    expect(tty2.chunks.join("")).not.toContain("]1337;File=inline=1");
+    expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
     expect(tty.chunks.join("")).toContain("attached");
     expect(tui.hasPendingImages()).toBe(true);
     rmSync(dir, { recursive: true, force: true });

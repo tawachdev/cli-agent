@@ -4,7 +4,7 @@ import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, vali
 import { existsSync, rmSync } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
 import { spawn } from "node:child_process";
-import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type LoadedImage, type LocatedImage } from "./images";
+import { fallbackPanel, imageChipName, imageSupport, itermImagePayload, kittyImagePayload, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -313,6 +313,7 @@ export interface TuiHooks {
 export interface TuiOptions {
   clipboardSave?: (destDir: string) => Promise<string | null>;
   openImage?: (image: LoadedImage) => void;
+  imageSupport?: ImageSupport;
 }
 
 const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
@@ -374,6 +375,9 @@ export class Tui {
   private pendingPaths = new Set<string>();
   private recovering = new Set<string>();
   private ownedUploads = new Set<string>();
+  private inlinePayloads = new Map<string, string>();
+  private inlineSeq = 0;
+  private imageFeed: Array<{ path: string; token: string; payload: string; rows: number; start: number }> = [];
   private history: string[] = [];
   private workingLine = "";
   private chatLines: string[] = [];
@@ -693,8 +697,9 @@ export class Tui {
       }
       const inner = Math.max(10, this.innerWidth() - 6);
       const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
+      const imageRows = this.imageFeed.reduce((n, block) => n + block.rows, 0);
       const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0) + menu.length + overlay.length;
-      const budget = Math.max(1, this.rows - footerLines - fixedCount);
+      const budget = Math.max(1, this.rows - footerLines - fixedCount - imageRows);
       const visuals: string[] = [];
       for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < budget; i--) {
         const wrapped = wrap(this.chatLines[i]!, inner);
@@ -703,6 +708,11 @@ export class Tui {
         }
       }
       for (const visual of visuals) lines.push(this.boxLine("  " + visual));
+      for (const block of this.imageFeed) {
+        block.start = lines.length;
+        lines.push(this.boxLine(block.token));
+        for (let pad = 1; pad < block.rows; pad++) lines.push(this.boxLine(""));
+      }
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
       for (const pending of this.pendingImages) {
         if (pending.preview.length === 0 && !pending.image) continue;
@@ -784,7 +794,12 @@ export class Tui {
     this.lastCols = cols;
     this.lastRows = rowsNow;
     const frame = this.buildLines();
-    const dropped = Math.max(0, frame.length - rowsNow);
+    let dropped = Math.max(0, frame.length - rowsNow);
+    for (const block of this.imageFeed) {
+      while (block.start >= 0 && block.start < dropped && dropped < block.start + block.rows) {
+        dropped = block.start + block.rows;
+      }
+    }
     const budget = Math.max(8, cols - 1);
     const view = frame.slice(dropped).map((line) => (visibleLen(line) <= budget ? line : C.reset + plainClip(line, budget)));
     const inputRow = Math.max(0, Math.min(this.inputRow - dropped, view.length - 1));
@@ -797,6 +812,8 @@ export class Tui {
       for (let i = 0; i < view.length; i++) {
         if (prev[i] === view[i]) continue;
         parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
+        const rowPayload = this.inlinePayloadAt(view[i]!);
+        if (rowPayload) parts.push("\x1b[" + (i + 1) + ";3H" + rowPayload);
       }
     } else {
       for (let i = 0; i < view.length; i++) {
@@ -1222,8 +1239,38 @@ export class Tui {
   }
 
   openImage(image: LoadedImage): void {
-    const opener = this.options.openImage ?? defaultOpenImage;
-    opener(image);
+    const support = this.options.imageSupport ?? imageSupport();
+    if (support === "none") {
+      const opener = this.options.openImage ?? defaultOpenImage;
+      opener(image);
+      return;
+    }
+    const cells = Math.max(8, Math.min(28, Math.floor(this.innerWidth() / 3)));
+    const rowCap = Math.max(4, Math.min(10, Math.floor(this.rows / 3)));
+    let rows = 6;
+    let byHeight = false;
+    if (image.width !== null && image.height !== null && image.width > 0) {
+      rows = Math.max(2, Math.ceil((cells * 2 * image.height) / image.width));
+      if (rows > rowCap) {
+        rows = rowCap;
+        byHeight = true;
+      }
+    }
+    const id = ++this.inlineSeq;
+    const token = "\x00".repeat(6 + id);
+    const payload = support === "iterm"
+      ? itermImagePayload(image, byHeight ? rows : cells, byHeight)
+      : kittyImagePayload(image, byHeight ? rows : cells, byHeight);
+    this.inlinePayloads.set(token, payload);
+    this.imageFeed.push({ path: image.path, token, payload, rows, start: -1 });
+    this.refresh();
+  }
+
+  private inlinePayloadAt(line: string): string | null {
+    for (const [token, payload] of this.inlinePayloads) {
+      if (line.includes(token)) return payload;
+    }
+    return null;
   }
 
   private async loadPending(path: string): Promise<void> {
