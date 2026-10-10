@@ -1245,22 +1245,18 @@ export class Tui {
       opener(image);
       return;
     }
-    const cells = Math.max(8, Math.min(28, Math.floor(this.innerWidth() / 3)));
-    const rowCap = Math.max(4, Math.min(10, Math.floor(this.rows / 3)));
+    if (this.imageFeed.some((block) => block.path === image.path)) return;
+    const cells = Math.max(10, Math.floor(this.innerWidth() / 2));
+    const rowCap = Math.max(3, Math.min(16, this.rows - 12));
     let rows = 6;
-    let byHeight = false;
     if (image.width !== null && image.height !== null && image.width > 0) {
-      rows = Math.max(2, Math.ceil((cells * 2 * image.height) / image.width));
-      if (rows > rowCap) {
-        rows = rowCap;
-        byHeight = true;
-      }
+      rows = Math.max(2, Math.min(rowCap, Math.ceil((cells * 2 * image.height) / image.width)));
     }
     const id = ++this.inlineSeq;
     const token = "\x00".repeat(6 + id);
     const payload = support === "iterm"
-      ? itermImagePayload(image, byHeight ? rows : cells, byHeight)
-      : kittyImagePayload(image, byHeight ? rows : cells, byHeight);
+      ? itermImagePayload(image, rows, true)
+      : kittyImagePayload(image, rows, true);
     this.inlinePayloads.set(token, payload);
     this.imageFeed.push({ path: image.path, token, payload, rows, start: -1 });
     this.refresh();
