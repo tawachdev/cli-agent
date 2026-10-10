@@ -161,7 +161,7 @@ describe("terminal image protocols", () => {
   });
 
   it("builds an iTerm inline-image escape with width and size", () => {
-    const payload = itermImagePayload(image, 40);
+    const payload = itermImagePayload(image, 40, 10);
     expect(payload.startsWith("\x1b]1337;File=inline=1;")).toBe(true);
     expect(payload).toContain("preserveAspectRatio=1");
     expect(payload).toContain("size=1234");
@@ -172,12 +172,12 @@ describe("terminal image protocols", () => {
 
   it("chunks the kitty payload at 4096 base64 chars with m flags", () => {
     const big: LoadedImage = { ...image, base64: "A".repeat(5000) };
-    const payload = kittyImagePayload(big, 30);
+    const payload = kittyImagePayload(big, 30, 8);
     const chunks = payload.split("\x1b\\").filter((c) => c.length > 0);
     expect(chunks.length).toBe(2);
-    expect(chunks[0]).toContain("f=100,a=T,q=2,c=30,m=1;");
+    expect(chunks[0]).toContain("f=100,a=T,q=2,w=30,h=8,m=1;");
     expect(chunks[1]).toContain("m=0;");
-    const small = kittyImagePayload(image, 30);
+    const small = kittyImagePayload(image, 30, 8);
     expect(small).toContain("m=0;");
     expect(small).not.toContain("m=1;");
   });

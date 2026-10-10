@@ -136,14 +136,15 @@ export function imageSupport(env: Record<string, string | undefined> = process.e
   return "none";
 }
 
-export function itermImagePayload(image: LoadedImage, cells: number, byHeight = false): string {
+export function itermImagePayload(image: LoadedImage, widthCells: number, heightRows: number): string {
   const name = Buffer.from(image.name).toString("base64");
   return (
     "\x1b]1337;File=inline=1;preserveAspectRatio=1;size=" +
     image.bytes +
-    ";" +
-    (byHeight ? "height=" : "width=") +
-    cells +
+    ";width=" +
+    widthCells +
+    ";height=" +
+    heightRows +
     ";name=" +
     name +
     ":" +
@@ -152,9 +153,9 @@ export function itermImagePayload(image: LoadedImage, cells: number, byHeight = 
   );
 }
 
-export function kittyImagePayload(image: LoadedImage, cells: number, byHeight = false): string {
+export function kittyImagePayload(image: LoadedImage, widthCells: number, heightRows: number): string {
   const chunks: string[] = [];
-  const geometry = byHeight ? "r=" + cells + "," : "c=" + cells + ",";
+  const geometry = "w=" + widthCells + ",h=" + heightRows + ",";
   for (let i = 0; i < image.base64.length; i += KITTY_CHUNK) {
     const last = i + KITTY_CHUNK >= image.base64.length;
     const control = i === 0 ? "f=100,a=T,q=2," + geometry : "q=2,";
@@ -186,17 +187,13 @@ function trunc(s: string, max: number): string {
 }
 
 export function inlineImagePayload(tty: Tty, image: LoadedImage, maxWidthCells: number, maxRowsCells: number, support: ImageSupport): string {
-  let width = Math.max(10, Math.min(maxWidthCells, tty.columns > 0 ? tty.columns - 6 : 60));
-  let byHeight = false;
-  if (image.width !== null && image.height !== null && image.height > 0) {
-    const rows = Math.round((width * image.height) / image.width);
-    if (rows > maxRowsCells) byHeight = true;
-  }
+  const width = Math.max(10, Math.min(maxWidthCells, tty.columns > 0 ? tty.columns - 6 : 60));
+  const rows = Math.max(2, Math.min(maxRowsCells, Math.ceil((width * 2 * (image.height ?? 1)) / (image.width ?? 1))));
   if (support === "iterm") {
-    return itermImagePayload(image, byHeight ? maxRowsCells : width, byHeight);
+    return itermImagePayload(image, width, rows);
   }
   if (support === "kitty") {
-    return kittyImagePayload(image, byHeight ? maxRowsCells : width, byHeight);
+    return kittyImagePayload(image, width, rows);
   }
   return fallbackPanel(image, tty.columns > 0 ? tty.columns : 80);
 }

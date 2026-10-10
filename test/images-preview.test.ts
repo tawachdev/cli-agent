@@ -65,12 +65,10 @@ describe("image paths containing spaces", () => {
 });
 
 describe("inline image payloads", () => {
-  it("iterm payload switches between width and height modes", () => {
+  it("iterm and kitty payloads carry a contain box", () => {
     const img = { ...asLoaded(buildPng(4, 4, () => [1, 2, 3])), mime: "image/png" as const };
-    expect(itermImagePayload(img, 20)).toContain(";width=20;");
-    expect(itermImagePayload(img, 12, true)).toContain(";height=12;");
-    expect(kittyImagePayload(img, 20)).toContain("c=20,");
-    expect(kittyImagePayload(img, 9, true)).toContain("r=9,");
+    expect(itermImagePayload(img, 20, 12)).toContain(";width=20;height=12;");
+    expect(kittyImagePayload(img, 20, 12)).toContain("w=20,h=12,");
   });
 
   it("renderImage caps tall portraits by height instead of width", () => {

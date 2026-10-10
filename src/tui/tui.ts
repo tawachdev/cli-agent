@@ -820,6 +820,12 @@ export class Tui {
         parts.push(view[i]! + "\x1b[K" + (i < view.length - 1 ? "\r\n" : ""));
       }
       parts.push("\x1b[J");
+      for (const block of this.imageFeed) {
+        const row = block.start - dropped;
+        if (row >= 0 && row < view.length) {
+          parts.push("\x1b[" + (row + 1) + ";3H" + block.payload);
+        }
+      }
     }
     parts.push("\x1b[" + (inputRow + 1) + ";" + (cursorCol + 1) + "H");
     this.tty.write(parts.join(""));
@@ -1246,7 +1252,7 @@ export class Tui {
       return;
     }
     if (this.imageFeed.some((block) => block.path === image.path)) return;
-    const cells = Math.max(10, Math.floor(this.innerWidth() / 2));
+    const cells = Math.max(10, Math.min(this.innerWidth(), Math.floor(this.innerWidth() * 0.6)));
     const rowCap = Math.max(3, Math.min(16, this.rows - 12));
     let rows = 6;
     if (image.width !== null && image.height !== null && image.width > 0) {
@@ -1255,8 +1261,8 @@ export class Tui {
     const id = ++this.inlineSeq;
     const token = "\x00".repeat(6 + id);
     const payload = support === "iterm"
-      ? itermImagePayload(image, rows, true)
-      : kittyImagePayload(image, rows, true);
+      ? itermImagePayload(image, cells, rows)
+      : kittyImagePayload(image, cells, rows);
     this.inlinePayloads.set(token, payload);
     this.imageFeed.push({ path: image.path, token, payload, rows, start: -1 });
     this.refresh();
