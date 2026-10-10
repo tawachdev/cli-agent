@@ -174,6 +174,39 @@ describe("base64 image pastes attach instead of flooding the input", () => {
   });
 });
 
+describe("inline images are responsive to terminal resizes", () => {
+  it("recomputes the image box when the terminal shrinks and grows", async () => {
+    const dir = join(tmpdir(), "mimon-responsive");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "clip.png");
+    const { tui, tty } = makeTui({
+      support: "iterm",
+      clipboardSave: async () => {
+        writeFileSync(file, buildPng(80, 40, () => [90, 90, 200]));
+        return file;
+      },
+    });
+    tui.show();
+    paste(tui, Buffer.from(pngBytes(80, 40)).toString("base64"));
+    await settle(80);
+    const widths = (): number[] =>
+      [...tty.chunks.join("").matchAll(/width=(\d+);height=(\d+)/g)].map((m) => Number(m[1]));
+    const w1 = widths().at(-1)!;
+    tty.columns = 60;
+    tty.rows = 24;
+    tui.refresh();
+    const w2 = widths().at(-1)!;
+    tty.columns = 140;
+    tty.rows = 36;
+    tui.refresh();
+    const w3 = widths().at(-1)!;
+    expect(w2).toBeLessThan(w1);
+    expect(w3).toBeGreaterThan(w2);
+    expect(w3).toBe(w1);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
   it("converts a dead paste-promise path into a real pending attachment", async () => {
     const dir = join(tmpdir(), "mimon-clip-tui");

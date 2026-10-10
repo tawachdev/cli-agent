@@ -377,7 +377,7 @@ export class Tui {
   private ownedUploads = new Set<string>();
   private inlinePayloads = new Map<string, string>();
   private inlineSeq = 0;
-  private imageFeed: Array<{ path: string; token: string; payload: string; rows: number; start: number }> = [];
+  private imageFeed: Array<{ path: string; token: string; payload: string; rows: number; start: number; image: LoadedImage }> = [];
   private history: string[] = [];
   private workingLine = "";
   private chatLines: string[] = [];
@@ -775,10 +775,8 @@ export class Tui {
     if (pad > 0) {
       const body = lines.slice(0, lines.length - footer);
       const foot = lines.slice(lines.length - footer);
-      const below = Math.floor(pad / 2);
-      const above = pad - below;
+      const above = pad;
       for (let i = 0; i < above; i++) body.unshift("");
-      for (let i = 0; i < below; i++) body.push("");
       this.inputRow += above;
       return [...body, ...foot];
     }
@@ -790,6 +788,7 @@ export class Tui {
     const rowsNow = this.tty.rows > 0 ? this.tty.rows : 24;
     if (this.lastCols > 0 && (cols !== this.lastCols || rowsNow !== this.lastRows)) {
       this.tty.write("\x1b[2J\x1b[3J");
+      this.relayoutImages();
       this.lastLines = [];
     }
     this.lastCols = cols;
@@ -1318,20 +1317,39 @@ export class Tui {
       return;
     }
     if (this.imageFeed.some((block) => block.path === image.path)) return;
-    const cells = Math.max(10, Math.min(this.innerWidth(), Math.floor(this.innerWidth() * 0.6)));
-    const rowCap = Math.max(3, Math.min(16, this.rows - 12));
-    let rows = 6;
-    if (image.width !== null && image.height !== null && image.width > 0) {
-      rows = Math.max(2, Math.min(rowCap, Math.ceil((cells * 2 * image.height) / image.width)));
-    }
+    const { cells, rows } = this.imageBoxFor(image);
     const id = ++this.inlineSeq;
     const token = "\x00".repeat(6 + id);
     const payload = support === "iterm"
       ? itermImagePayload(image, cells, rows)
       : kittyImagePayload(image, cells, rows);
     this.inlinePayloads.set(token, payload);
-    this.imageFeed.push({ path: image.path, token, payload, rows, start: -1 });
+    this.imageFeed.push({ path: image.path, token, payload, rows, start: -1, image });
     this.refresh();
+  }
+
+  private imageBoxFor(image: LoadedImage): { cells: number; rows: number } {
+    const cells = Math.max(10, Math.min(this.innerWidth(), Math.floor(this.innerWidth() * 0.6)));
+    const rowCap = Math.max(3, Math.min(16, this.rows - 12));
+    let rows = 6;
+    if (image.width !== null && image.height !== null && image.width > 0) {
+      rows = Math.max(2, Math.min(rowCap, Math.ceil((cells * 2 * image.height) / image.width)));
+    }
+    return { cells, rows };
+  }
+
+  private relayoutImages(): void {
+    if (this.imageFeed.length === 0) return;
+    const support = this.options.imageSupport ?? imageSupport();
+    if (support === "none") return;
+    for (const block of this.imageFeed) {
+      const { cells, rows } = this.imageBoxFor(block.image);
+      block.rows = rows;
+      block.payload = support === "iterm"
+        ? itermImagePayload(block.image, cells, rows)
+        : kittyImagePayload(block.image, cells, rows);
+      this.inlinePayloads.set(block.token, block.payload);
+    }
   }
 
   private inlinePayloadAt(line: string): string | null {
