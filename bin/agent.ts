@@ -61,14 +61,14 @@ async function main(): Promise<void> {
   const chat = new Chat(tty, async () => "n");
   let ui: Tui | null = null;
   let cleanup: () => void = () => {};
-  let spawnedBackend: ChildProcess | null = null;
+  const backendBox: { child: ChildProcess | null } = { child: null };
   let taskFailed = false;
 
   const bye = (): void => {
     stdout.write("\x1b[?2004l\x1b[?1049l");
     cleanup();
     chat.close();
-    spawnedBackend?.kill();
+    backendBox.child?.kill();
     stdout.write(C.reset + "\n" + C.gold + C.bold + "  ✦ take care\n\n" + C.reset);
     exit(0);
   };
@@ -402,15 +402,17 @@ async function main(): Promise<void> {
         AGENT_WORKSPACE_ROOT: process.cwd(),
         AGENT_DB_PATH: join(homedir(), ".agent", "agent.db"),
       };
-      spawnedBackend = compiled
-        ? spawn(process.execPath, ["serve"], { stdio: "ignore", env: backendEnv })
-        : spawn(
-            process.execPath,
-            [fileURLToPath(new URL("../src/engine/app/bootstrap.ts", import.meta.url))],
-            { stdio: "ignore", env: backendEnv, cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
-          );
+      const launchBackend = (): void => {
+        backendBox.child = compiled
+          ? spawn(process.execPath, ["serve"], { stdio: "ignore", env: backendEnv })
+          : spawn(
+              process.execPath,
+              [fileURLToPath(new URL("../src/engine/app/bootstrap.ts", import.meta.url))],
+              { stdio: "ignore", env: backendEnv, cwd: fileURLToPath(new URL("../src/engine", import.meta.url)) },
+            );
+      };
       const killBackend = (): void => {
-        spawnedBackend?.kill();
+        backendBox.child?.kill();
       };
       const die = (): void => {
         stdout.write("\x1b[?2004l\x1b[?1049l");
@@ -423,13 +425,26 @@ async function main(): Promise<void> {
       process.on("SIGTERM", die);
       process.on("SIGPIPE", die);
       let up = false;
-      for (let i = 0; i < 30 && !up; i++) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 300));
-        try {
-          await chat.healthCheck();
-          up = true;
-        } catch {
-          up = false;
+      for (let attempt = 0; attempt < 2 && !up; attempt++) {
+        if (attempt > 0) {
+          backendBox.child?.kill();
+          await new Promise<void>((resolve) => setTimeout(resolve, 2500));
+          try {
+            await chat.healthCheck();
+            up = true;
+            break;
+          } catch {
+          }
+        }
+        launchBackend();
+        for (let i = 0; i < 30 && !up; i++) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 300));
+          try {
+            await chat.healthCheck();
+            up = true;
+          } catch {
+            up = false;
+          }
         }
       }
       if (!up) {
@@ -440,7 +455,7 @@ async function main(): Promise<void> {
             "  a leftover engine may hold the port. try: pkill -f mimon, then run again\n" +
             "  or use another port: AGENT_PORT=7801 " + (process.argv[1] ?? "mimon") + "\n\n" + C.reset,
         );
-        spawnedBackend?.kill();
+        backendBox.child?.kill();
         cleanup();
         exit(1);
       }
@@ -457,7 +472,7 @@ async function main(): Promise<void> {
       splash(tty, PRODUCT_VERSION);
       await chat.run(task, images);
       chat.close();
-      spawnedBackend?.kill();
+      backendBox.child?.kill();
       cleanup();
       exit(taskFailed ? 1 : 0);
     }
@@ -489,7 +504,7 @@ async function main(): Promise<void> {
     stdout.write("\x1b[?2004l\x1b[?1049l");
     cleanup();
     chat.close();
-    spawnedBackend?.kill();
+    backendBox.child?.kill();
     throw error;
   }
 }
