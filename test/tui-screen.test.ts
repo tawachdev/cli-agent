@@ -596,7 +596,6 @@ describe("real cursor placement", () => {
     for (const ch of "fdfdf") tui.handleKey({ kind: "char", ch });
     const lines = vt.screen().split("\n");
     const inputLine = lines.findIndex((l) => l.includes("fdfdf"));
-    console.log("CDUMP row=" + vt.row + " col=" + vt.col + " inputLine=" + inputLine + "\n" + lines.map((l, i) => i + "| " + l).join("\n"));
     expect(inputLine).toBeGreaterThanOrEqual(0);
     expect(vt.row).toBe(inputLine);
     const textEnd = lines[inputLine]!.indexOf("fdfdf") + "fdfdf".length;

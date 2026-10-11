@@ -195,7 +195,7 @@ describe("terminal image protocols", () => {
       }
     }
     const tty = new MockTty();
-    renderImage(tty, image, 60);
+    renderImage(tty, image, 60, undefined, "none");
     const t = tty.text();
     expect(t).toContain("shot.png");
     expect(t).toContain("1×1");

@@ -47,9 +47,12 @@ function makeTui(options: TuiHarnessOptions = {}): { tui: Tui; tty: MockTty; sub
     onBrandReset: () => {},
     onAddProvider: () => {},
   }, {
-    ...(options.support ? { imageSupport: options.support } : {}),
+    // Pin the protocol instead of inheriting process.env: a test must not change
+    // behaviour depending on whether the developer runs iTerm2, kitty or CI.
+    imageSupport: options.support ?? "none",
+    // Always stub the viewer so a test can never spawn open/xdg-open on the desktop.
+    openImage: (image) => options.opened?.push(image.path),
     ...(options.clipboardSave ? { clipboardSave: options.clipboardSave } : {}),
-    ...(!options.support && options.opened ? { openImage: (image) => options.opened!.push(image.path) } : {}),
   });
   return { tui, tty, submitted };
 }

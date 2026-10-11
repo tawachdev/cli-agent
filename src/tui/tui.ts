@@ -4,7 +4,7 @@ import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, vali
 import { existsSync, rmSync } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
 import { spawn } from "node:child_process";
-import { fallbackPanel, imageChipName, imageSupport, itermImagePayload, kittyImagePayload, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
+import { imageChipName, imageSupport, itermImagePayload, kittyImagePayload, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";

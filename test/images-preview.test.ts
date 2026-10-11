@@ -102,6 +102,11 @@ describe("in-frame image preview", () => {
     onWizardModel: () => {},
     onTierModelPick: () => {},
       onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {},
+    }, {
+      // Pin the protocol and stub the viewer so the assertions do not depend on
+      // the developer's terminal, and no test can open a desktop window.
+      imageSupport: "none",
+      openImage: () => {},
     });
     tui.show();
     for (const ch of "see " + file) tui.handleKey({ kind: "char", ch });
