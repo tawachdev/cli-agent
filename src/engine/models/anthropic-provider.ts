@@ -29,8 +29,6 @@ const MAX_TOKENS = 8192;
 function toAnthropicMessages(messages: ChatMessage[]): { system: string; messages: Block[] } {
   const system: string[] = [];
   const out: Block[] = [];
-  // legacy fallback: tool results with no persisted call id are re-attached with
-  // synthetic ids so old sessions still serialize legally
   const pendingResults: { id: string; name: string; content: string }[] = [];
   let callSeq = 0;
   const flushResults = () => {
@@ -63,7 +61,6 @@ function toAnthropicMessages(messages: ChatMessage[]): { system: string; message
     }
     if (message.role === "tool") {
       if (message.toolCallId) {
-        // canonical path: results group into the user turn that follows the assistant tool_use turn
         const last = out[out.length - 1];
         const toolResult: Block = { type: "tool_result", tool_use_id: message.toolCallId, content: message.content };
         if (last && last["role"] === "user" && Array.isArray(last["content"]) && (last["content"] as Block[]).every((b) => b["type"] === "tool_result")) {

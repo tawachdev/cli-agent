@@ -81,8 +81,6 @@ function executableOf(command: string): string {
 function matchesAllow(pattern: string, target: string, cls: PermissionClass): boolean {
   if (SHELL_META.test(pattern)) return false;
   if (cls === "exec" && INTERPRETERS.has(executableOf(pattern))) {
-    // interpreters execute arbitrary code from their arguments — only an exact,
-    // fully pinned command (never a bare interpreter) may auto-run
     const pinned = pattern.trim().split(/\s+/).length >= 2;
     return pinned && target === pattern;
   }

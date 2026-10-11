@@ -144,7 +144,6 @@ describe("provider serialization of canonical history", () => {
     const provider = new OpenAICompatProvider(mock.url, "sk-test", "fake");
     const request: GenerateRequest = { model: "m", messages: reloaded(), numCtx: 4096 };
     for await (const _ of provider.complete(request)) {
-      // drain
     }
     mock.stop();
 
@@ -169,7 +168,6 @@ describe("provider serialization of canonical history", () => {
     const provider = new AnthropicProvider(mock.url, "sk-test", "fake");
     const request: GenerateRequest = { model: "m", messages: reloaded(), numCtx: 4096 };
     for await (const _ of provider.complete(request)) {
-      // drain
     }
     mock.stop();
 

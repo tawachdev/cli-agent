@@ -930,7 +930,6 @@ export class Tui {
     this.refresh();
   }
 
-  // refresh provider data in place — never steals focus from the chat prompt
   updateProviders(providers: ProviderEntry[]): void {
     this.providers = providers;
     if (this.openProvider) {
@@ -1333,10 +1332,6 @@ export class Tui {
   }
 
   private imageBoxFor(image: LoadedImage): { cells: number; rows: number } {
-    // Scale the box with the terminal instead of capping it at a fixed size.
-    // A pasted image must not crowd out the chat on a small window, and must
-    // stay recognisable on a large one: roughly a third of the width and a
-    // fifth of the height, with hard bounds either side.
     const cells = Math.max(4, Math.min(40, Math.floor(this.usable * 0.33), this.innerWidth() - 6));
     const rowCap = Math.max(3, Math.min(10, Math.floor(this.rows * 0.22)));
     let rows = Math.min(rowCap, 6);

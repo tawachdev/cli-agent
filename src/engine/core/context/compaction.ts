@@ -41,8 +41,6 @@ export function historyTokenBudget(numCtx: number): number {
   return Math.floor(numCtx * 0.7);
 }
 
-// A kept tail may not start with tool results whose assistant tool_calls turn was
-// dropped — providers reject histories where a tool result has no matching call.
 function trimOrphanedToolResults(messages: ChatMessage[]): ChatMessage[] {
   let start = 0;
   while (start < messages.length && messages[start]!.role === "tool") {
