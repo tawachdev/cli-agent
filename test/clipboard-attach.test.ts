@@ -203,9 +203,14 @@ describe("inline images are responsive to terminal resizes", () => {
     tty.rows = 36;
     tui.refresh();
     const w3 = widths().at(-1)!;
+    tty.columns = 100;
+    tty.rows = 30;
+    tui.refresh();
+    const w4 = widths().at(-1)!;
     expect(w2).toBeLessThan(w1);
     expect(w3).toBeGreaterThan(w2);
-    expect(w3).toBe(w1);
+    expect(w3).toBeGreaterThan(w1);
+    expect(w4).toBe(w1);
     rmSync(dir, { recursive: true, force: true });
   });
 });

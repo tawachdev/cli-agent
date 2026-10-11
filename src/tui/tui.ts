@@ -1329,9 +1329,13 @@ export class Tui {
   }
 
   private imageBoxFor(image: LoadedImage): { cells: number; rows: number } {
-    const cells = Math.max(8, Math.min(24, Math.floor(this.innerWidth() * 0.4)));
-    const rowCap = Math.max(3, Math.min(8, this.rows - 10));
-    let rows = 6;
+    // Scale the box with the terminal instead of capping it at a fixed size.
+    // A pasted image must not crowd out the chat on a small window, and must
+    // stay recognisable on a large one: roughly a third of the width and a
+    // fifth of the height, with hard bounds either side.
+    const cells = Math.max(10, Math.min(40, Math.floor(this.usable * 0.33)));
+    const rowCap = Math.max(3, Math.min(10, Math.floor(this.rows * 0.22)));
+    let rows = Math.min(rowCap, 6);
     if (image.width !== null && image.height !== null && image.width > 0) {
       rows = Math.max(2, Math.min(rowCap, Math.ceil((cells * 2 * image.height) / image.width)));
     }
