@@ -471,7 +471,8 @@ export class Tui {
   }
 
   private boxTextCol(): number {
-    return this.boxLead().length + 4;
+    const indent = 2;
+    return this.boxLead().length + 4 + indent;
   }
 
   private nestedWidth(): number {
