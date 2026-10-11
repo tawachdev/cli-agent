@@ -1,6 +1,6 @@
 {
   "name": "@mohamed-taaouch/darwin-x64",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "mimon CLI binary for darwin-x64",
   "license": "MIT",
   "os": [
