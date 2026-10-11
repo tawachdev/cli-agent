@@ -1329,8 +1329,8 @@ export class Tui {
   }
 
   private imageBoxFor(image: LoadedImage): { cells: number; rows: number } {
-    const cells = Math.max(10, Math.min(this.innerWidth(), Math.floor(this.innerWidth() * 0.6)));
-    const rowCap = Math.max(3, Math.min(16, this.rows - 12));
+    const cells = Math.max(8, Math.min(24, Math.floor(this.innerWidth() * 0.4)));
+    const rowCap = Math.max(3, Math.min(8, this.rows - 10));
     let rows = 6;
     if (image.width !== null && image.height !== null && image.width > 0) {
       rows = Math.max(2, Math.min(rowCap, Math.ceil((cells * 2 * image.height) / image.width)));
