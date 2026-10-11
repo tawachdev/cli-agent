@@ -460,6 +460,10 @@ export class Tui {
     return (bare ? "" : this.boxLead()) + C.dim + "│" + C.reset + "  " + out + " ".repeat(pad) + "  " + C.dim + "│" + C.reset;
   }
 
+  private boxTextCol(): number {
+    return this.boxLead().length + 4;
+  }
+
   private nestedWidth(): number {
     return Math.max(12, this.innerWidth() - 8);
   }
@@ -813,7 +817,7 @@ export class Tui {
         if (prev[i] === view[i]) continue;
         parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
         const rowPayload = this.inlinePayloadAt(view[i]!);
-        if (rowPayload) parts.push("\x1b[" + (i + 1) + ";3H" + rowPayload);
+        if (rowPayload) parts.push("\x1b[" + (i + 1) + ";" + this.boxTextCol() + "H" + rowPayload);
       }
     } else {
       for (let i = 0; i < view.length; i++) {
@@ -823,7 +827,7 @@ export class Tui {
       for (const block of this.imageFeed) {
         const row = block.start - dropped;
         if (row >= 0 && row < view.length) {
-          parts.push("\x1b[" + (row + 1) + ";3H" + block.payload);
+          parts.push("\x1b[" + (row + 1) + ";" + this.boxTextCol() + "H" + block.payload);
         }
       }
     }
@@ -1333,7 +1337,7 @@ export class Tui {
     // A pasted image must not crowd out the chat on a small window, and must
     // stay recognisable on a large one: roughly a third of the width and a
     // fifth of the height, with hard bounds either side.
-    const cells = Math.max(10, Math.min(40, Math.floor(this.usable * 0.33)));
+    const cells = Math.max(4, Math.min(40, Math.floor(this.usable * 0.33), this.innerWidth() - 6));
     const rowCap = Math.max(3, Math.min(10, Math.floor(this.rows * 0.22)));
     let rows = Math.min(rowCap, 6);
     if (image.width !== null && image.height !== null && image.width > 0) {
