@@ -327,6 +327,16 @@ const defaultOpenImage = (image: LoadedImage): void => {
   } catch {}
 };
 
+type ImageFeedBlock = {
+  path: string;
+  token: string;
+  payload: string;
+  rows: number;
+  start: number;
+  afterLines: number;
+  image: LoadedImage;
+};
+
 export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
@@ -377,7 +387,7 @@ export class Tui {
   private ownedUploads = new Set<string>();
   private inlinePayloads = new Map<string, string>();
   private inlineSeq = 0;
-  private imageFeed: Array<{ path: string; token: string; payload: string; rows: number; start: number; image: LoadedImage }> = [];
+  private imageFeed: ImageFeedBlock[] = [];
   private history: string[] = [];
   private workingLine = "";
   private chatLines: string[] = [];
@@ -652,7 +662,33 @@ export class Tui {
     return " ".repeat(lead) + content;
   }
 
+  private chatStream(inner: number): Array<string | ImageFeedBlock> {
+    const stream: Array<string | ImageFeedBlock> = [];
+    const placed = new Set<ImageFeedBlock>();
+    for (const block of this.imageFeed) {
+      if (block.afterLines <= 0) {
+        stream.push(block);
+        placed.add(block);
+      }
+    }
+    for (let i = 0; i < this.chatLines.length; i++) {
+      for (const row of wrap(this.chatLines[i]!, inner)) stream.push(row);
+      for (const block of this.imageFeed) {
+        if (placed.has(block) || block.afterLines !== i + 1) continue;
+        stream.push(block);
+        placed.add(block);
+      }
+    }
+    for (const block of this.imageFeed) {
+      if (placed.has(block)) continue;
+      stream.push(block);
+      placed.add(block);
+    }
+    return stream;
+  }
+
   private buildLines(): string[] {
+    for (const block of this.imageFeed) block.start = -1;
     if (this.view === "permission") {
       const lines = [
         "  " + C.inverse + C.gold + C.bold + " ⛨ PERMISSION " + C.reset + C.dim + " approve to continue" + C.reset,
@@ -702,21 +738,24 @@ export class Tui {
       }
       const inner = Math.max(10, this.innerWidth() - 6);
       const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
-      const imageRows = this.imageFeed.reduce((n, block) => n + block.rows, 0);
       const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0) + menu.length + overlay.length;
-      const budget = Math.max(1, this.rows - footerLines - fixedCount - imageRows);
-      const visuals: string[] = [];
-      for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < budget; i--) {
-        const wrapped = wrap(this.chatLines[i]!, inner);
-        for (let j = wrapped.length - 1; j >= 0 && visuals.length < budget; j--) {
-          visuals.unshift(wrapped[j]!);
-        }
+      const budget = Math.max(1, this.rows - footerLines - fixedCount);
+      const stream = this.chatStream(inner);
+      const rowsOf = (slot: string | ImageFeedBlock): number => (typeof slot === "string" ? 1 : slot.rows);
+      let oldest = 0;
+      let total = stream.reduce((n, slot) => n + rowsOf(slot), 0);
+      while (total > budget && oldest < stream.length) {
+        total -= rowsOf(stream[oldest]!);
+        oldest += 1;
       }
-      for (const visual of visuals) lines.push(this.boxLine("  " + visual));
-      for (const block of this.imageFeed) {
-        block.start = lines.length;
-        lines.push(this.boxLine(block.token));
-        for (let pad = 1; pad < block.rows; pad++) lines.push(this.boxLine(""));
+      for (const slot of stream.slice(oldest)) {
+        if (typeof slot === "string") {
+          lines.push(this.boxLine("  " + slot));
+          continue;
+        }
+        slot.start = lines.length;
+        lines.push(this.boxLine(slot.token));
+        for (let pad = 1; pad < slot.rows; pad++) lines.push(this.boxLine(""));
       }
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
       for (const pending of this.pendingImages) {
@@ -1327,7 +1366,7 @@ export class Tui {
       ? itermImagePayload(image, cells, rows)
       : kittyImagePayload(image, cells, rows);
     this.inlinePayloads.set(token, payload);
-    this.imageFeed.push({ path: image.path, token, payload, rows, start: -1, image });
+    this.imageFeed.push({ path: image.path, token, payload, rows, start: -1, afterLines: this.chatLines.length, image });
     this.refresh();
   }
 
