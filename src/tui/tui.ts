@@ -4,7 +4,9 @@ import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, vali
 import { existsSync, rmSync } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
 import { spawn } from "node:child_process";
-import { fallbackPanel, imageChipName, imageSupport, itermImagePayload, kittyImagePayload, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
+import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type LoadedImage, type LocatedImage } from "./images";
+import { ImageLayer, type ImageLayerOptions, type Placement } from "./image-layer";
+import type { Thumb } from "./thumbs";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -21,6 +23,23 @@ export interface Tty {
 const WIDE_CHAR = /[\u1100-\u115F\u2329\u232A\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF01-\uFF60\uFFE0-\uFFE6\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F7E0}-\u{1F7EB}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{20000}-\u{2FFFD}\u{30000}-\u{3FFFD}]/u;
 const ZERO_WIDTH = /[\p{M}\u200B\u200C\u200D\u2060\uFEFF\x00]/u;
 const PASTE_INPUT_CAP = 4096;
+// chat entries that stand for an image block rather than a line of text
+const IMAGE_ENTRY = "\u0000image:";
+// image boxes, in terminal cells
+const TRAY_GAP = 2;
+const TRAY_TILE_MIN_COLS = 6;
+const TRAY_TILE_MAX_COLS = 20;
+const TRANSCRIPT_IMAGE_COLS = 44;
+const TRANSCRIPT_IMAGE_ROWS = 14;
+
+// Thumbnail height in the composer tray; 0 means the screen is too short — names only.
+function trayRowsFor(screenRows: number): number {
+  if (screenRows >= 34) return 6;
+  if (screenRows >= 26) return 5;
+  if (screenRows >= 20) return 4;
+  if (screenRows >= 16) return 3;
+  return 0;
+}
 
 function charWidth(ch: string): number {
   if (ZERO_WIDTH.test(ch)) return 0;
@@ -310,11 +329,20 @@ export interface TuiHooks {
   onAddProvider(name: string, baseUrl: string, models: string[]): void;
 }
 
-export interface TuiOptions {
+export interface TuiOptions extends ImageLayerOptions {
   clipboardSave?: (destDir: string) => Promise<string | null>;
   openImage?: (image: LoadedImage) => void;
-  imageSupport?: ImageSupport;
 }
+
+interface Attachment {
+  path: string;
+  name: string;
+  image: LoadedImage | null;
+  thumb: Thumb | null;
+  loading: Promise<void> | null;
+}
+
+
 
 const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
 
@@ -323,6 +351,7 @@ const defaultOpenImage = (image: LoadedImage): void => {
   if (!tool || !existsSync(image.path)) return;
   try {
     const child = spawn(tool, [image.path], { stdio: "ignore", detached: true });
+    child.on("error", () => {});
     child.unref();
   } catch {}
 };
@@ -371,13 +400,15 @@ export class Tui {
   private addFields: [string, string, string] = ["", "", ""];
   private addFieldIndex = 0;
   private addError = "";
-  private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null; preview: string[] }> = [];
+  private pendingImages: Attachment[] = [];
   private pendingPaths = new Set<string>();
   private recovering = new Set<string>();
   private ownedUploads = new Set<string>();
-  private inlinePayloads = new Map<string, string>();
-  private inlineSeq = 0;
-  private imageFeed: Array<{ path: string; token: string; payload: string; rows: number; start: number; image: LoadedImage }> = [];
+  private readonly images: ImageLayer;
+  private chatImages = new Map<string, { image: LoadedImage; thumb: Thumb | null }>();
+  private chatImageSeq = 0;
+  private framePlacements: Placement[] = [];
+  private attachJobs = new Set<Promise<void>>();
   private history: string[] = [];
   private workingLine = "";
   private chatLines: string[] = [];
@@ -403,7 +434,9 @@ export class Tui {
     private readonly tty: Tty,
     private readonly hooks: TuiHooks,
     private readonly options: TuiOptions = {},
-  ) {}
+  ) {
+    this.images = new ImageLayer(options);
+  }
 
   private get cols(): number {
     return this.tty.columns > 0 ? this.tty.columns : 40;
@@ -495,7 +528,10 @@ export class Tui {
       return C.dim + trunc("▌ working — esc to stop", maxText) + C.reset;
     }
     if (this.input === "") {
-      return C.dim + trunc('Ask anything… "fix the flaky test in auth"', maxText) + C.reset;
+      const hint = this.pendingImages.length > 0
+        ? "Say what to do with " + (this.pendingImages.length > 1 ? "these images" : "this image") + "… enter sends · esc removes"
+        : 'Ask anything… "fix the flaky test in auth"';
+      return C.dim + trunc(hint, maxText) + C.reset;
     }
     const before = trunc(this.input.slice(0, this.cursor), maxText);
     const restBudget = Math.max(0, maxText - before.length);
@@ -505,7 +541,7 @@ export class Tui {
 
   private renderStatus(): string {
     const label = trunc(this.tier.label, Math.max(3, Math.min(9, this.innerWidth() - 3)));
-    const images = this.pendingImages.length > 0 ? " · ▤" + this.pendingImages.length : "";
+    const images = this.pendingImages.length > 0 ? " · ▤" + this.pendingImages.length + " attached" : "";
     const meta = trunc(this.statusExtra + " · ctx " + this.ctxPct + "% · s " + this.sessionShort + images, Math.max(0, this.innerWidth() - 7 - label.length));
     return C.teal + "●" + C.reset + " " + C.bold + C.cream + label + C.reset + C.dim + meta + C.reset;
   }
@@ -655,6 +691,7 @@ export class Tui {
         this.bar() + C.gold + C.bold + "a" + C.reset + C.dim + " once  " + C.reset + C.gold + C.bold + "v" + C.reset + C.dim + " session  " + C.reset + C.gold + C.bold + "n" + C.reset + C.dim + " deny · esc denies" + C.reset,
       ];
       this.inputRow = lines.length - 1;
+      this.framePlacements = [];
       return lines;
     }
     const menu = this.view === "picker" ? [] : this.renderMenu();
@@ -675,6 +712,8 @@ export class Tui {
       : this.view === "modelPick" ? this.modelPickLines()
       : [];
     const lines: string[] = [];
+    const placements: Placement[] = [];
+    this.framePlacements = placements;
     let minimal = true;
     let bannerArt = false;
     let tight = false;
@@ -698,28 +737,40 @@ export class Tui {
       }
       const inner = Math.max(10, this.innerWidth() - 6);
       const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
-      const imageRows = this.imageFeed.reduce((n, block) => n + block.rows, 0);
-      const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0) + menu.length + overlay.length;
-      const budget = Math.max(1, this.rows - footerLines - fixedCount - imageRows);
-      const visuals: string[] = [];
+      const tray = this.trayBlock();
+      const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0) + menu.length + overlay.length + tray.lines.length;
+      const budget = Math.max(1, this.rows - footerLines - fixedCount);
+      const contentCol = this.boxLead().length + 3;
+      const imageCols = Math.max(8, Math.min(inner - 2, TRANSCRIPT_IMAGE_COLS));
+      const imageRows = Math.max(3, Math.min(TRANSCRIPT_IMAGE_ROWS, Math.floor(this.rows * 0.4)));
+      const visuals: Array<{ text: string; place?: Omit<Placement, "row"> }> = [];
       for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < budget; i--) {
-        const wrapped = wrap(this.chatLines[i]!, inner);
+        const entry = this.chatLines[i]!;
+        if (entry.startsWith(IMAGE_ENTRY)) {
+          const id = entry.slice(IMAGE_ENTRY.length);
+          const shown = this.chatImages.get(id);
+          if (!shown) continue;
+          let block = this.images.captioned(shown.image, shown.thumb, imageCols, imageRows);
+          // never slice an image in half at the top edge — collapse it to its caption
+          if (visuals.length + block.lines.length > budget) block = { lines: block.lines.slice(0, 1), box: null };
+          for (let j = block.lines.length - 1; j >= 0 && visuals.length < budget; j--) {
+            const box = block.box;
+            visuals.unshift(box && j === box.line && shown.thumb
+              ? { text: block.lines[j]!, place: { slot: "chat:" + id, thumb: shown.thumb, name: shown.image.name, col: contentCol + 2 + box.col, cols: box.cols, rows: box.rows } }
+              : { text: block.lines[j]! });
+          }
+          continue;
+        }
+        const wrapped = wrap(entry, inner);
         for (let j = wrapped.length - 1; j >= 0 && visuals.length < budget; j--) {
-          visuals.unshift(wrapped[j]!);
+          visuals.unshift({ text: wrapped[j]! });
         }
       }
-      for (const visual of visuals) lines.push(this.boxLine("  " + visual));
-      for (const block of this.imageFeed) {
-        block.start = lines.length;
-        lines.push(this.boxLine(block.token));
-        for (let pad = 1; pad < block.rows; pad++) lines.push(this.boxLine(""));
+      for (const visual of visuals) {
+        if (visual.place) placements.push({ ...visual.place, row: lines.length });
+        lines.push(this.boxLine("  " + visual.text));
       }
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
-      for (const pending of this.pendingImages) {
-        if (pending.preview.length === 0 && !pending.image) continue;
-        lines.push(this.boxLine("  " + C.teal + "▤ " + C.reset + C.bold + pending.name + C.reset + C.dim + "  attached — sent with your next message" + C.reset));
-        for (const row of pending.preview) lines.push(this.boxLine(row));
-      }
       const contentBudget = Math.max(4, this.innerWidth() - 4);
       const blockLead = (block: string[]): string => {
         const wide = Math.max(0, ...block.map((l) => visibleLen(l)));
@@ -735,6 +786,12 @@ export class Tui {
       }
       lines.push(this.boxLine(""));
       lines.push(C.dim + this.boxLead() + "├" + "─".repeat(this.innerWidth() + 2) + "┤" + C.reset);
+      tray.lines.forEach((trayLine, i) => {
+        for (const place of tray.places) {
+          if (place.line === i) placements.push({ ...place.placement, row: lines.length, col: contentCol + place.placement.col });
+        }
+        lines.push(this.boxLine(trayLine));
+      });
       this.inputRow = lines.length;
       lines.push(this.boxLine(this.renderInput()));
       lines.push(this.boxLine(this.renderStatus()));
@@ -742,7 +799,8 @@ export class Tui {
     } else {
       const bannerRows = this.bannerActive && this.rows >= 7 ? (this.usable >= 14 ? 2 : 1) : 0;
       const chrome = 1 + (this.usable >= 16 && this.rows >= 5 ? 1 : 0);
-      const chatBudget = Math.max(0, this.rows - bannerRows - chrome - menu.length - overlay.length - 1);
+      const trayChip = this.pendingImages.length > 0 ? 1 : 0;
+      const chatBudget = Math.max(0, this.rows - bannerRows - chrome - menu.length - overlay.length - trayChip - 1);
       if (this.bannerActive && bannerRows > 0) {
         if (this.usable >= 14) {
           lines.push(C.teal + C.bold + "✦ " + brandName() + C.reset + C.dim + "  v" + this.bannerVersion + C.reset);
@@ -755,7 +813,13 @@ export class Tui {
         const inner = Math.max(8, this.usable - 1);
         const visuals: string[] = [];
         for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < chatBudget; i--) {
-          const wrapped = wrap(this.chatLines[i]!, inner);
+          const entry = this.chatLines[i]!;
+          if (entry.startsWith(IMAGE_ENTRY)) {
+            const shown = this.chatImages.get(entry.slice(IMAGE_ENTRY.length));
+            if (shown) visuals.unshift(C.teal + "▤ " + C.reset + shown.image.name);
+            continue;
+          }
+          const wrapped = wrap(entry, inner);
           for (let j = wrapped.length - 1; j >= 0 && visuals.length < chatBudget; j--) {
             visuals.unshift(wrapped[j]!);
           }
@@ -763,6 +827,9 @@ export class Tui {
         for (const visual of visuals) lines.push(plainClip(visual, this.usable - 1));
       }
       for (const flyLine of [...menu, ...overlay]) lines.push(flyLine);
+      if (this.pendingImages.length > 0) {
+        lines.push(C.teal + "▤ " + C.reset + plainClip(this.pendingImages.map((p) => p.name).join(" · "), Math.max(4, this.usable - 3)));
+      }
       this.inputRow = lines.length;
       lines.push(this.bar() + this.renderInput());
       if (this.usable >= 16 && this.rows >= 5) lines.push(this.renderStatus());
@@ -778,6 +845,7 @@ export class Tui {
       const above = pad;
       for (let i = 0; i < above; i++) body.unshift("");
       this.inputRow += above;
+      for (const placement of placements) placement.row += above;
       return [...body, ...foot];
     }
     return lines;
@@ -788,44 +856,38 @@ export class Tui {
     const rowsNow = this.tty.rows > 0 ? this.tty.rows : 24;
     if (this.lastCols > 0 && (cols !== this.lastCols || rowsNow !== this.lastRows)) {
       this.tty.write("\x1b[2J\x1b[3J");
-      this.relayoutImages();
       this.lastLines = [];
     }
     this.lastCols = cols;
     this.lastRows = rowsNow;
     const frame = this.buildLines();
-    let dropped = Math.max(0, frame.length - rowsNow);
-    for (const block of this.imageFeed) {
-      while (block.start >= 0 && block.start < dropped && dropped < block.start + block.rows) {
-        dropped = block.start + block.rows;
-      }
-    }
+    const dropped = Math.max(0, frame.length - rowsNow);
     const budget = Math.max(8, cols - 1);
     const view = frame.slice(dropped).map((line) => (visibleLen(line) <= budget ? line : C.reset + plainClip(line, budget)));
     const inputRow = Math.max(0, Math.min(this.inputRow - dropped, view.length - 1));
     const cursorCol = Math.max(0, Math.min(this.cursorCol, cols - 1));
+    // only images whose whole box is on screen get drawn; the rest stay blank cells
+    const placements = this.framePlacements
+      .map((p) => ({ ...p, row: p.row - dropped }))
+      .filter((p) => p.row >= 0 && p.row + p.rows <= view.length && p.col + p.cols <= budget);
     const prev = this.lastLines;
     const parts: string[] = ["\x1b[H"];
-    let fullDraw = true;
-    if (prev.length > 0 && prev.length === view.length) {
-      fullDraw = false;
+    if (prev.length > 0 && prev.length === view.length && this.images.unchanged(placements)) {
+      const rewritten = new Set<number>();
       for (let i = 0; i < view.length; i++) {
         if (prev[i] === view[i]) continue;
         parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
-        const rowPayload = this.inlinePayloadAt(view[i]!);
-        if (rowPayload) parts.push("\x1b[" + (i + 1) + ";3H" + rowPayload);
+        rewritten.add(i);
       }
+      parts.push(this.images.paint(placements, rewritten));
     } else {
+      // an image moved or the frame was rebuilt: wipe stale pixels before drawing
+      parts.push(this.images.wipe());
       for (let i = 0; i < view.length; i++) {
         parts.push(view[i]! + "\x1b[K" + (i < view.length - 1 ? "\r\n" : ""));
       }
       parts.push("\x1b[J");
-      for (const block of this.imageFeed) {
-        const row = block.start - dropped;
-        if (row >= 0 && row < view.length) {
-          parts.push("\x1b[" + (row + 1) + ";3H" + block.payload);
-        }
-      }
+      parts.push(this.images.paint(placements));
     }
     parts.push("\x1b[" + (inputRow + 1) + ";" + (cursorCol + 1) + "H");
     this.tty.write(parts.join(""));
@@ -856,9 +918,15 @@ export class Tui {
 
   hide(): void {
     if (!this.shown) return;
-    this.tty.write("\x1b[H\x1b[2J");
+    this.tty.write(this.images.wipe() + "\x1b[H\x1b[2J");
     this.shown = false;
     this.lastLines = [];
+  }
+
+  // Drop every image we handed the terminal; call before leaving the alt screen.
+  dispose(): void {
+    const out = this.images.dispose();
+    if (out) this.tty.write(out);
   }
 
   notice(msg: string): void {
@@ -1257,10 +1325,14 @@ export class Tui {
       return;
     }
     if (this.looksLikeBase64Image(text)) {
-      void this.attachClipboardImage();
+      this.track(this.attachClipboardImage());
       return;
     }
     for (const ch of text) this.applyPasteChar(ch);
+    if (this.pendingImages.length > 0 && this.input.trim() === "") {
+      this.input = "";
+      this.cursor = 0;
+    }
     this.refresh();
   }
 
@@ -1280,7 +1352,7 @@ export class Tui {
       }
       if (this.pendingPaths.has(saved)) return;
       this.pendingPaths.add(saved);
-      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, preview: [] });
+      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, thumb: null, loading: null });
       await this.loadPending(saved);
     } finally {
       this.recovering.delete("clipboard");
@@ -1292,7 +1364,7 @@ export class Tui {
     for (const hit of located.reverse()) {
       if (this.pendingPaths.has(hit.path)) continue;
       if (!existsSync(hit.path)) {
-        void this.recoverPastedImage(hit);
+        this.track(this.recoverPastedImage(hit));
         continue;
       }
       if (this.pendingImages.length >= MAX_IMAGES) {
@@ -1303,75 +1375,110 @@ export class Tui {
       this.input = this.input.slice(0, hit.start) + this.input.slice(hit.end);
       this.cursor = Math.min(this.cursor, this.input.length);
       this.pendingPaths.add(hit.path);
-      this.pendingImages.push({ path: hit.path, name: imageChipName(hit.path), image: null, preview: [] });
+      this.pendingImages.push({ path: hit.path, name: imageChipName(hit.path), image: null, thumb: null, loading: null });
       void this.loadPending(hit.path);
+    }
+    // a path pasted on its own leaves only whitespace behind — give the prompt back
+    if (located.length > 0 && this.pendingImages.length > 0 && this.input.trim() === "") {
+      this.input = "";
+      this.cursor = 0;
     }
     if (located.length > 0) this.refresh();
   }
 
-  openImage(image: LoadedImage): void {
-    const support = this.options.imageSupport ?? imageSupport();
-    if (support === "none") {
-      const opener = this.options.openImage ?? defaultOpenImage;
-      opener(image);
+  // The composer tray: attached images wait here, above the input, until the
+  // message is sent — so the user can explain what the model should do with them.
+  private trayBlock(): { lines: string[]; places: Array<{ line: number; placement: Omit<Placement, "row"> }> } {
+    const count = this.pendingImages.length;
+    if (count === 0) return { lines: [], places: [] };
+    const budget = Math.max(4, this.innerWidth() - 4);
+    const gap = " ".repeat(TRAY_GAP);
+    const tileCols = Math.max(TRAY_TILE_MIN_COLS, Math.min(TRAY_TILE_MAX_COLS, Math.floor((budget - TRAY_GAP * (count - 1)) / count)));
+    const maxRows = trayRowsFor(this.rows);
+    const pad = (text: string, width: number): string => plainClip(text, width) + " ".repeat(Math.max(0, width - visibleLen(text)));
+    const caption = (att: Attachment, width: number): string => C.teal + "▤ " + C.reset + C.cream + trunc(att.name, Math.max(1, width - 2)) + C.reset;
+    if (maxRows === 0 || tileCols * count + TRAY_GAP * (count - 1) > budget) {
+      return { lines: [this.pendingImages.map((att) => caption(att, 24)).join(gap)], places: [] };
+    }
+    const tiles = this.pendingImages.map((att) => ({ att, cells: this.images.cells(att.image, att.thumb, tileCols, maxRows) }));
+    const height = Math.max(1, ...tiles.map((tile) => tile.cells.lines.length));
+    const lines: string[] = [];
+    for (let r = 0; r < height; r++) {
+      lines.push(tiles.map((tile) => pad(tile.cells.lines[r] ?? "", tileCols)).join(gap));
+    }
+    lines.push(tiles.map((tile) => pad(caption(tile.att, tileCols), tileCols)).join(gap));
+    const places = tiles.flatMap(({ att, cells }, i) => {
+      if (!cells.box || !att.thumb) return [];
+      const col = i * (tileCols + TRAY_GAP) + cells.box.col;
+      return [{ line: cells.box.line, placement: { slot: "tray:" + att.path, thumb: att.thumb, name: att.name, col, cols: cells.box.cols, rows: cells.box.rows } }];
+    });
+    return { lines, places };
+  }
+
+  // Put a sent image into the transcript, right under the message that carried it.
+  showImage(image: LoadedImage): void {
+    const id = String(++this.chatImageSeq);
+    const cached = this.images.thumbFor(image);
+    const shown = { image, thumb: cached.ready };
+    this.chatImages.set(id, shown);
+    this.chatLines.push(IMAGE_ENTRY + id);
+    this.chatStreamOpen = false;
+    this.refresh();
+    if (!shown.thumb) {
+      void cached.promise.then((thumb) => {
+        shown.thumb = thumb;
+        this.refresh();
+      });
+    }
+  }
+
+  // ctrl+o: open the attached images (or the last one sent) in the system viewer.
+  openInViewer(): void {
+    const opener = this.options.openImage ?? defaultOpenImage;
+    const staged = this.pendingImages.flatMap((p) => (p.image ? [p.image] : []));
+    if (staged.length > 0) {
+      for (const image of staged) opener(image);
       return;
     }
-    if (this.imageFeed.some((block) => block.path === image.path)) return;
-    const { cells, rows } = this.imageBoxFor(image);
-    const id = ++this.inlineSeq;
-    const token = "\x00".repeat(6 + id);
-    const payload = support === "iterm"
-      ? itermImagePayload(image, cells, rows)
-      : kittyImagePayload(image, cells, rows);
-    this.inlinePayloads.set(token, payload);
-    this.imageFeed.push({ path: image.path, token, payload, rows, start: -1, image });
-    this.refresh();
+    const last = [...this.chatImages.values()].at(-1);
+    if (last) opener(last.image);
   }
 
-  private imageBoxFor(image: LoadedImage): { cells: number; rows: number } {
-    const cells = Math.max(8, Math.min(24, Math.floor(this.innerWidth() * 0.4)));
-    const rowCap = Math.max(3, Math.min(8, this.rows - 10));
-    let rows = 6;
-    if (image.width !== null && image.height !== null && image.width > 0) {
-      rows = Math.max(2, Math.min(rowCap, Math.ceil((cells * 2 * image.height) / image.width)));
-    }
-    return { cells, rows };
+  private track(job: Promise<void>): void {
+    this.attachJobs.add(job);
+    void job.finally(() => this.attachJobs.delete(job));
   }
 
-  private relayoutImages(): void {
-    if (this.imageFeed.length === 0) return;
-    const support = this.options.imageSupport ?? imageSupport();
-    if (support === "none") return;
-    for (const block of this.imageFeed) {
-      const { cells, rows } = this.imageBoxFor(block.image);
-      block.rows = rows;
-      block.payload = support === "iterm"
-        ? itermImagePayload(block.image, cells, rows)
-        : kittyImagePayload(block.image, cells, rows);
-      this.inlinePayloads.set(block.token, block.payload);
-    }
+  // Enter can land while a drop or clipboard paste is still being read; wait for it
+  // so the image goes out with the message instead of being silently dropped.
+  async settleAttachments(): Promise<void> {
+    await Promise.all([...this.attachJobs]);
+    await Promise.all(this.pendingImages.map((p) => p.loading ?? Promise.resolve()));
   }
 
-  private inlinePayloadAt(line: string): string | null {
-    for (const [token, payload] of this.inlinePayloads) {
-      if (line.includes(token)) return payload;
-    }
-    return null;
-  }
-
-  private async loadPending(path: string): Promise<void> {
-    const { images, errors } = await loadImagesFromPaths([path]);
+  private loadPending(path: string): Promise<void> {
+    const job = (async () => {
+      const { images, errors } = await loadImagesFromPaths([path]);
+      const entry = this.pendingImages.find((p) => p.path === path);
+      if (!entry) return;
+      if (images[0]) {
+        entry.image = images[0]!;
+        const cached = this.images.thumbFor(entry.image);
+        entry.thumb = cached.ready;
+        this.refresh();
+        if (!entry.thumb) {
+          entry.thumb = await cached.promise;
+          this.refresh();
+        }
+      } else if (errors[0]) {
+        this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
+        this.pendingPaths.delete(path);
+        this.notice("✘ " + errors[0]!);
+      }
+    })();
     const entry = this.pendingImages.find((p) => p.path === path);
-    if (entry && images[0]) {
-      entry.image = images[0]!;
-      entry.preview = [];
-      this.refresh();
-      this.openImage(images[0]!);
-    } else if (entry && errors[0]) {
-      this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
-      this.pendingPaths.delete(path);
-      this.notice("✘ " + errors[0]!);
-    }
+    if (entry) entry.loading = job;
+    return job;
   }
 
   private async recoverPastedImage(hit: LocatedImage): Promise<void> {
@@ -1392,10 +1499,11 @@ export class Tui {
         return;
       }
       this.input = this.input.slice(0, current.start) + this.input.slice(current.end);
+      if (this.input.trim() === "") this.input = "";
       this.cursor = Math.min(this.cursor, this.input.length);
       this.pendingPaths.add(saved);
       this.ownedUploads.add(saved);
-      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, preview: [] });
+      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, thumb: null, loading: null });
       await this.loadPending(saved);
     } finally {
       this.recovering.delete(hit.path);
@@ -2007,8 +2115,14 @@ export class Tui {
         if (this.cursor > 0) {
           this.input = this.input.slice(0, this.cursor - 1) + this.input.slice(this.cursor);
           this.cursor -= 1;
+        } else if (this.input === "" && this.pendingImages.length > 0) {
+          const removed = this.pendingImages.pop()!;
+          this.pendingPaths.delete(removed.path);
         }
         break;
+      case "ctrl-o":
+        this.openInViewer();
+        return;
       case "delete":
         this.input = this.input.slice(0, this.cursor) + this.input.slice(this.cursor + 1);
         break;
