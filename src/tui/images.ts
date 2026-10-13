@@ -3,10 +3,11 @@ import { existsSync } from "node:fs";
 import { imageDims, sniffImageMime, type ImageMime } from "../shared/images";
 import { C, type Tty } from "./tui";
 import { decodePng } from "./png";
-import { colorDepth, fitCells, halfBlockLines, type ColorDepth } from "./thumbs";
+import { colorDepth, halfBlockLines, type ColorDepth } from "./halfblock";
+import { itermImage, kittyShow } from "./protocols";
+import { fitCells } from "./thumbs";
 
 const IMAGE_EXT_RE = /(?:[^\s\\]|\\.)+\.(?:png|jpe?g|gif|webp|bmp)/gi;
-const KITTY_CHUNK = 4096;
 
 export const MAX_IMAGES = 4;
 export const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
@@ -138,35 +139,13 @@ export function imageSupport(env: Record<string, string | undefined> = process.e
   return "none";
 }
 
+// Scrollback renderer payloads (one-shot mode): the cursor moves past the image.
 export function itermImagePayload(image: LoadedImage, widthCells: number, heightRows: number): string {
-  const name = Buffer.from(image.name).toString("base64");
-  return (
-    "\x1b]1337;File=inline=1;preserveAspectRatio=1;size=" +
-    image.bytes +
-    ";width=" +
-    widthCells +
-    ";height=" +
-    heightRows +
-    ";name=" +
-    name +
-    ":" +
-    image.base64 +
-    "\x07"
-  );
+  return itermImage(image.base64, image.name, widthCells, heightRows, false);
 }
 
-// One-shot transmit-and-display for the scrollback renderer. `c`/`r` size the
-// box in cells — `w`/`h` would crop the source to that many pixels instead.
 export function kittyImagePayload(image: LoadedImage, widthCells: number, heightRows: number): string {
-  const chunks: string[] = [];
-  const geometry = "c=" + widthCells + ",r=" + heightRows + ",";
-  for (let i = 0; i < image.base64.length; i += KITTY_CHUNK) {
-    const last = i + KITTY_CHUNK >= image.base64.length;
-    const control = i === 0 ? "f=100,a=T,q=2," + geometry : "q=2,";
-    chunks.push("\x1b_G" + control + "m=" + (last ? 0 : 1) + ";" + image.base64.slice(i, i + KITTY_CHUNK) + "\x1b\\");
-  }
-  if (chunks.length === 0) chunks.push("\x1b_Gf=100,a=T,q=2," + geometry + "m=0;\x1b\\");
-  return chunks.join("");
+  return kittyShow(image.base64, widthCells, heightRows);
 }
 
 function humanSize(bytes: number): string {

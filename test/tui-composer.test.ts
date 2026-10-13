@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { buildPng } from "./helpers/png";
 import { decodePng } from "../src/tui/png";
 import { loadImagesFromPaths, type ImageSupport } from "../src/tui/images";
-import { downscale, encodePng, fitCells, halfBlockLines, makeThumb } from "../src/tui/thumbs";
+import { halfBlockLines } from "../src/tui/halfblock";
+import { downscale, encodePng, fitCells, makeThumb } from "../src/tui/thumbs";
 import { decodeChunk, Tui, type Tty } from "../src/tui/tui";
 
 class MockTty implements Tty {

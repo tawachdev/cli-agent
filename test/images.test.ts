@@ -166,7 +166,7 @@ describe("terminal image protocols", () => {
     const payload = itermImagePayload(image, 40, 10);
     expect(payload.startsWith("\x1b]1337;File=inline=1;")).toBe(true);
     expect(payload).toContain("preserveAspectRatio=1");
-    expect(payload).toContain("size=1234");
+    expect(payload).toContain("size=" + Buffer.from(PNG_1X1, "base64").length);
     expect(payload).toContain("width=40");
     expect(payload.endsWith("\x07")).toBe(true);
     expect(payload).toContain(":" + PNG_1X1);

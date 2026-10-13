@@ -4,8 +4,9 @@ import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, vali
 import { existsSync, rmSync } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
 import { spawn } from "node:child_process";
-import { imageChipName, imageMeta, imageSupport, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
-import { colorDepth, fitCells, halfBlockLines, itermInline, KITTY_CLEAR_PLACEMENTS, kittyFree, kittyPlace, kittyTransmit, makeThumb, type ColorDepth, type Thumb, type ToPng } from "./thumbs";
+import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type LoadedImage, type LocatedImage } from "./images";
+import { ImageLayer, type ImageLayerOptions, type Placement } from "./image-layer";
+import type { Thumb } from "./thumbs";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -24,6 +25,21 @@ const ZERO_WIDTH = /[\p{M}\u200B\u200C\u200D\u2060\uFEFF\x00]/u;
 const PASTE_INPUT_CAP = 4096;
 // chat entries that stand for an image block rather than a line of text
 const IMAGE_ENTRY = "\u0000image:";
+// image boxes, in terminal cells
+const TRAY_GAP = 2;
+const TRAY_TILE_MIN_COLS = 6;
+const TRAY_TILE_MAX_COLS = 20;
+const TRANSCRIPT_IMAGE_COLS = 44;
+const TRANSCRIPT_IMAGE_ROWS = 14;
+
+// Thumbnail height in the composer tray; 0 means the screen is too short — names only.
+function trayRowsFor(screenRows: number): number {
+  if (screenRows >= 34) return 6;
+  if (screenRows >= 26) return 5;
+  if (screenRows >= 20) return 4;
+  if (screenRows >= 16) return 3;
+  return 0;
+}
 
 function charWidth(ch: string): number {
   if (ZERO_WIDTH.test(ch)) return 0;
@@ -313,12 +329,9 @@ export interface TuiHooks {
   onAddProvider(name: string, baseUrl: string, models: string[]): void;
 }
 
-export interface TuiOptions {
+export interface TuiOptions extends ImageLayerOptions {
   clipboardSave?: (destDir: string) => Promise<string | null>;
   openImage?: (image: LoadedImage) => void;
-  imageSupport?: ImageSupport;
-  colorDepth?: ColorDepth;
-  toPng?: ToPng;
 }
 
 interface Attachment {
@@ -329,21 +342,7 @@ interface Attachment {
   loading: Promise<void> | null;
 }
 
-// An image drawn by the terminal itself (iTerm/kitty) over blank cells of the frame.
-interface Placement {
-  slot: string;
-  thumb: Thumb;
-  name: string;
-  row: number;
-  col: number;
-  cols: number;
-  rows: number;
-}
 
-interface ImageBlock {
-  lines: string[];
-  placement: { row: number; indent: number; cols: number; rows: number } | null;
-}
 
 const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
 
@@ -405,15 +404,10 @@ export class Tui {
   private pendingPaths = new Set<string>();
   private recovering = new Set<string>();
   private ownedUploads = new Set<string>();
-  private thumbs = new Map<string, { ready: Thumb | null; promise: Promise<Thumb | null> }>();
+  private readonly images: ImageLayer;
   private chatImages = new Map<string, { image: LoadedImage; thumb: Thumb | null }>();
   private chatImageSeq = 0;
   private framePlacements: Placement[] = [];
-  private lastPlacementSig = "";
-  private kittySent = new Set<number>();
-  private kittyPlaced = false;
-  private kittySlots = new Map<string, number>();
-  private halfBlocks = new Map<string, string[]>();
   private attachJobs = new Set<Promise<void>>();
   private history: string[] = [];
   private workingLine = "";
@@ -440,7 +434,9 @@ export class Tui {
     private readonly tty: Tty,
     private readonly hooks: TuiHooks,
     private readonly options: TuiOptions = {},
-  ) {}
+  ) {
+    this.images = new ImageLayer(options);
+  }
 
   private get cols(): number {
     return this.tty.columns > 0 ? this.tty.columns : 40;
@@ -745,8 +741,8 @@ export class Tui {
       const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0) + menu.length + overlay.length + tray.lines.length;
       const budget = Math.max(1, this.rows - footerLines - fixedCount);
       const contentCol = this.boxLead().length + 3;
-      const imageCols = Math.max(8, Math.min(inner - 2, 44));
-      const imageRows = Math.max(3, Math.min(14, Math.floor(this.rows * 0.4)));
+      const imageCols = Math.max(8, Math.min(inner - 2, TRANSCRIPT_IMAGE_COLS));
+      const imageRows = Math.max(3, Math.min(TRANSCRIPT_IMAGE_ROWS, Math.floor(this.rows * 0.4)));
       const visuals: Array<{ text: string; place?: Omit<Placement, "row"> }> = [];
       for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < budget; i--) {
         const entry = this.chatLines[i]!;
@@ -754,13 +750,13 @@ export class Tui {
           const id = entry.slice(IMAGE_ENTRY.length);
           const shown = this.chatImages.get(id);
           if (!shown) continue;
-          let block = this.imageBlock(shown.image, shown.thumb, imageCols, imageRows);
+          let block = this.images.captioned(shown.image, shown.thumb, imageCols, imageRows);
           // never slice an image in half at the top edge — collapse it to its caption
-          if (visuals.length + block.lines.length > budget) block = { lines: block.lines.slice(0, 1), placement: null };
+          if (visuals.length + block.lines.length > budget) block = { lines: block.lines.slice(0, 1), box: null };
           for (let j = block.lines.length - 1; j >= 0 && visuals.length < budget; j--) {
-            const at = block.placement;
-            visuals.unshift(at && j === at.row && shown.thumb
-              ? { text: block.lines[j]!, place: { slot: "chat:" + id, thumb: shown.thumb, name: shown.image.name, col: contentCol + 2 + at.indent, cols: at.cols, rows: at.rows } }
+            const box = block.box;
+            visuals.unshift(box && j === box.line && shown.thumb
+              ? { text: block.lines[j]!, place: { slot: "chat:" + id, thumb: shown.thumb, name: shown.image.name, col: contentCol + 2 + box.col, cols: box.cols, rows: box.rows } }
               : { text: block.lines[j]! });
           }
           continue;
@@ -870,59 +866,33 @@ export class Tui {
     const view = frame.slice(dropped).map((line) => (visibleLen(line) <= budget ? line : C.reset + plainClip(line, budget)));
     const inputRow = Math.max(0, Math.min(this.inputRow - dropped, view.length - 1));
     const cursorCol = Math.max(0, Math.min(this.cursorCol, cols - 1));
-    const support = this.imageMode();
     // only images whose whole box is on screen get drawn; the rest stay blank cells
     const placements = this.framePlacements
       .map((p) => ({ ...p, row: p.row - dropped }))
       .filter((p) => p.row >= 0 && p.row + p.rows <= view.length && p.col + p.cols <= budget);
-    const signature = placements.map((p) => p.slot + "@" + p.row + "," + p.col + "," + p.cols + "x" + p.rows).join("|");
-    const placementsMoved = signature !== this.lastPlacementSig;
     const prev = this.lastLines;
     const parts: string[] = ["\x1b[H"];
-    if (prev.length > 0 && prev.length === view.length && !placementsMoved) {
-      const touched = new Set<Placement>();
+    if (prev.length > 0 && prev.length === view.length && this.images.unchanged(placements)) {
+      const rewritten = new Set<number>();
       for (let i = 0; i < view.length; i++) {
         if (prev[i] === view[i]) continue;
         parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
-        // rewriting a row erases the iTerm pixels on it — redraw any image it crossed
-        for (const p of placements) if (i >= p.row && i < p.row + p.rows) touched.add(p);
+        rewritten.add(i);
       }
-      for (const p of touched) parts.push(this.placementPayload(p, support));
+      parts.push(this.images.paint(placements, rewritten));
     } else {
       // an image moved or the frame was rebuilt: wipe stale pixels before drawing
-      if (support === "kitty" && this.kittyPlaced) {
-        parts.push(KITTY_CLEAR_PLACEMENTS);
-        this.kittyPlaced = false;
-      }
+      parts.push(this.images.wipe());
       for (let i = 0; i < view.length; i++) {
         parts.push(view[i]! + "\x1b[K" + (i < view.length - 1 ? "\r\n" : ""));
       }
       parts.push("\x1b[J");
-      for (const p of placements) parts.push(this.placementPayload(p, support));
+      parts.push(this.images.paint(placements));
     }
     parts.push("\x1b[" + (inputRow + 1) + ";" + (cursorCol + 1) + "H");
     this.tty.write(parts.join(""));
     this.lastLines = view;
-    this.lastPlacementSig = signature;
     this.shown = true;
-  }
-
-  private placementPayload(p: Placement, support: ImageSupport): string {
-    const at = "\x1b[" + (p.row + 1) + ";" + (p.col + 1) + "H";
-    if (support === "iterm") return p.thumb.inline ? at + itermInline(p.thumb.inline, p.name, p.cols, p.rows) : "";
-    if (support !== "kitty" || !p.thumb.png) return "";
-    let out = "";
-    if (!this.kittySent.has(p.thumb.id)) {
-      out += kittyTransmit(p.thumb.id, p.thumb.png);
-      this.kittySent.add(p.thumb.id);
-    }
-    let slot = this.kittySlots.get(p.slot);
-    if (slot === undefined) {
-      slot = this.kittySlots.size + 1;
-      this.kittySlots.set(p.slot, slot);
-    }
-    this.kittyPlaced = true;
-    return out + at + kittyPlace(p.thumb.id, slot, p.cols, p.rows);
   }
 
   private cursorColumn(): number {
@@ -948,21 +918,15 @@ export class Tui {
 
   hide(): void {
     if (!this.shown) return;
-    this.tty.write((this.kittyPlaced ? KITTY_CLEAR_PLACEMENTS : "") + "\x1b[H\x1b[2J");
-    this.kittyPlaced = false;
-    this.lastPlacementSig = "";
+    this.tty.write(this.images.wipe() + "\x1b[H\x1b[2J");
     this.shown = false;
     this.lastLines = [];
   }
 
   // Drop every image we handed the terminal; call before leaving the alt screen.
   dispose(): void {
-    if (this.kittySent.size === 0 && !this.kittyPlaced) return;
-    let out = KITTY_CLEAR_PLACEMENTS;
-    for (const id of this.kittySent) out += kittyFree(id);
-    this.tty.write(out);
-    this.kittySent.clear();
-    this.kittyPlaced = false;
+    const out = this.images.dispose();
+    if (out) this.tty.write(out);
   }
 
   notice(msg: string): void {
@@ -1422,88 +1386,31 @@ export class Tui {
     if (located.length > 0) this.refresh();
   }
 
-  private imageMode(): ImageSupport {
-    return this.options.imageSupport ?? imageSupport();
-  }
-
-  private colorMode(): ColorDepth {
-    return this.options.colorDepth ?? colorDepth();
-  }
-
-  private thumbKey(image: LoadedImage): string {
-    return image.path + ":" + image.bytes + ":" + image.base64.slice(-32);
-  }
-
-  // Thumbs are shared between the composer tray and the transcript, so an image
-  // is decoded once per attach no matter how often the frame repaints.
-  private thumbFor(image: LoadedImage): { ready: Thumb | null; promise: Promise<Thumb | null> } {
-    const key = this.thumbKey(image);
-    let cached = this.thumbs.get(key);
-    if (!cached) {
-      const entry: { ready: Thumb | null; promise: Promise<Thumb | null> } = { ready: null, promise: Promise.resolve(null) };
-      entry.promise = makeThumb(image, this.options.toPng)
-        .then((thumb) => (entry.ready = thumb))
-        .catch(() => null);
-      cached = entry;
-      this.thumbs.set(key, cached);
-      while (this.thumbs.size > 16) this.thumbs.delete(this.thumbs.keys().next().value!);
-    }
-    return cached;
-  }
-
-  private canPlace(thumb: Thumb): boolean {
-    const mode = this.imageMode();
-    return (mode === "iterm" && thumb.inline !== null) || (mode === "kitty" && thumb.png !== null);
-  }
-
-  private imageBlock(image: LoadedImage, thumb: Thumb | null, maxCols: number, maxRows: number): ImageBlock {
-    const caption = C.teal + "▤ " + C.reset + C.bold + image.name + C.reset + C.dim + "  " + imageMeta(image) + C.reset;
-    if (!thumb) return { lines: [caption], placement: null };
-    const fit = fitCells(thumb.width, thumb.height, maxCols, maxRows);
-    if (this.canPlace(thumb)) {
-      return { lines: [caption, ...new Array<string>(fit.rows).fill("")], placement: { row: 1, indent: 2, cols: fit.cols, rows: fit.rows } };
-    }
-    if (thumb.pixels) {
-      return { lines: [caption, ...this.pixelRows(thumb, fit.cols, fit.rows).map((l) => "  " + l)], placement: null };
-    }
-    return { lines: [caption], placement: null };
-  }
-
   // The composer tray: attached images wait here, above the input, until the
   // message is sent — so the user can explain what the model should do with them.
   private trayBlock(): { lines: string[]; places: Array<{ line: number; placement: Omit<Placement, "row"> }> } {
     const count = this.pendingImages.length;
     if (count === 0) return { lines: [], places: [] };
     const budget = Math.max(4, this.innerWidth() - 4);
-    const gap = 2;
-    const tileCols = Math.max(6, Math.min(20, Math.floor((budget - gap * (count - 1)) / count)));
-    const maxRows = this.rows >= 34 ? 6 : this.rows >= 26 ? 5 : this.rows >= 20 ? 4 : this.rows >= 16 ? 3 : 0;
+    const gap = " ".repeat(TRAY_GAP);
+    const tileCols = Math.max(TRAY_TILE_MIN_COLS, Math.min(TRAY_TILE_MAX_COLS, Math.floor((budget - TRAY_GAP * (count - 1)) / count)));
+    const maxRows = trayRowsFor(this.rows);
     const pad = (text: string, width: number): string => plainClip(text, width) + " ".repeat(Math.max(0, width - visibleLen(text)));
     const caption = (att: Attachment, width: number): string => C.teal + "▤ " + C.reset + C.cream + trunc(att.name, Math.max(1, width - 2)) + C.reset;
-    if (maxRows === 0 || tileCols * count + gap * (count - 1) > budget) {
-      return { lines: [this.pendingImages.map((att) => caption(att, 24)).join(" ".repeat(gap))], places: [] };
+    if (maxRows === 0 || tileCols * count + TRAY_GAP * (count - 1) > budget) {
+      return { lines: [this.pendingImages.map((att) => caption(att, 24)).join(gap)], places: [] };
     }
-    const tiles = this.pendingImages.map((att) => {
-      const thumb = att.thumb;
-      if (!thumb) return { att, rows: [C.dim + (att.image ? "▤ preparing…" : "▤ loading…") + C.reset], fit: null };
-      const fit = fitCells(thumb.width, thumb.height, tileCols, maxRows);
-      if (this.canPlace(thumb)) return { att, rows: new Array<string>(fit.rows).fill(""), fit };
-      if (thumb.pixels) return { att, rows: this.pixelRows(thumb, fit.cols, fit.rows), fit: null };
-      return { att, rows: [C.dim + (att.image ? imageMeta(att.image) : "") + C.reset], fit: null };
-    });
-    const height = Math.max(1, ...tiles.map((tile) => tile.rows.length));
+    const tiles = this.pendingImages.map((att) => ({ att, cells: this.images.cells(att.image, att.thumb, tileCols, maxRows) }));
+    const height = Math.max(1, ...tiles.map((tile) => tile.cells.lines.length));
     const lines: string[] = [];
     for (let r = 0; r < height; r++) {
-      lines.push(tiles.map((tile) => pad(tile.rows[r] ?? "", tileCols)).join(" ".repeat(gap)));
+      lines.push(tiles.map((tile) => pad(tile.cells.lines[r] ?? "", tileCols)).join(gap));
     }
-    lines.push(tiles.map((tile) => pad(caption(tile.att, tileCols), tileCols)).join(" ".repeat(gap)));
-    const places: Array<{ line: number; placement: Omit<Placement, "row"> }> = [];
-    tiles.forEach((tile, i) => {
-      if (!tile.fit || !tile.att.thumb) return;
-      places.push({
-        line: 0,
-        placement: { slot: "tray:" + tile.att.path, thumb: tile.att.thumb, name: tile.att.name, col: i * (tileCols + gap), cols: tile.fit.cols, rows: tile.fit.rows },
-      });
+    lines.push(tiles.map((tile) => pad(caption(tile.att, tileCols), tileCols)).join(gap));
+    const places = tiles.flatMap(({ att, cells }, i) => {
+      if (!cells.box || !att.thumb) return [];
+      const col = i * (tileCols + TRAY_GAP) + cells.box.col;
+      return [{ line: cells.box.line, placement: { slot: "tray:" + att.path, thumb: att.thumb, name: att.name, col, cols: cells.box.cols, rows: cells.box.rows } }];
     });
     return { lines, places };
   }
@@ -1511,7 +1418,7 @@ export class Tui {
   // Put a sent image into the transcript, right under the message that carried it.
   showImage(image: LoadedImage): void {
     const id = String(++this.chatImageSeq);
-    const cached = this.thumbFor(image);
+    const cached = this.images.thumbFor(image);
     const shown = { image, thumb: cached.ready };
     this.chatImages.set(id, shown);
     this.chatLines.push(IMAGE_ENTRY + id);
@@ -1549,19 +1456,6 @@ export class Tui {
     await Promise.all(this.pendingImages.map((p) => p.loading ?? Promise.resolve()));
   }
 
-  // Half-block art is resampled only when its box changes, not on every keystroke.
-  private pixelRows(thumb: Thumb, cols: number, rows: number): string[] {
-    const depth = this.colorMode();
-    const key = thumb.id + ":" + cols + "x" + rows + ":" + depth;
-    let lines = this.halfBlocks.get(key);
-    if (!lines) {
-      lines = thumb.pixels ? halfBlockLines(thumb.pixels, cols, rows, depth) : [];
-      this.halfBlocks.set(key, lines);
-      while (this.halfBlocks.size > 32) this.halfBlocks.delete(this.halfBlocks.keys().next().value!);
-    }
-    return lines;
-  }
-
   private loadPending(path: string): Promise<void> {
     const job = (async () => {
       const { images, errors } = await loadImagesFromPaths([path]);
@@ -1569,7 +1463,7 @@ export class Tui {
       if (!entry) return;
       if (images[0]) {
         entry.image = images[0]!;
-        const cached = this.thumbFor(entry.image);
+        const cached = this.images.thumbFor(entry.image);
         entry.thumb = cached.ready;
         this.refresh();
         if (!entry.thumb) {
