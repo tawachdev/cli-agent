@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brandName } from "../src/shared/brand";
-import { C, decodeChunk, PRODUCT_VERSION, splash, Tui, type Tty } from "../src/tui/tui";
+import { C, decodeChunk, MOUSE_OFF, PRODUCT_VERSION, splash, Tui, type Tty } from "../src/tui/tui";
 import {
   addProvider,
   backendOrigin,
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   let taskFailed = false;
 
   const bye = (): void => {
-    stdout.write("\x1b[?2004l\x1b[?1049l");
+    stdout.write(MOUSE_OFF + "\x1b[?2004l\x1b[?1049l");
     cleanup();
     chat.close();
     backendBox.child?.kill();
@@ -383,7 +383,7 @@ async function main(): Promise<void> {
     }
     if (reuse) {
       if (!(await engineMatchesThisWorkspace())) {
-        stdout.write("\x1b[?2004l\x1b[?1049l");
+        stdout.write(MOUSE_OFF + "\x1b[?2004l\x1b[?1049l");
         stdout.write(
           C.red +
             "\n  an engine is already running on " + backendOrigin + " for a different workspace.\n" +
@@ -415,7 +415,7 @@ async function main(): Promise<void> {
         backendBox.child?.kill();
       };
       const die = (): void => {
-        stdout.write("\x1b[?2004l\x1b[?1049l");
+        stdout.write(MOUSE_OFF + "\x1b[?2004l\x1b[?1049l");
         cleanup();
         killBackend();
         exit(0);
@@ -448,7 +448,7 @@ async function main(): Promise<void> {
         }
       }
       if (!up) {
-        stdout.write("\x1b[?2004l\x1b[?1049l");
+        stdout.write(MOUSE_OFF + "\x1b[?2004l\x1b[?1049l");
         stdout.write(
           C.red +
             "\n  backend did not come up at " + backendOrigin + "\n" +
@@ -501,7 +501,7 @@ async function main(): Promise<void> {
       .catch(() => {});
     await new Promise<void>(() => {});
   } catch (error) {
-    stdout.write("\x1b[?2004l\x1b[?1049l");
+    stdout.write(MOUSE_OFF + "\x1b[?2004l\x1b[?1049l");
     cleanup();
     chat.close();
     backendBox.child?.kill();

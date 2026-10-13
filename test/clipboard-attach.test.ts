@@ -59,8 +59,28 @@ function paste(tui: Tui, text: string): void {
   for (const key of keys) tui.handleKey(key);
 }
 
+const stripFrame = (s: string): string => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+
+const placements = (frame: string): Array<{ row: number; col: number }> =>
+  [...frame.matchAll(/\x1b\[(\d+);(\d+)H\x1b\]1337;File=inline=1/g)].map((m) => ({
+    row: Number(m[1]),
+    col: Number(m[2]),
+  }));
+
+function fullFrame(tui: Tui, tty: MockTty): string {
+  tty.chunks.length = 0;
+  tui.hide();
+  tui.show();
+  return tty.chunks.at(-1)!;
+}
+
 async function settle(ms = 40): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function composerRows(frame: string): { divider: number; status: number } {
+  const text = frame.split("\r\n").map(stripFrame);
+  return { divider: text.findIndex((r) => r.includes("├")) + 1, status: text.findIndex((r) => r.includes("ctx ")) + 1 };
 }
 
 const DEAD_PATH = "/var/folders/67/guaranteed-missing-" + Date.now() + "/T/TemporaryItems/NSIRD_nofile.png";
@@ -116,9 +136,13 @@ describe("base64 image pastes attach instead of flooding the input", () => {
     await settle(80);
     expect(calls).toBe(1);
     expect(tui.hasPendingImages()).toBe(true);
-    const out = tty.chunks.join("");
-    expect(out).toContain("]1337;File=inline=1");
-    expect(out).not.toContain(blob.slice(0, 60));
+    expect(tty.chunks.join("")).not.toContain(blob.slice(0, 60));
+    const staged = fullFrame(tui, tty);
+    const spots = placements(staged);
+    expect(spots).toHaveLength(1);
+    const { divider, status } = composerRows(staged);
+    expect(spots[0]!.row).toBeGreaterThan(divider);
+    expect(spots[0]!.row).toBeLessThan(status);
     tui.handleKey({ kind: "enter" });
     expect(submitted).toEqual([]);
     rmSync(dir, { recursive: true, force: true });
@@ -175,7 +199,7 @@ describe("base64 image pastes attach instead of flooding the input", () => {
 });
 
 describe("inline images are responsive to terminal resizes", () => {
-  it("recomputes the image box when the terminal shrinks and grows", async () => {
+  it("keeps sent thumbnails inside the box as the terminal shrinks and grows", async () => {
     const dir = join(tmpdir(), "mimon-responsive");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "clip.png");
@@ -189,25 +213,21 @@ describe("inline images are responsive to terminal resizes", () => {
     tui.show();
     paste(tui, Buffer.from(pngBytes(80, 40)).toString("base64"));
     await settle(80);
-    const widths = (): number[] =>
-      [...tty.chunks.join("").matchAll(/width=(\d+);height=(\d+)/g)].map((m) => Number(m[1]));
-    const w1 = widths().at(-1)!;
-    tty.columns = 60;
+    const taken = tui.takePendingImages();
+    expect(taken).toHaveLength(1);
+    tui.historyPush("YOU look at this");
+    for (const image of [...taken, ...taken, ...taken, ...taken]) tui.openImage(image);
+    const widths = (): number[] => [...fullFrame(tui, tty).matchAll(/width=(\d+);height=(\d+)/g)].map((m) => Number(m[1]));
+    const wide = widths();
+    tty.columns = 36;
     tty.rows = 24;
-    tui.refresh();
-    const w2 = widths().at(-1)!;
-    tty.columns = 140;
-    tty.rows = 36;
-    tui.refresh();
-    const w3 = widths().at(-1)!;
+    const narrow = widths();
     tty.columns = 100;
     tty.rows = 30;
-    tui.refresh();
-    const w4 = widths().at(-1)!;
-    expect(w2).toBeLessThan(w1);
-    expect(w3).toBeGreaterThan(w2);
-    expect(w3).toBeGreaterThan(w1);
-    expect(w4).toBe(w1);
+    expect(wide).toHaveLength(4);
+    expect(narrow).toHaveLength(4);
+    expect(Math.max(...narrow)).toBeLessThan(Math.min(...wide));
+    expect(widths()).toEqual(wide);
     rmSync(dir, { recursive: true, force: true });
   });
 });
@@ -231,10 +251,11 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
     expect(dests).toHaveLength(1);
     expect(dests[0]).toContain(join(".agent", "uploads"));
     expect(tui.hasPendingImages()).toBe(true);
-    expect(tui.takePendingImages()[0]!.path).toBe(file);
     const frame = tty.chunks.join("").slice(tty.chunks.join("").lastIndexOf("\x1b[H"));
     const plainFrame = frame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
-    expect(plainFrame).toContain("recovered.png");
+    expect(plainFrame).toContain("▤1");
+    expect(plainFrame).toContain("▀");
+    expect(tui.takePendingImages()[0]!.path).toBe(file);
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -319,8 +340,8 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
   });
 });
 
-describe("attachments open in the system viewer", () => {
-  it("renders protocol images inline at attach and opens the viewer only without a protocol", async () => {
+describe("attachments stage in the composer and render at send", () => {
+  it("stages protocol images in the composer and renders them under the message on send", async () => {
     const dir = join(tmpdir(), "mimon-clip-open");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "real.png");
@@ -330,16 +351,97 @@ describe("attachments open in the system viewer", () => {
     tui.show();
     paste(tui, file);
     await settle();
-    expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
+    const staged = fullFrame(tui, tty);
+    expect(placements(staged)).toHaveLength(1);
+    expect(placements(staged)[0]!.row).toBeGreaterThan(composerRows(staged).divider);
+    const taken = tui.takePendingImages();
+    tui.historyPush("YOU change the logo");
+    for (const image of taken) tui.openImage(image);
+    const sent = fullFrame(tui, tty);
+    const spots = placements(sent);
+    expect(spots).toHaveLength(1);
+    const text = sent.split("\r\n").map(stripFrame);
+    const prompt = text.findIndex((r) => r.includes("YOU change the logo"));
+    expect(spots[0]!.row).toBe(prompt + 2);
+    expect(spots[0]!.row).toBeLessThan(composerRows(sent).divider);
     const { tui: tui2, tty: tty2 } = makeTui({ opened });
     tui2.show();
     paste(tui2, file);
     await settle();
-    expect(opened).toEqual([file]);
+    expect(opened).toEqual([]);
     expect(tty2.chunks.join("")).not.toContain("]1337;File=inline=1");
-    expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
-    expect(tty.chunks.join("")).toContain("attached");
-    expect(tui.hasPendingImages()).toBe(true);
+    expect(stripFrame(tty2.chunks.join(""))).toContain("▀");
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("pasted images never send themselves", () => {
+  it("paste stages a thumbnail, enter sends the text, and the image lands under the message", async () => {
+    const dir = join(tmpdir(), "mimon-clip-flow");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "shot.png");
+    const { tui, tty, submitted } = makeTui({
+      support: "iterm",
+      clipboardSave: async () => {
+        writeFileSync(file, buildPng(48, 48, () => [20, 120, 200]));
+        return file;
+      },
+    });
+    tui.show();
+    paste(tui, Buffer.from(pngBytes(48, 48)).toString("base64"));
+    await settle(80);
+    expect(submitted).toEqual([]);
+    const staged = fullFrame(tui, tty);
+    expect(placements(staged)).toHaveLength(1);
+    expect(placements(staged)[0]!.row).toBeGreaterThan(composerRows(staged).divider);
+    for (const ch of "change the logo here") tui.handleKey({ kind: "char", ch });
+    tui.handleKey({ kind: "enter" });
+    expect(submitted).toEqual(["change the logo here"]);
+    const taken = tui.takePendingImages();
+    expect(taken).toHaveLength(1);
+    tui.historyPush("YOU change the logo here");
+    for (const image of taken) tui.openImage(image);
+    const frame = fullFrame(tui, tty);
+    const text = frame.split("\r\n").map(stripFrame);
+    const prompt = text.findIndex((r) => r.includes("YOU change the logo here"));
+    const spots = placements(frame);
+    expect(spots).toHaveLength(1);
+    expect(spots[0]!.row).toBe(prompt + 2);
+    expect(spots[0]!.col).toBe(text[prompt]!.indexOf("YOU change the logo here") + 1);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("staged composer previews follow the terminal", () => {
+  it("keeps the staged thumbnail in the composer across resizes and clears it on escape", async () => {
+    const dir = join(tmpdir(), "mimon-clip-stage-resize");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "clip.png");
+    const { tui, tty } = makeTui({
+      support: "iterm",
+      clipboardSave: async () => {
+        writeFileSync(file, buildPng(80, 40, () => [90, 90, 200]));
+        return file;
+      },
+    });
+    tui.show();
+    paste(tui, Buffer.from(pngBytes(80, 40)).toString("base64"));
+    await settle(80);
+    for (const [columns, rows] of [[100, 30], [60, 24], [100, 30]] as const) {
+      tty.columns = columns;
+      tty.rows = rows;
+      const frame = fullFrame(tui, tty);
+      const spots = placements(frame);
+      expect(spots).toHaveLength(1);
+      const { divider, status } = composerRows(frame);
+      expect(spots[0]!.row).toBeGreaterThan(divider);
+      expect(spots[0]!.row).toBeLessThan(status);
+    }
+    tui.handleKey({ kind: "escape" });
+    expect(tui.hasPendingImages()).toBe(false);
+    const cleared = fullFrame(tui, tty);
+    expect(placements(cleared)).toHaveLength(0);
+    expect(cleared).not.toContain("\x00");
     rmSync(dir, { recursive: true, force: true });
   });
 });

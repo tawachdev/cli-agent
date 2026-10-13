@@ -1,10 +1,11 @@
 import { stdout, cwd } from "node:process";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { saveClipboardImage } from "./clipboard";
 import { spawn } from "node:child_process";
-import { imageChipName, imageSupport, itermImagePayload, kittyImagePayload, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
+import { imageSupport, itermImagePayload, kittyImagePayload, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, pixelPreviewLines, type ImageSupport, type LoadedImage, type LocatedImage } from "./images";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -21,6 +22,15 @@ export interface Tty {
 const WIDE_CHAR = /[\u1100-\u115F\u2329\u232A\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF01-\uFF60\uFFE0-\uFFE6\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F7E0}-\u{1F7EB}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{20000}-\u{2FFFD}\u{30000}-\u{3FFFD}]/u;
 const ZERO_WIDTH = /[\p{M}\u200B\u200C\u200D\u2060\uFEFF\x00]/u;
 const PASTE_INPUT_CAP = 4096;
+
+const THUMB_COLS = 14;
+const THUMB_ROWS = 4;
+const THUMB_MIN_COLS = 8;
+const THUMB_GAP = 2;
+const THUMB_MARK_BASE = 6;
+const THUMB_MARK_STRIDE = 8;
+const MOUSE_ON = "\x1b[?1000h\x1b[?1006h";
+export const MOUSE_OFF = "\x1b[?1000l\x1b[?1006l";
 
 function charWidth(ch: string): number {
   if (ZERO_WIDTH.test(ch)) return 0;
@@ -243,6 +253,7 @@ function tipsList(): string[] {
 
 export type Key =
   | { kind: "char"; ch: string }
+  | { kind: "click"; row: number; col: number }
   | { kind: "enter" | "backspace" | "delete" | "up" | "down" | "left" | "right" | "home" | "end" | "escape" | "tab" | "ctrl-c" | "ctrl-p" | "ctrl-o" | "unknown" | "paste-start" | "paste-end" };
 
 export function decodeChunk(chunk: string): { keys: Key[]; rest: string } {
@@ -262,7 +273,9 @@ export function decodeChunk(chunk: string): { keys: Key[]; rest: string } {
         }
         if (j >= chunk.length) return { keys, rest: chunk.slice(i) };
         const seq = chunk.slice(i, j + 1);
-        if (seq === "\x1b[A") keys.push({ kind: "up" });
+        const press = /^\x1b\[<0;(\d+);(\d+)M$/.exec(seq);
+        if (press) keys.push({ kind: "click", col: Number(press[1]), row: Number(press[2]) });
+        else if (seq === "\x1b[A") keys.push({ kind: "up" });
         else if (seq === "\x1b[B") keys.push({ kind: "down" });
         else if (seq === "\x1b[C") keys.push({ kind: "right" });
         else if (seq === "\x1b[D") keys.push({ kind: "left" });
@@ -318,24 +331,57 @@ export interface TuiOptions {
 
 const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
 
+const viewableCopy = (image: LoadedImage): string => {
+  const file = join(mkdtempSync(join(tmpdir(), "agent-view-")), basename(image.path));
+  writeFileSync(file, Buffer.from(image.base64, "base64"));
+  return file;
+};
+
 const defaultOpenImage = (image: LoadedImage): void => {
   const tool = process.platform === "darwin" ? "open" : process.platform === "linux" ? "xdg-open" : null;
-  if (!tool || !existsSync(image.path)) return;
+  if (!tool) return;
   try {
-    const child = spawn(tool, [image.path], { stdio: "ignore", detached: true });
+    const target = existsSync(image.path) ? image.path : viewableCopy(image);
+    const child = spawn(tool, [target], { stdio: "ignore", detached: true });
     child.unref();
   } catch {}
 };
 
-type ImageFeedBlock = {
-  path: string;
-  token: string;
-  payload: string;
-  rows: number;
-  start: number;
-  afterLines: number;
+type Thumb = {
+  id: number;
   image: LoadedImage;
+  cols: number;
+  rows: number;
+  payload: string;
+  preview: string[];
 };
+
+type ImageFeedBlock = {
+  thumb: Thumb;
+  afterLines: number;
+};
+
+type ThumbAnchor = {
+  top: number;
+  left: number;
+  thumb: Thumb;
+};
+
+const thumbMarker = (id: number, row: number): string => "\x00".repeat(THUMB_MARK_BASE + id * THUMB_MARK_STRIDE + row);
+
+function thumbMarkers(line: string): Array<{ id: number; row: number; col: number }> {
+  const found: Array<{ id: number; row: number; col: number }> = [];
+  for (const run of line.matchAll(/\x00+/g)) {
+    const offset = run[0].length - THUMB_MARK_BASE;
+    if (offset < 0) continue;
+    found.push({
+      id: Math.floor(offset / THUMB_MARK_STRIDE),
+      row: offset % THUMB_MARK_STRIDE,
+      col: visibleLen(line.slice(0, run.index)) + 1,
+    });
+  }
+  return found;
+}
 
 export class Tui {
   tier: MimonTier = TIERS[1]!;
@@ -381,12 +427,13 @@ export class Tui {
   private addFields: [string, string, string] = ["", "", ""];
   private addFieldIndex = 0;
   private addError = "";
-  private pendingImages: Array<{ path: string; name: string; image: LoadedImage | null; preview: string[] }> = [];
+  private pendingImages: Array<{ path: string; image: LoadedImage | null; thumb: Thumb | null }> = [];
   private pendingPaths = new Set<string>();
   private recovering = new Set<string>();
   private ownedUploads = new Set<string>();
-  private inlinePayloads = new Map<string, string>();
-  private inlineSeq = 0;
+  private thumbSeq = 0;
+  private thumbHits: ThumbAnchor[] = [];
+  private mouseOn = false;
   private imageFeed: ImageFeedBlock[] = [];
   private history: string[] = [];
   private workingLine = "";
@@ -468,11 +515,6 @@ export class Tui {
     }
     const pad = Math.max(0, this.innerWidth() - 2 - visibleLen(out));
     return (bare ? "" : this.boxLead()) + C.dim + "│" + C.reset + "  " + out + " ".repeat(pad) + "  " + C.dim + "│" + C.reset;
-  }
-
-  private boxTextCol(): number {
-    const indent = 2;
-    return this.boxLead().length + 4 + indent;
   }
 
   private nestedWidth(): number {
@@ -663,33 +705,69 @@ export class Tui {
     return " ".repeat(lead) + content;
   }
 
-  private chatStream(inner: number): Array<string | ImageFeedBlock> {
-    const stream: Array<string | ImageFeedBlock> = [];
-    const placed = new Set<ImageFeedBlock>();
+  private chatStream(inner: number): string[][] {
+    const groups = new Map<number, Thumb[]>();
     for (const block of this.imageFeed) {
-      if (block.afterLines <= 0) {
-        stream.push(block);
-        placed.add(block);
-      }
+      const at = Math.min(Math.max(0, block.afterLines), this.chatLines.length);
+      groups.set(at, [...(groups.get(at) ?? []), block.thumb]);
     }
+    const chunks: string[][] = [];
+    const strip = (at: number): void => {
+      const thumbs = groups.get(at);
+      if (thumbs) chunks.push(this.thumbStrip(thumbs));
+    };
+    strip(0);
     for (let i = 0; i < this.chatLines.length; i++) {
-      for (const row of wrap(this.chatLines[i]!, inner)) stream.push(row);
-      for (const block of this.imageFeed) {
-        if (placed.has(block) || block.afterLines !== i + 1) continue;
-        stream.push(block);
-        placed.add(block);
+      for (const row of wrap(this.chatLines[i]!, inner)) chunks.push(["  " + row]);
+      strip(i + 1);
+    }
+    return chunks;
+  }
+
+  private thumbStrip(thumbs: Thumb[]): string[] {
+    const room = this.innerWidth() - 6;
+    const fit = Math.floor((room - THUMB_GAP * (thumbs.length - 1)) / thumbs.length);
+    const cols = Math.min(room, Math.max(THUMB_MIN_COLS, Math.min(THUMB_COLS, fit)));
+    const rows = Math.max(2, Math.round((cols * THUMB_ROWS) / THUMB_COLS));
+    const perLine = Math.max(1, Math.floor((room + THUMB_GAP) / (cols + THUMB_GAP)));
+    const lines: string[] = [];
+    for (let first = 0; first < thumbs.length; first += perLine) {
+      const group = thumbs.slice(first, first + perLine);
+      for (const thumb of group) this.fitThumb(thumb, cols, rows);
+      for (let row = 0; row < rows; row++) {
+        lines.push("  " + group.map((thumb) => thumbMarker(thumb.id, row) + this.thumbCell(thumb, row)).join(" ".repeat(THUMB_GAP)));
       }
     }
-    for (const block of this.imageFeed) {
-      if (placed.has(block)) continue;
-      stream.push(block);
-      placed.add(block);
-    }
-    return stream;
+    return lines;
+  }
+
+  private fitThumb(thumb: Thumb, cols: number, rows: number): void {
+    if (thumb.cols === cols && thumb.rows === rows) return;
+    const support = this.options.imageSupport ?? imageSupport();
+    thumb.cols = cols;
+    thumb.rows = rows;
+    thumb.payload = support === "iterm" ? itermImagePayload(thumb.image, cols, rows)
+      : support === "kitty" ? kittyImagePayload(thumb.image, cols, rows)
+      : "";
+    thumb.preview = support === "none" ? pixelPreviewLines(thumb.image, cols, rows) : [];
+  }
+
+  private thumbCell(thumb: Thumb, row: number): string {
+    if (thumb.payload) return " ".repeat(thumb.cols);
+    const label = row === 0 ? C.dim + "▤ " + trunc(thumb.image.name, thumb.cols - 2) + C.reset : "";
+    const text = thumb.preview[row] ?? label;
+    return text + " ".repeat(Math.max(0, thumb.cols - visibleLen(text)));
+  }
+
+  private newThumb(image: LoadedImage): Thumb {
+    return { id: ++this.thumbSeq, image, cols: 0, rows: 0, payload: "", preview: [] };
+  }
+
+  private composerThumbs(): Thumb[] {
+    return this.pendingImages.flatMap((pending) => (pending.thumb ? [pending.thumb] : []));
   }
 
   private buildLines(): string[] {
-    for (const block of this.imageFeed) block.start = -1;
     if (this.view === "permission") {
       const lines = [
         "  " + C.inverse + C.gold + C.bold + " ⛨ PERMISSION " + C.reset + C.dim + " approve to continue" + C.reset,
@@ -721,9 +799,12 @@ export class Tui {
     let tight = false;
     if (this.rows >= 7 && this.usable >= 22) {
       minimal = false;
-      const bannerOn = this.bannerActive && ((overlay.length === 0 && menu.length === 0) || this.rows >= 30);
-      bannerArt = bannerOn && this.rows >= 14;
-      tight = bannerArt && this.rows < 18;
+      const composer = this.composerThumbs();
+      const strip = composer.length > 0 ? [...this.thumbStrip(composer), C.dim + "click an image to open it full size" + C.reset] : [];
+      const room = this.rows - strip.length;
+      const bannerOn = this.bannerActive && ((overlay.length === 0 && menu.length === 0) || room >= 30);
+      bannerArt = bannerOn && room >= 14;
+      tight = bannerArt && room < 18;
       lines.push(this.boxEdge(true));
       if (!tight) lines.push(this.boxLine(""));
       if (bannerOn) {
@@ -735,35 +816,23 @@ export class Tui {
           const brand = brandName();
           lines.push(this.boxLine(this.centered(C.teal + C.bold + "✦ " + brand + C.reset + C.dim + "  v" + this.bannerVersion + C.reset)));
         }
-        if (this.rows >= 18) lines.push(this.boxLine(""));
+        if (room >= 18) lines.push(this.boxLine(""));
       }
       const inner = Math.max(10, this.innerWidth() - 6);
       const footerLines = (this.rows >= 9 ? 1 : 0) + (this.rows >= 12 ? 1 : 0);
-      const fixedCount = lines.length + 5 + (this.workingLine ? 1 : 0) + menu.length + overlay.length;
+      const fixedCount = lines.length + 5 + strip.length + (this.workingLine ? 1 : 0) + menu.length + overlay.length;
       const budget = Math.max(1, this.rows - footerLines - fixedCount);
-      const stream = this.chatStream(inner);
-      const rowsOf = (slot: string | ImageFeedBlock): number => (typeof slot === "string" ? 1 : slot.rows);
+      const chunks = this.chatStream(inner);
       let oldest = 0;
-      let total = stream.reduce((n, slot) => n + rowsOf(slot), 0);
-      while (total > budget && oldest < stream.length) {
-        total -= rowsOf(stream[oldest]!);
+      let total = chunks.reduce((n, chunk) => n + chunk.length, 0);
+      while (total > budget && oldest < chunks.length) {
+        total -= chunks[oldest]!.length;
         oldest += 1;
       }
-      for (const slot of stream.slice(oldest)) {
-        if (typeof slot === "string") {
-          lines.push(this.boxLine("  " + slot));
-          continue;
-        }
-        slot.start = lines.length;
-        lines.push(this.boxLine(slot.token));
-        for (let pad = 1; pad < slot.rows; pad++) lines.push(this.boxLine(""));
+      for (const chunk of chunks.slice(oldest)) {
+        for (const row of chunk) lines.push(this.boxLine(row));
       }
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
-      for (const pending of this.pendingImages) {
-        if (pending.preview.length === 0 && !pending.image) continue;
-        lines.push(this.boxLine("  " + C.teal + "▤ " + C.reset + C.bold + pending.name + C.reset + C.dim + "  attached — sent with your next message" + C.reset));
-        for (const row of pending.preview) lines.push(this.boxLine(row));
-      }
       const contentBudget = Math.max(4, this.innerWidth() - 4);
       const blockLead = (block: string[]): string => {
         const wide = Math.max(0, ...block.map((l) => visibleLen(l)));
@@ -779,6 +848,7 @@ export class Tui {
       }
       lines.push(this.boxLine(""));
       lines.push(C.dim + this.boxLead() + "├" + "─".repeat(this.innerWidth() + 2) + "┤" + C.reset);
+      for (const row of strip) lines.push(this.boxLine(row));
       this.inputRow = lines.length;
       lines.push(this.boxLine(this.renderInput()));
       lines.push(this.boxLine(this.renderStatus()));
@@ -832,49 +902,68 @@ export class Tui {
     const rowsNow = this.tty.rows > 0 ? this.tty.rows : 24;
     if (this.lastCols > 0 && (cols !== this.lastCols || rowsNow !== this.lastRows)) {
       this.tty.write("\x1b[2J\x1b[3J");
-      this.relayoutImages();
       this.lastLines = [];
     }
     this.lastCols = cols;
     this.lastRows = rowsNow;
     const frame = this.buildLines();
     let dropped = Math.max(0, frame.length - rowsNow);
-    for (const block of this.imageFeed) {
-      while (block.start >= 0 && block.start < dropped && dropped < block.start + block.rows) {
-        dropped = block.start + block.rows;
-      }
-    }
+    while (dropped < frame.length - 1 && thumbMarkers(frame[dropped]!).some((mark) => mark.row > 0)) dropped += 1;
     const budget = Math.max(8, cols - 1);
     const view = frame.slice(dropped).map((line) => (visibleLen(line) <= budget ? line : C.reset + plainClip(line, budget)));
     const inputRow = Math.max(0, Math.min(this.inputRow - dropped, view.length - 1));
     const cursorCol = Math.max(0, Math.min(this.cursorCol, cols - 1));
     const prev = this.lastLines;
     const parts: string[] = ["\x1b[H"];
-    let fullDraw = true;
+    const anchors = this.thumbAnchors(view);
     if (prev.length > 0 && prev.length === view.length) {
-      fullDraw = false;
+      const touched = new Set<number>();
       for (let i = 0; i < view.length; i++) {
         if (prev[i] === view[i]) continue;
         parts.push("\x1b[" + (i + 1) + "H\r\x1b[K" + view[i]!);
-        const rowPayload = this.inlinePayloadAt(view[i]!);
-        if (rowPayload) parts.push("\x1b[" + (i + 1) + ";" + this.boxTextCol() + "H" + rowPayload);
+        for (const mark of thumbMarkers(view[i]!)) touched.add(mark.id);
       }
+      for (const anchor of anchors) if (touched.has(anchor.thumb.id)) parts.push(this.paintThumb(anchor));
     } else {
       for (let i = 0; i < view.length; i++) {
         parts.push(view[i]! + "\x1b[K" + (i < view.length - 1 ? "\r\n" : ""));
       }
       parts.push("\x1b[J");
-      for (const block of this.imageFeed) {
-        const row = block.start - dropped;
-        if (row >= 0 && row < view.length) {
-          parts.push("\x1b[" + (row + 1) + ";" + this.boxTextCol() + "H" + block.payload);
-        }
-      }
+      for (const anchor of anchors) parts.push(this.paintThumb(anchor));
+    }
+    this.thumbHits = anchors;
+    if ((anchors.length > 0) !== this.mouseOn) {
+      this.mouseOn = anchors.length > 0;
+      parts.push(this.mouseOn ? MOUSE_ON : MOUSE_OFF);
     }
     parts.push("\x1b[" + (inputRow + 1) + ";" + (cursorCol + 1) + "H");
     this.tty.write(parts.join(""));
     this.lastLines = view;
     this.shown = true;
+  }
+
+  private thumbAnchors(view: string[]): ThumbAnchor[] {
+    const known = new Map<number, Thumb>();
+    for (const block of this.imageFeed) known.set(block.thumb.id, block.thumb);
+    for (const thumb of this.composerThumbs()) known.set(thumb.id, thumb);
+    const anchors: ThumbAnchor[] = [];
+    view.forEach((line, i) => {
+      for (const mark of thumbMarkers(line)) {
+        const thumb = known.get(mark.id);
+        if (thumb && mark.row === 0) anchors.push({ top: i + 1, left: mark.col, thumb });
+      }
+    });
+    return anchors;
+  }
+
+  private paintThumb(anchor: ThumbAnchor): string {
+    return anchor.thumb.payload ? "\x1b[" + anchor.top + ";" + anchor.left + "H" + anchor.thumb.payload : "";
+  }
+
+  private openThumbAt(row: number, col: number): void {
+    const hit = this.thumbHits.find((anchor) =>
+      row >= anchor.top && row < anchor.top + anchor.thumb.rows && col >= anchor.left && col < anchor.left + anchor.thumb.cols);
+    if (hit) (this.options.openImage ?? defaultOpenImage)(hit.thumb.image);
   }
 
   private cursorColumn(): number {
@@ -900,7 +989,8 @@ export class Tui {
 
   hide(): void {
     if (!this.shown) return;
-    this.tty.write("\x1b[H\x1b[2J");
+    this.tty.write((this.mouseOn ? MOUSE_OFF : "") + "\x1b[H\x1b[2J");
+    this.mouseOn = false;
     this.shown = false;
     this.lastLines = [];
   }
@@ -1323,7 +1413,7 @@ export class Tui {
       }
       if (this.pendingPaths.has(saved)) return;
       this.pendingPaths.add(saved);
-      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, preview: [] });
+      this.pendingImages.push({ path: saved, image: null, thumb: null });
       await this.loadPending(saved);
     } finally {
       this.recovering.delete("clipboard");
@@ -1346,60 +1436,15 @@ export class Tui {
       this.input = this.input.slice(0, hit.start) + this.input.slice(hit.end);
       this.cursor = Math.min(this.cursor, this.input.length);
       this.pendingPaths.add(hit.path);
-      this.pendingImages.push({ path: hit.path, name: imageChipName(hit.path), image: null, preview: [] });
+      this.pendingImages.push({ path: hit.path, image: null, thumb: null });
       void this.loadPending(hit.path);
     }
     if (located.length > 0) this.refresh();
   }
 
   openImage(image: LoadedImage): void {
-    const support = this.options.imageSupport ?? imageSupport();
-    if (support === "none") {
-      const opener = this.options.openImage ?? defaultOpenImage;
-      opener(image);
-      return;
-    }
-    if (this.imageFeed.some((block) => block.path === image.path)) return;
-    const { cells, rows } = this.imageBoxFor(image);
-    const id = ++this.inlineSeq;
-    const token = "\x00".repeat(6 + id);
-    const payload = support === "iterm"
-      ? itermImagePayload(image, cells, rows)
-      : kittyImagePayload(image, cells, rows);
-    this.inlinePayloads.set(token, payload);
-    this.imageFeed.push({ path: image.path, token, payload, rows, start: -1, afterLines: this.chatLines.length, image });
+    this.imageFeed.push({ thumb: this.newThumb(image), afterLines: this.chatLines.length });
     this.refresh();
-  }
-
-  private imageBoxFor(image: LoadedImage): { cells: number; rows: number } {
-    const cells = Math.max(4, Math.min(40, Math.floor(this.usable * 0.33), this.innerWidth() - 6));
-    const rowCap = Math.max(3, Math.min(10, Math.floor(this.rows * 0.22)));
-    let rows = Math.min(rowCap, 6);
-    if (image.width !== null && image.height !== null && image.width > 0) {
-      rows = Math.max(2, Math.min(rowCap, Math.ceil((cells * 2 * image.height) / image.width)));
-    }
-    return { cells, rows };
-  }
-
-  private relayoutImages(): void {
-    if (this.imageFeed.length === 0) return;
-    const support = this.options.imageSupport ?? imageSupport();
-    if (support === "none") return;
-    for (const block of this.imageFeed) {
-      const { cells, rows } = this.imageBoxFor(block.image);
-      block.rows = rows;
-      block.payload = support === "iterm"
-        ? itermImagePayload(block.image, cells, rows)
-        : kittyImagePayload(block.image, cells, rows);
-      this.inlinePayloads.set(block.token, block.payload);
-    }
-  }
-
-  private inlinePayloadAt(line: string): string | null {
-    for (const [token, payload] of this.inlinePayloads) {
-      if (line.includes(token)) return payload;
-    }
-    return null;
   }
 
   private async loadPending(path: string): Promise<void> {
@@ -1407,9 +1452,8 @@ export class Tui {
     const entry = this.pendingImages.find((p) => p.path === path);
     if (entry && images[0]) {
       entry.image = images[0]!;
-      entry.preview = [];
+      entry.thumb = this.newThumb(images[0]!);
       this.refresh();
-      this.openImage(images[0]!);
     } else if (entry && errors[0]) {
       this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
       this.pendingPaths.delete(path);
@@ -1438,7 +1482,7 @@ export class Tui {
       this.cursor = Math.min(this.cursor, this.input.length);
       this.pendingPaths.add(saved);
       this.ownedUploads.add(saved);
-      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, preview: [] });
+      this.pendingImages.push({ path: saved, image: null, thumb: null });
       await this.loadPending(saved);
     } finally {
       this.recovering.delete(hit.path);
@@ -1670,6 +1714,10 @@ export class Tui {
   handleKey(key: Key): void {
     if (key.kind === "ctrl-c") {
       this.hooks.onExit();
+      return;
+    }
+    if (key.kind === "click") {
+      this.openThumbAt(key.row, key.col);
       return;
     }
     if (this.pasting) {

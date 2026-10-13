@@ -985,9 +985,8 @@ describe("image attachments", () => {
     type(tui, "look at " + pngPath);
     await new Promise((resolve) => setTimeout(resolve, 20));
     const t = tty.text();
-    expect(t).toContain("attached");
+    expect(t).toContain("click an image to open it");
     expect(t).toContain("▤1");
-    expect(t).toContain("dropped.png");
     expect(cap.submitted).toEqual([]);
     type(tui, " describe it");
     tui.handleKey({ kind: "enter" });

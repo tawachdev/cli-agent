@@ -90,7 +90,7 @@ describe("in-frame image preview", () => {
     }
   }
 
-  it("attached png shows a quiet chip — no block rows, no protocol escapes", async () => {
+  it("attached png stages a composer thumbnail — no protocol escapes until send", async () => {
     const dir = join(tmpdir(), "mimon-frame-img");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "drop.png");
@@ -108,15 +108,14 @@ describe("in-frame image preview", () => {
     });
     tui.show();
     for (const ch of "see " + file) tui.handleKey({ kind: "char", ch });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise((resolve) => setTimeout(resolve, 80));
     const raw = tty.chunks.join("");
     expect(raw).not.toContain("\x1b]1337;");
     expect(raw).not.toContain("\x1b_G");
-    expect(raw).not.toContain("▀");
-    const frame = raw.slice(raw.lastIndexOf("\x1b[H"));
-    const plainFrame = frame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
-    expect(plainFrame).toContain("▤ drop.png");
-    expect(plainFrame).toContain("attached");
+    const plainFrame = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    expect(plainFrame).toContain("▤1");
+    expect(plainFrame).toContain("click an image to open it");
+    expect(plainFrame).toContain("▀");
     expect(tui.hasPendingImages()).toBe(true);
     rmSync(dir, { recursive: true, force: true });
   });
