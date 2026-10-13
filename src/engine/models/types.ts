@@ -9,7 +9,26 @@ export interface ToolCall {
   id?: string;
   name: string;
   arguments: Record<string, unknown>;
+  // set when the model sent arguments that are not a JSON object (often a cut-off
+  // stream); the call is answered with this error instead of running on `{}`
+  argumentsError?: string;
   thoughtSignature?: string;
+}
+
+export function parseToolArguments(raw: string): Pick<ToolCall, "arguments" | "argumentsError"> {
+  if (raw.trim() === "") return { arguments: {} };
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return { arguments: parsed as Record<string, unknown> };
+    }
+  } catch {
+    // reported below
+  }
+  return {
+    arguments: {},
+    argumentsError: "tool arguments were not a valid JSON object, the call was not run: " + raw.slice(0, 200),
+  };
 }
 
 export interface PersistedToolCall {

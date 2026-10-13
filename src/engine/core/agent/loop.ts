@@ -5,6 +5,7 @@ import { parseToolCalls } from "../../models/types";
 import { compactHistory } from "../context/compaction";
 import { truncateObservation } from "../context/truncation";
 import type { AuditWriter } from "../audit/audit";
+import type { ToolResult } from "../../tools/types";
 import type { ToolRegistry } from "../../tools/registry";
 import { appendMessage, listMessages } from "./state";
 
@@ -142,14 +143,17 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
     });
     workingHistory.push({ role: "assistant", content: turnContent, toolCalls: persistedCalls });
     if (turnContent) deps.publish("message.completed", { content: turnContent });
-    for (const call of persistedCalls) {
+    for (const [index, call] of persistedCalls.entries()) {
       deps.publish("tool.requested", { name: call.name, arguments: call.arguments });
       deps.publish("tool.started", { name: call.name });
       deps.audit?.write("tool.requested", { name: call.name, arguments: JSON.stringify(call.arguments).slice(0, 500) });
       const startedAt = Date.now();
-      const result = await deps.tools.invoke(call.name, call.arguments, deps.toolContext, ids, (request) =>
-        deps.publish("permission.requested", request),
-      );
+      const argumentsError = turnCalls[index]?.argumentsError;
+      const result: ToolResult = argumentsError
+        ? { ok: false, error: argumentsError }
+        : await deps.tools.invoke(call.name, call.arguments, deps.toolContext, ids, (request) =>
+            deps.publish("permission.requested", request),
+          );
       const durationMs = Date.now() - startedAt;
       deps.audit?.write("tool.result", { name: call.name, ok: result.ok, durationMs });
       const observation = truncateObservation(JSON.stringify(result));
