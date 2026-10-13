@@ -17,11 +17,11 @@ describe("fs.read tool", () => {
 
   it("rejects paths outside the workspace", async () => {
     const root = await mkdtemp(join(tmpdir(), "fsread-"));
-    const escape = await mkdtemp(join(tmpdir(), "fsread-out-"));
-    await writeFile(join(escape, "secret.txt"), "nope");
+    const outside = await mkdtemp(join(tmpdir(), "fsread-out-"));
+    await writeFile(join(outside, "secret.txt"), "nope");
     const relative = await fsReadTool.invoke({ path: "../secret.txt" }, { workspaceRoot: root });
     expect(relative).toEqual({ ok: false, error: "path outside workspace: ../secret.txt" });
-    const absolute = await fsReadTool.invoke({ path: join(escape, "secret.txt") }, { workspaceRoot: root });
+    const absolute = await fsReadTool.invoke({ path: join(outside, "secret.txt") }, { workspaceRoot: root });
     expect(absolute.ok).toBe(false);
   });
 

@@ -182,7 +182,7 @@ describe("agent orchestration", () => {
     const db = openDb(":memory:");
     runMigrations(db, migrations);
     const hangUntilAborted: ModelProvider = {
-      async *complete(req, signal) {
+      async *complete(_req, signal) {
         await new Promise<never>((_resolve, reject) => {
           signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
         });

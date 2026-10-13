@@ -1,7 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import { createSessionsRoute } from "../src/engine/api/routes/sessions";
-import { PendingPermissions } from "../src/engine/core/permissions/pending";
-import { StreamRegistry } from "../src/engine/api/ws/agent-stream";
 import { openDb } from "../src/engine/db/client";
 import { runMigrations } from "../src/engine/db/migrate";
 import { migrations } from "../src/engine/db/migrations";
@@ -10,7 +8,7 @@ describe("sessions API", () => {
   it("creates sessions, rejects unknown ids and stores messages", async () => {
     const db = openDb(":memory:");
     runMigrations(db, migrations);
-    const app = createSessionsRoute(db, new PendingPermissions(), new StreamRegistry());
+    const app = createSessionsRoute(db);
 
     const created = await app.request("/", {
       method: "POST",

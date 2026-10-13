@@ -21,8 +21,16 @@ export interface Tty {
 }
 
 const WIDE_CHAR = /[\u1100-\u115F\u2329\u232A\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF01-\uFF60\uFFE0-\uFFE6\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F7E0}-\u{1F7EB}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{20000}-\u{2FFFD}\u{30000}-\u{3FFFD}]/u;
+// biome-ignore lint/suspicious/noMisleadingCharacterClass: tested one code point at a time, so the joiners are meant to match alone
 const ZERO_WIDTH = /[\p{M}\u200B\u200C\u200D\u2060\uFEFF\x00]/u;
 const PASTE_INPUT_CAP = 4096;
+// arrow keys as grid moves: callers turn dy into rows of their own width
+const ARROW_STEPS: Partial<Record<Key["kind"], { dx: number; dy: number }>> = {
+  up: { dx: 0, dy: -1 },
+  down: { dx: 0, dy: 1 },
+  left: { dx: -1, dy: 0 },
+  right: { dx: 1, dy: 0 },
+};
 // chat entries that stand for an image block rather than a line of text
 const IMAGE_ENTRY = "\u0000image:";
 // image boxes, in terminal cells
@@ -714,11 +722,9 @@ export class Tui {
     const lines: string[] = [];
     const placements: Placement[] = [];
     this.framePlacements = placements;
-    let minimal = true;
     let bannerArt = false;
     let tight = false;
     if (this.rows >= 7 && this.usable >= 22) {
-      minimal = false;
       const bannerOn = this.bannerActive && ((overlay.length === 0 && menu.length === 0) || this.rows >= 30);
       bannerArt = bannerOn && this.rows >= 14;
       tight = bannerArt && this.rows < 18;
@@ -1062,7 +1068,6 @@ export class Tui {
       : "── make it yours ──";
     const items = ["change name", "change colors", "reset to defaults"];
     const body: string[] = [];
-    const budget = Math.max(8, this.usable - 6);
     for (let i = 0; i < items.length; i++) {
       const sel = i === this.brandIndex;
       const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
@@ -1103,7 +1108,7 @@ export class Tui {
     const perRow = 2;
     const totalRows = Math.ceil(names.length / perRow);
     const maxListRows = Math.max(2, Math.min(totalRows, this.rows - 13));
-    let firstRow = Math.max(0, Math.min(Math.floor(this.brandColorIndex / perRow) - 1, totalRows - maxListRows));
+    const firstRow = Math.max(0, Math.min(Math.floor(this.brandColorIndex / perRow) - 1, totalRows - maxListRows));
     const lastRow = Math.min(totalRows, firstRow + maxListRows);
     const cellWidth = Math.max(8, Math.min(14, Math.floor((this.nestedWidth() - 2) / perRow)));
     if (firstRow > 0) body.push(C.dim + "  ↑ more" + C.reset);
@@ -1166,7 +1171,7 @@ export class Tui {
     const perRow = this.gridPerRow();
     const maxRows = Math.max(3, Math.min(10, this.rows - 15));
     const totalRows = Math.ceil(256 / perRow);
-    let firstRow = Math.max(0, Math.min(Math.floor(this.gridIndex / perRow) - Math.floor(maxRows / 2), totalRows - maxRows));
+    const firstRow = Math.max(0, Math.min(Math.floor(this.gridIndex / perRow) - Math.floor(maxRows / 2), totalRows - maxRows));
     const lastRow = Math.min(totalRows, firstRow + maxRows);
     if (firstRow > 0) body.push(C.dim + "  ↑ more" + C.reset);
     for (let row = firstRow; row < lastRow; row++) {
@@ -1926,15 +1931,15 @@ export class Tui {
     if (this.view === "brandColors") {
       const names = this.paletteEntries();
       const count = names.length;
-      const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
       const move = (delta: number) => {
         this.brandColorIndex = (this.brandColorIndex + delta + count) % count;
         this.refresh();
       };
-      if (key.kind === "up") return move(-2);
-      if (key.kind === "down") return move(2);
-      if (key.kind === "left") return move(-1);
-      if (key.kind === "right") return move(1);
+      const step = ARROW_STEPS[key.kind];
+      if (step !== undefined) {
+        move(step.dx + step.dy * 2);
+        return;
+      }
       if (key.kind === "enter") {
         const picked = names[this.brandColorIndex]!;
         if (picked === "custom hex…") {
@@ -1998,10 +2003,11 @@ export class Tui {
         this.gridIndex = Math.max(0, Math.min(255, this.gridIndex + delta));
         this.refresh();
       };
-      if (key.kind === "up") return move(-perRow);
-      if (key.kind === "down") return move(perRow);
-      if (key.kind === "left") return move(-1);
-      if (key.kind === "right") return move(1);
+      const step = ARROW_STEPS[key.kind];
+      if (step !== undefined) {
+        move(step.dx + step.dy * perRow);
+        return;
+      }
       if (key.kind === "enter") {
         const hex = xterm256Hex(this.gridIndex);
         this.view = "brandColors";
@@ -2097,9 +2103,9 @@ export class Tui {
         this.refresh();
         return;
       }
-      if (key.kind === "up") return move(-1);
-      if (key.kind === "down") return move(1);
-      if (key.kind === "enter") return this.selectProviderItem();
+      if (key.kind === "up") move(-1);
+      else if (key.kind === "down") move(1);
+      else if (key.kind === "enter") this.selectProviderItem();
       return;
     }
     this.handlePromptKey(key);

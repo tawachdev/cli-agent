@@ -11,8 +11,6 @@ import {
   addProvider,
   backendOrigin,
   keylessProviderBindings,
-  looksLikeModelMissing,
-  wizardModelCandidates,
   Chat,
   deleteProviderKey,
   getBindings,

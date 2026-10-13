@@ -44,7 +44,7 @@ function feed(tui: Tui, chunk: string): void {
 
 describe("bracketed paste", () => {
   it("multi-line paste never submits and newlines collapse to one space", () => {
-    const { tui, tty, submitted } = makeTui();
+    const { tui, submitted } = makeTui();
     tui.show();
     feed(tui, "\x1b[200~line1\r\nline2\x1b[201~");
     expect(submitted).toEqual([]);

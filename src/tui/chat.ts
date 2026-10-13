@@ -3,7 +3,7 @@ import { brandName } from "../shared/brand";
 import { toDataUrl } from "../shared/images";
 import type { ModelRole } from "../shared/types";
 import { renderImage, type LoadedImage } from "./images";
-import { C, chip, fit, fmtSecs, meter, panel, WIDTH, wrap, type Tty } from "./tui";
+import { C, chip, fit, fmtSecs, meter, WIDTH, wrap, type Tty } from "./tui";
 
 const rawUrl = process.env.AGENT_URL ?? `http://127.0.0.1:${process.env.AGENT_PORT ?? "7800"}`;
 const baseUrl = new URL(rawUrl);
@@ -219,10 +219,6 @@ export class Chat {
     const tool = this.lastTool
       ? C.dim + "last " + C.reset + this.lastTool + (this.lastToolMs ? C.dim + " " + fmtSecs(this.lastToolMs) + C.reset : "") + "  "
       : "";
-    const dashboard =
-      "● " + this.stateLabel + " · steps " + this.steps + " · ctx " + this.ctxPct + "%" +
-      (this.tokensPerSec !== null ? " · " + this.tokensPerSec.toFixed(1) + " tok/s" : "") +
-      (this.lastTool ? " · " + this.lastTool : "");
     if (this.ui) {
       this.ui.setStatus(this.stateLabel, this.steps);
     } else this.tty.write(fit(
@@ -403,11 +399,6 @@ export class Chat {
       if (target === a || target.startsWith(a + " ")) return true;
     }
     return false;
-  }
-
-  private line(text: string): void {
-    if (this.ui) this.ui.printAbove([text]);
-    else this.tty.write(text + "\n");
   }
 
   private stream(text: string): void {
