@@ -49,6 +49,28 @@ describe("runCheck statuses", () => {
   });
 });
 
+describe("stopping a command stops everything it started", () => {
+  // A killed orphan can linger as a zombie when PID 1 does not reap (containers);
+  // it is dead all the same, so read the process state instead of probing with kill -0.
+  const alive = (pid: number): boolean => {
+    const state = Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]).stdout.toString().trim();
+    return state !== "" && !state.startsWith("Z");
+  };
+
+  it("an aborted check leaves no grandchild running", async () => {
+    const pidFile = "/tmp/mimon-grandchild-" + Date.now();
+    const controller = new AbortController();
+    const run = runCheck("sleep 30 & echo $! > " + pidFile + "; wait", "/tmp", controller.signal);
+    await Bun.sleep(150);
+    const pid = Number((await Bun.file(pidFile).text()).trim());
+    expect(alive(pid)).toBe(true);
+    controller.abort();
+    expect((await run).status).toBe("aborted");
+    await Bun.sleep(50);
+    expect(alive(pid)).toBe(false);
+  });
+});
+
 describe("shell tool cancellation", () => {
   it("returns promptly with an abort result when the signal fires", async () => {
     const controller = new AbortController();
