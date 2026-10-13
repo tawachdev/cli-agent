@@ -1,6 +1,6 @@
-import { stdout, cwd } from "node:process";
+import { cwd } from "node:process";
 import { join } from "node:path";
-import { BRAND_PALETTE, brandColors, brandName, colorForLetter, entryColor, validColorEntry, xterm256Hex } from "../shared/brand";
+import { brandColors, brandName, colorForLetter, } from "../shared/brand";
 import { existsSync, rmSync } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
 import { spawn } from "node:child_process";
@@ -11,26 +11,20 @@ import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
 
+import { BIND_TARGETS, COMMANDS, type MimonTier, type ProviderEntry, type SlashCommand, TIERS, tipsList } from "./catalog";
+import type { Key } from "./keys";
+import { BrandFlow } from "./views/brand";
+import type { Frame } from "./views/frame";
+import { plainClip, trunc, type Tty, visibleLen, wrap } from "./term";
+
 export { C };
 export { PRODUCT_VERSION };
+export { BIND_TARGETS, TIERS, type BindTarget, type MimonTier, type ProviderEntry, type SlashCommand } from "./catalog";
+export { decodeChunk, type Key } from "./keys";
+export { fit, plainClip, type Tty, visibleLen, WIDTH, wrap } from "./term";
+export { chip, fmtSecs, meter, panel, splash } from "./widgets";
 
-export interface Tty {
-  write(data: string): void;
-  readonly columns: number;
-  readonly rows: number;
-}
-
-const WIDE_CHAR = /[\u1100-\u115F\u2329\u232A\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF01-\uFF60\uFFE0-\uFFE6\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F7E0}-\u{1F7EB}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{20000}-\u{2FFFD}\u{30000}-\u{3FFFD}]/u;
-// biome-ignore lint/suspicious/noMisleadingCharacterClass: tested one code point at a time, so the joiners are meant to match alone
-const ZERO_WIDTH = /[\p{M}\u200B\u200C\u200D\u2060\uFEFF\x00]/u;
 const PASTE_INPUT_CAP = 4096;
-// arrow keys as grid moves: callers turn dy into rows of their own width
-const ARROW_STEPS: Partial<Record<Key["kind"], { dx: number; dy: number }>> = {
-  up: { dx: 0, dy: -1 },
-  down: { dx: 0, dy: 1 },
-  left: { dx: -1, dy: 0 },
-  right: { dx: 1, dy: 0 },
-};
 // chat entries that stand for an image block rather than a line of text
 const IMAGE_ENTRY = "\u0000image:";
 // image boxes, in terminal cells
@@ -47,275 +41,6 @@ function trayRowsFor(screenRows: number): number {
   if (screenRows >= 20) return 4;
   if (screenRows >= 16) return 3;
   return 0;
-}
-
-function charWidth(ch: string): number {
-  if (ZERO_WIDTH.test(ch)) return 0;
-  if (WIDE_CHAR.test(ch)) return 2;
-  return 1;
-}
-
-export function visibleLen(s: string): number {
-  let n = 0;
-  for (const ch of s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")) n += charWidth(ch);
-  return n;
-}
-
-export function plainClip(s: string, max: number): string {
-  let out = "";
-  let n = 0;
-  let i = 0;
-  let sawEscape = false;
-  while (i < s.length) {
-    if (s[i] === "\x1b") {
-      const m = /^\x1b\[[0-9;?]*[A-Za-z]/.exec(s.slice(i));
-      if (m) {
-        out += m[0];
-        sawEscape = true;
-        i += m[0].length;
-        continue;
-      }
-    }
-    const code = s.codePointAt(i)!;
-    const ch = String.fromCodePoint(code);
-    const w = charWidth(ch);
-    if (n + w > max) break;
-    out += ch;
-    n += w;
-    i += ch.length;
-  }
-  return sawEscape ? out + C.reset : out;
-}
-
-export function WIDTH(): number {
-  const cols = stdout.columns;
-  if (!cols || cols < 20) return 44;
-  return Math.min(cols - 2, 92);
-}
-
-export function fit(s: string): string {
-  const max = Math.max(20, stdout.columns || 44) - 1;
-  const plain = s.replace(/\x1b\[[0-9;]*m/g, "");
-  if (plain.length <= max) return s;
-  return plain.slice(0, max);
-}
-
-export function wrap(text: string, width: number): string[] {
-  const out: string[] = [];
-  for (const rawLine of text.split("\n")) {
-    let line = "";
-    for (const word of rawLine.replace(/\s+/g, " ").trim().split(" ")) {
-      if ((line + " " + word).trim().length > width) {
-        if (line) out.push(line);
-        line = word;
-      } else {
-        line = (line + " " + word).trim();
-      }
-    }
-    out.push(line);
-  }
-  return out;
-}
-
-function trunc(s: string, max: number): string {
-  let out = "";
-  let n = 0;
-  for (const ch of s) {
-    const w = charWidth(ch);
-    if (n + w > max) break;
-    out += ch;
-    n += w;
-  }
-  return out;
-}
-
-export function panel(
-  out: Tty,
-  label: string,
-  labelColor: string,
-  border: string,
-  lines: string[],
-): void {
-  const w = WIDTH();
-  const dashes = Math.max(2, w - 5 - label.length);
-  out.write(border + "╭─ " + C.reset + labelColor + C.bold + label + C.reset + " " + border + "─".repeat(dashes) + "╮" + C.reset + "\n");
-  for (const line of lines) {
-    out.write(border + "│ " + C.reset + line.padEnd(w - 4) + " " + border + "│" + C.reset + "\n");
-  }
-  out.write(border + "╰" + "─".repeat(w - 2) + "╯" + C.reset + "\n");
-}
-
-export function chip(text: string, bg?: boolean): string {
-  return (bg ? C.inverse : "") + C.bold + " " + text + " " + C.reset;
-}
-
-export function meter(pct: number, width = 14): string {
-  const filled = Math.round((Math.min(100, pct) / 100) * width);
-  return C.green + "#".repeat(filled) + C.reset + C.dim + "-".repeat(width - filled) + C.reset;
-}
-
-export function fmtSecs(ms: number): string {
-  return (ms / 1000).toFixed(1) + "s";
-}
-
-function boxLines(cols: number, version: string): string[] {
-  const brand = brandName();
-  const palette = brandColors();
-  const meta = "v" + version + " · your keys · your machine";
-  const wide = glyphWord(brand, false);
-  const mini = glyphWord(brand, true);
-  const single = (): string[] => {
-    const plain = trunc("✦ " + brand + " v" + version, Math.max(6, cols));
-    return [palette[0]! + C.bold + plain.slice(0, brand.length + 2) + C.reset + C.dim + plain.slice(brand.length + 2) + C.reset];
-  };
-  if (!wide || !mini) return single();
-  const useMini = cols < wide.width + 13;
-  const art = useMini ? mini : wide;
-  const contentWidth = Math.max(art.width, meta.length);
-  if (cols < contentWidth + 5) return single();
-  const gap = useMini ? " " : "  ";
-  const lead = " ".repeat(Math.max(0, Math.floor((cols - contentWidth - 4) / 2)));
-  const edge = C.dim;
-  const open = lead + edge + "╭" + "─".repeat(contentWidth + 2) + "╮" + C.reset;
-  const blank = lead + edge + "│" + C.reset + " ".repeat(contentWidth + 2) + edge + "│" + C.reset;
-  const close = lead + edge + "╰" + "─".repeat(contentWidth + 2) + "╯" + C.reset;
-  const row = (colored: string, width: number): string => {
-    const l = Math.floor((contentWidth + 2 - width) / 2);
-    const r = contentWidth + 2 - width - l;
-    return lead + edge + "│" + C.reset + " ".repeat(l) + colored + " ".repeat(r) + edge + "│" + C.reset;
-  };
-  const lines: string[] = [open, blank];
-  for (const cells of art.cells) {
-    const colored = cells.map((cell, i) => colorForLetter(i, palette) + cell + C.reset).join(gap);
-    lines.push(row(colored, art.width));
-  }
-  lines.push(blank);
-  lines.push(row(C.dim + meta + C.reset, meta.length));
-  lines.push(close);
-  return lines;
-}
-
-export function splash(tty: Tty, version: string): void {
-  const cols = tty.columns > 0 ? tty.columns : 40;
-  tty.write("\n" + boxLines(cols, version).join("\n") + "\n\n");
-}
-
-export interface MimonTier {
-  id: "mimon1" | "mimon2" | "mimon3" | "mimonMax";
-  label: string;
-  blurb: string;
-  dot: string;
-}
-
-export interface ProviderEntry {
-  name: string;
-  models: string[];
-  keySet: boolean;
-}
-
-export interface BindTarget {
-  role: string;
-  label: string;
-}
-
-export const BIND_TARGETS: BindTarget[] = [
-  { role: "mimon1", get label() { return brandName() + " 1"; } },
-  { role: "mimon2", get label() { return brandName() + " 2"; } },
-  { role: "mimon3", get label() { return brandName() + " 3"; } },
-  { role: "mimonMax", get label() { return brandName() + " MAX"; } },
-  { role: "coder", label: "Coder" },
-  { role: "general", label: "General" },
-];
-
-export const TIERS: MimonTier[] = [
-  { id: "mimon1", get label() { return brandName() + " 1"; }, blurb: "fast · light tasks", dot: C.teal },
-  { id: "mimon2", get label() { return brandName() + " 2"; }, blurb: "balanced · code · default", dot: C.cream },
-  { id: "mimon3", get label() { return brandName() + " 3"; }, blurb: "deep reasoning", dot: C.green },
-  { id: "mimonMax", get label() { return brandName() + " MAX"; }, blurb: "maximum strength", dot: C.gold },
-];
-
-export interface SlashCommand {
-  name: string;
-  description: string;
-}
-
-const COMMANDS: SlashCommand[] = [
-  { name: "/new", description: "Start a fresh session" },
-  { name: "/model", description: "Settings · switch " + brandName() + " model" },
-  { name: "/providers", description: "Settings · cloud providers & keys" },
-  { name: "/setup", description: "Setup · connect a provider & key" },
-  { name: "/brand", description: "Make it yours · change name & colors" },
-  { name: "/stop", description: "Abort the running turn" },
-  { name: "/help", description: "Show keyboard shortcuts" },
-  { name: "/exit", description: "Quit " + brandName().toLowerCase() },
-];
-
-const TIP_BASES = [
-  "type / then enter opens the model settings",
-  "tab cycles ",
-  "drag an image into the prompt to send it to the model",
-  "esc stops a running turn cold",
-  "/brand changes the name & colors any time",
-];
-
-function tipsList(): string[] {
-  return [
-    TIP_BASES[0]!,
-    TIP_BASES[1]! + brandName() + " 1 · 2 · 3 · MAX instantly",
-    TIP_BASES[2]!,
-    TIP_BASES[3]!,
-    TIP_BASES[4]!,
-  ];
-}
-
-export type Key =
-  | { kind: "char"; ch: string }
-  | { kind: "enter" | "backspace" | "delete" | "up" | "down" | "left" | "right" | "home" | "end" | "escape" | "tab" | "ctrl-c" | "ctrl-p" | "ctrl-o" | "unknown" | "paste-start" | "paste-end" };
-
-export function decodeChunk(chunk: string): { keys: Key[]; rest: string } {
-  const keys: Key[] = [];
-  let i = 0;
-  while (i < chunk.length) {
-    const ch = chunk.charAt(i);
-    if (ch === "\x1b") {
-      const next = chunk.charAt(i + 1);
-      if (next === "") return { keys, rest: "\x1b" };
-      if (next === "[") {
-        let j = i + 2;
-        while (j < chunk.length) {
-          const c = chunk.charAt(j);
-          if (c >= "@" && c <= "~") break;
-          j += 1;
-        }
-        if (j >= chunk.length) return { keys, rest: chunk.slice(i) };
-        const seq = chunk.slice(i, j + 1);
-        if (seq === "\x1b[A") keys.push({ kind: "up" });
-        else if (seq === "\x1b[B") keys.push({ kind: "down" });
-        else if (seq === "\x1b[C") keys.push({ kind: "right" });
-        else if (seq === "\x1b[D") keys.push({ kind: "left" });
-        else if (seq === "\x1b[H" || seq === "\x1b[1~") keys.push({ kind: "home" });
-        else if (seq === "\x1b[F" || seq === "\x1b[4~") keys.push({ kind: "end" });
-        else if (seq === "\x1b[3~") keys.push({ kind: "delete" });
-        else if (seq === "\x1b[200~") keys.push({ kind: "paste-start" });
-        else if (seq === "\x1b[201~") keys.push({ kind: "paste-end" });
-        i = j + 1;
-        continue;
-      }
-      keys.push({ kind: "escape" });
-      i += 1;
-      continue;
-    }
-    if (ch === "\r") { keys.push({ kind: "enter" }); i += 1; continue; }
-    if (ch === "\x7f") { keys.push({ kind: "backspace" }); i += 1; continue; }
-    if (ch === "\t") { keys.push({ kind: "tab" }); i += 1; continue; }
-    if (ch === "\x03") { keys.push({ kind: "ctrl-c" }); i += 1; continue; }
-    if (ch === "\x10") { keys.push({ kind: "ctrl-p" }); i += 1; continue; }
-    if (ch === "\x0f") { keys.push({ kind: "ctrl-o" }); i += 1; continue; }
-    if (ch < " ") { keys.push({ kind: "unknown" }); i += 1; continue; }
-    keys.push({ kind: "char", ch });
-    i += 1;
-  }
-  return { keys, rest: "" };
 }
 
 export interface TuiHooks {
@@ -368,7 +93,7 @@ export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
   private cursor = 0;
-  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "brandName" | "brandColors" | "brandColorMode" | "brandCustomColor" | "brandGrid256" | "providerAdd" | "modelPick" | "help" = "prompt";
+  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "providerAdd" | "modelPick" | "help" = "prompt";
   private menuIndex = 0;
   private pickerIndex = 1;
   private shown = false;
@@ -389,22 +114,10 @@ export class Tui {
   private keyBuffer = "";
   private bindModel = "";
   private wizardMode = false;
-  private brandIndex = 0;
-  private brandBuffer = "";
-  private brandError = "";
-  private brandPicks: string[] = [];
-  private brandCurrent: { name: string; colors: string[]; customColors: string[] } | null = null;
-  private brandColorIndex = 0;
-  private brandModeIndex = 0;
-  private brandSingleColor = false;
-  private brandCustomColors: string[] = [];
   private statusExtra = "";
   private typeahead = "";
   private submitQueued = false;
 
-  private customColorBuffer = "";
-  private customColorError = "";
-  private gridIndex = 0;
   private addFields: [string, string, string] = ["", "", ""];
   private addFieldIndex = 0;
   private addError = "";
@@ -413,6 +126,7 @@ export class Tui {
   private recovering = new Set<string>();
   private ownedUploads = new Set<string>();
   private readonly images: ImageLayer;
+  private readonly brand: BrandFlow;
   private chatImages = new Map<string, { image: LoadedImage; thumb: Thumb | null }>();
   private chatImageSeq = 0;
   private framePlacements: Placement[] = [];
@@ -444,6 +158,22 @@ export class Tui {
     private readonly options: TuiOptions = {},
   ) {
     this.images = new ImageLayer(options);
+    const tui = this;
+    const frame: Frame = {
+      get rows() {
+        return tui.rows;
+      },
+      get usable() {
+        return tui.usable;
+      },
+      nestedWidth: () => this.nestedWidth(),
+      boxed: (title, body) => this.boxed(title, body),
+      refresh: () => this.refresh(),
+      closeView: () => {
+        this.view = "prompt";
+      },
+    };
+    this.brand = new BrandFlow(frame, hooks);
   }
 
   private get cols(): number {
@@ -501,11 +231,11 @@ export class Tui {
     return (bare ? "" : this.boxLead()) + C.dim + "│" + C.reset + "  " + out + " ".repeat(pad) + "  " + C.dim + "│" + C.reset;
   }
 
-  private nestedWidth(): number {
+  nestedWidth(): number {
     return Math.max(12, this.innerWidth() - 8);
   }
 
-  private boxed(title: string, body: string[]): string[] {
+  boxed(title: string, body: string[]): string[] {
     const total = this.nestedWidth() + 2;
     const titleText = trunc(title, total - 10);
     const dashes = Math.max(2, total - 5 - titleText.length);
@@ -520,10 +250,6 @@ export class Tui {
     }
     out.push(C.dim + "╰" + "─".repeat(total - 2) + "╯" + C.reset);
     return out;
-  }
-
-  private padCell(text: string, width: number): string {
-    return text + " ".repeat(Math.max(1, width - visibleLen(text)));
   }
 
   private inputMaxText(): number {
@@ -710,12 +436,7 @@ export class Tui {
       : this.view === "provider" ? this.providerItems()
       : this.view === "keyInput" ? this.keyInputLines()
       : this.view === "bindTo" ? this.bindToLines()
-      : this.view === "brand" ? this.brandLines()
-      : this.view === "brandName" ? this.brandNameLines()
-      : this.view === "brandColors" ? this.brandColorsLines()
-      : this.view === "brandColorMode" ? this.brandColorModeLines()
-      : this.view === "brandCustomColor" ? this.customColorLines()
-      : this.view === "brandGrid256" ? this.brandGridLines()
+      : this.view === "brand" ? this.brand.lines()
       : this.view === "providerAdd" ? this.providerAddLines()
       : this.view === "modelPick" ? this.modelPickLines()
       : [];
@@ -1061,148 +782,6 @@ export class Tui {
     return this.boxed("add provider · any OpenAI-compatible endpoint", body);
   }
 
-  private brandLines(): string[] {
-    const current = this.brandCurrent;
-    const title = current
-      ? "make it yours · " + current.name + " · " + current.colors.join(" + ")
-      : "── make it yours ──";
-    const items = ["change name", "change colors", "reset to defaults"];
-    const body: string[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const sel = i === this.brandIndex;
-      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
-      const text = sel ? C.bold + C.teal + items[i]! + C.reset : C.bold + C.cream + items[i]! + C.reset;
-      body.push(cursorCell + text);
-    }
-    body.push(C.dim + trunc("↑↓ move · enter select · esc close", Math.max(6, this.usable - 6)) + C.reset);
-    return this.boxed(title, body);
-  }
-
-  private brandNameLines(): string[] {
-    const body = [
-      C.bold + "New name:" + C.reset + " " + C.cream + this.brandBuffer + C.reset + C.inverse + " " + C.reset,
-    ];
-    if (this.brandError) {
-      body.push(C.red + trunc(this.brandError, this.usable - 6) + C.reset);
-    }
-    body.push(C.dim + trunc("2-12 letters · enter save · esc back", Math.max(6, this.usable - 6)) + C.reset);
-    return this.boxed("brand name", body);
-  }
-
-  private paletteEntries(): string[] {
-    return [...Object.keys(BRAND_PALETTE), ...this.brandCustomColors, "custom hex…", "all 256 colors…"];
-  }
-
-  private brandColorsLines(): string[] {
-    const names = this.paletteEntries();
-    const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
-    const letter = this.brandCurrent?.name[this.brandPicks.length] ?? "?";
-    const preview = (this.brandCurrent?.name ?? "")
-      .split("")
-      .map((ch, i) => (i < this.brandPicks.length ? entryColor(this.brandPicks[i]!) + C.bold + ch + C.reset : C.dim + ch + C.reset))
-      .join(" ");
-    const body: string[] = [
-      C.bold + "preview:" + C.reset + "  " + preview,
-      "",
-    ];
-    const perRow = 2;
-    const totalRows = Math.ceil(names.length / perRow);
-    const maxListRows = Math.max(2, Math.min(totalRows, this.rows - 13));
-    const firstRow = Math.max(0, Math.min(Math.floor(this.brandColorIndex / perRow) - 1, totalRows - maxListRows));
-    const lastRow = Math.min(totalRows, firstRow + maxListRows);
-    const cellWidth = Math.max(8, Math.min(14, Math.floor((this.nestedWidth() - 2) / perRow)));
-    if (firstRow > 0) body.push(C.dim + "  ↑ more" + C.reset);
-    for (let row = firstRow; row < lastRow; row += 1) {
-      const cells: string[] = [];
-      for (let col = 0; col < perRow; col++) {
-        const index = row * perRow + col;
-        if (index >= names.length) break;
-        const name = names[index]!;
-        const sel = index === this.brandColorIndex;
-        const isCustom = this.brandCustomColors.includes(name);
-        const swatch = name === "custom hex…"
-          ? "\x1b[38;5;80m" + "＃" + C.reset
-          : name === "all 256 colors…"
-            ? "\x1b[38;5;220m" + "▤" + C.reset
-            : isCustom
-              ? entryColor(name) + "██" + C.reset
-              : BRAND_PALETTE[name] + "██" + C.reset;
-        const namePart = trunc(name, Math.max(2, cellWidth - 5));
-        const cell = (sel ? C.teal + "❯ " + C.reset : "   ") + swatch + " " + (sel ? C.bold + C.teal + namePart : C.cream + namePart) + C.reset;
-        cells.push(this.padCell(cell, cellWidth));
-      }
-      body.push(cells.join(""));
-    }
-    if (lastRow < totalRows) body.push(C.dim + "  ↓ more" + C.reset);
-    const stage = this.brandSingleColor
-      ? "one color for the whole name"
-      : "picking for letter " + letter + " (" + (this.brandPicks.length + 1) + "/" + total + ")";
-    body.push(C.dim + trunc(stage + " · enter pick · esc undo", Math.max(6, this.usable - 6)) + C.reset);
-    return this.boxed("brand colors", body);
-  }
-
-  private customColorLines(): string[] {
-    const entry = validColorEntry(this.customColorBuffer);
-    const swatch = entry ? entryColor(entry) + "██" + C.reset : C.dim + "██" + C.reset;
-    const body = [
-      C.bold + "Hex color:" + C.reset + " " + C.cream + this.customColorBuffer + C.reset + C.inverse + " " + C.reset + "  " + swatch,
-    ];
-    if (this.customColorError) {
-      body.push(C.red + trunc(this.customColorError, this.usable - 6) + C.reset);
-    }
-    body.push(C.dim + trunc("#rrggbb — e.g. #7c3aed · enter apply · esc back", Math.max(6, this.usable - 6)) + C.reset);
-    return this.boxed("custom color", body);
-  }
-
-  private gridPerRow(): number {
-    return Math.max(4, Math.floor((this.nestedWidth() - 2) / 3));
-  }
-
-  private brandGridLines(): string[] {
-    const letter = this.brandSingleColor ? "" : this.brandCurrent?.name[this.brandPicks.length] ?? "?";
-    const stage = this.brandSingleColor
-      ? "one color for the whole name"
-      : "picking for letter " + letter + " (" + (this.brandPicks.length + 1) + "/" + (this.brandCurrent?.name.length ?? 1) + ")";
-    const picked = xterm256Hex(this.gridIndex);
-    const body: string[] = [
-      C.bold + "preview:" + C.reset + "  " + entryColor(picked) + "████████" + C.reset + "  " + C.dim + picked + C.reset,
-      "",
-    ];
-    const perRow = this.gridPerRow();
-    const maxRows = Math.max(3, Math.min(10, this.rows - 15));
-    const totalRows = Math.ceil(256 / perRow);
-    const firstRow = Math.max(0, Math.min(Math.floor(this.gridIndex / perRow) - Math.floor(maxRows / 2), totalRows - maxRows));
-    const lastRow = Math.min(totalRows, firstRow + maxRows);
-    if (firstRow > 0) body.push(C.dim + "  ↑ more" + C.reset);
-    for (let row = firstRow; row < lastRow; row++) {
-      const cells: string[] = [];
-      for (let col = 0; col < perRow; col++) {
-        const index = row * perRow + col;
-        if (index >= 256) break;
-        const color = "\x1b[38;5;" + index + "m██" + C.reset;
-        const marker = index === this.gridIndex ? C.teal + "❯" + C.reset : " ";
-        cells.push(marker + color);
-      }
-      body.push(cells.join(""));
-    }
-    if (lastRow < totalRows) body.push(C.dim + "  ↓ more" + C.reset);
-    body.push(C.dim + trunc(stage + " · ↑↓←→ move · enter pick · esc back", Math.max(6, this.usable - 6)) + C.reset);
-    return this.boxed("all 256 colors", body);
-  }
-
-  private brandColorModeLines(): string[] {
-    const items = ["one color for the whole name", "a color for each letter"];
-    const body: string[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const sel = i === this.brandModeIndex;
-      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
-      const text = sel ? C.bold + C.teal + items[i]! + C.reset : C.bold + C.cream + items[i]! + C.reset;
-      body.push(cursorCell + text);
-    }
-    body.push(C.dim + trunc("↑↓ move · enter select · esc back", Math.max(6, this.usable - 6)) + C.reset);
-    return this.boxed("brand colors", body);
-  }
-
   openWizard(providers: ProviderEntry[]): void {
     this.providers = providers;
     this.openProvider = null;
@@ -1219,12 +798,8 @@ export class Tui {
   }
 
   openBrand(current: { name: string; colors: string[]; customColors?: string[] }): void {
-    this.brandCustomColors = current.customColors ?? [];
-    this.brandCurrent = { name: current.name, colors: current.colors, customColors: this.brandCustomColors };
-    this.brandError = "";
-    this.brandPicks = [];
+    this.brand.open(current);
     this.view = "brand";
-    this.brandIndex = 0;
     this.refresh();
   }
 
@@ -1234,8 +809,8 @@ export class Tui {
   }
 
   setBrandCustomColors(colors: string[]): void {
-    this.brandCustomColors = colors;
-    if (this.view === "brandColors") this.refresh();
+    this.brand.setCustomColors(colors);
+    if (this.view === "brand" && this.brand.showsPalette()) this.refresh();
   }
 
   refreshBrand(): void {
@@ -1650,40 +1225,6 @@ export class Tui {
     this.hooks.onTierModelPick(t.id);
   }
 
-  private applyColorPick(entry: string): void {
-    this.brandPicks.push(entry);
-    const total = this.brandSingleColor ? 1 : this.brandCurrent?.name.length ?? 1;
-    if (this.brandPicks.length >= total) {
-      const picks = this.brandPicks;
-      this.brandPicks = [];
-      this.view = "prompt";
-      this.refresh();
-      this.hooks.onBrandColors(picks);
-      return;
-    }
-    this.brandColorIndex = 0;
-    this.refresh();
-  }
-
-  private selectBrandItem(): void {
-    if (this.brandIndex === 0) {
-      this.brandBuffer = "";
-      this.brandError = "";
-      this.view = "brandName";
-      this.refresh();
-      return;
-    }
-    if (this.brandIndex === 1) {
-      this.brandModeIndex = 0;
-      this.view = "brandColorMode";
-      this.refresh();
-      return;
-    }
-    this.view = "prompt";
-    this.refresh();
-    this.hooks.onBrandReset();
-  }
-
   private selectProviderItem(): void {
     if (this.view === "providers") {
       if (this.providerIndex >= this.providers.length) {
@@ -1867,157 +1408,7 @@ export class Tui {
       return;
     }
     if (this.view === "brand") {
-      if (key.kind === "up") {
-        this.brandIndex = (this.brandIndex + 2) % 3;
-        this.refresh();
-      }
-      if (key.kind === "down") {
-        this.brandIndex = (this.brandIndex + 1) % 3;
-        this.refresh();
-      }
-      if (key.kind === "enter") this.selectBrandItem();
-      if (key.kind === "escape") {
-        this.view = "prompt";
-        this.refresh();
-      }
-      return;
-    }
-    if (this.view === "brandName") {
-      if (key.kind === "char" && this.brandBuffer.length < 12) {
-        this.brandBuffer += key.ch;
-        this.brandError = "";
-        this.refresh();
-      } else if (key.kind === "backspace") {
-        this.brandBuffer = this.brandBuffer.slice(0, -1);
-        this.refresh();
-      } else if (key.kind === "enter") {
-        if (/^[A-Za-z]{2,12}$/.test(this.brandBuffer)) {
-          const name = this.brandBuffer.toUpperCase();
-          this.brandBuffer = "";
-          this.brandError = "";
-          this.view = "prompt";
-          this.refresh();
-          this.hooks.onBrandName(name);
-        } else {
-          this.brandError = "name must be 2-12 letters";
-          this.refresh();
-        }
-      } else if (key.kind === "escape") {
-        this.brandBuffer = "";
-        this.brandError = "";
-        this.view = "brand";
-        this.refresh();
-      }
-      return;
-    }
-    if (this.view === "brandColorMode") {
-      if (key.kind === "up" || key.kind === "down") {
-        this.brandModeIndex = (this.brandModeIndex + 1) % 2;
-        this.refresh();
-      }
-      if (key.kind === "enter") {
-        this.brandSingleColor = this.brandModeIndex === 0;
-        this.brandPicks = [];
-        this.brandColorIndex = 0;
-        this.view = "brandColors";
-        this.refresh();
-      }
-      if (key.kind === "escape") {
-        this.view = "brand";
-        this.refresh();
-      }
-      return;
-    }
-    if (this.view === "brandColors") {
-      const names = this.paletteEntries();
-      const count = names.length;
-      const move = (delta: number) => {
-        this.brandColorIndex = (this.brandColorIndex + delta + count) % count;
-        this.refresh();
-      };
-      const step = ARROW_STEPS[key.kind];
-      if (step !== undefined) {
-        move(step.dx + step.dy * 2);
-        return;
-      }
-      if (key.kind === "enter") {
-        const picked = names[this.brandColorIndex]!;
-        if (picked === "custom hex…") {
-          this.customColorBuffer = "";
-          this.customColorError = "";
-          this.view = "brandCustomColor";
-          this.refresh();
-          return;
-        }
-        if (picked === "all 256 colors…") {
-          this.gridIndex = 16;
-          this.view = "brandGrid256";
-          this.refresh();
-          return;
-        }
-        this.applyColorPick(picked);
-        return;
-      }
-      if (key.kind === "escape") {
-        if (this.brandPicks.length > 0) {
-          this.brandPicks.pop();
-          this.refresh();
-        } else {
-          this.view = "brand";
-          this.refresh();
-        }
-      }
-      return;
-    }
-    if (this.view === "brandCustomColor") {
-      if (key.kind === "char" && this.customColorBuffer.length < 9) {
-        this.customColorBuffer += key.ch;
-        this.customColorError = "";
-        this.refresh();
-      } else if (key.kind === "backspace") {
-        this.customColorBuffer = this.customColorBuffer.slice(0, -1);
-        this.refresh();
-      } else if (key.kind === "enter") {
-        const entry = validColorEntry(this.customColorBuffer);
-        if (!entry) {
-          this.customColorError = "use #rrggbb — six hex digits";
-          this.refresh();
-          return;
-        }
-        this.customColorBuffer = "";
-        this.customColorError = "";
-        this.view = "brandColors";
-        this.applyColorPick(entry);
-        return;
-      } else if (key.kind === "escape") {
-        this.customColorBuffer = "";
-        this.customColorError = "";
-        this.view = "brandColors";
-        this.refresh();
-      }
-      return;
-    }
-    if (this.view === "brandGrid256") {
-      const perRow = this.gridPerRow();
-      const move = (delta: number) => {
-        this.gridIndex = Math.max(0, Math.min(255, this.gridIndex + delta));
-        this.refresh();
-      };
-      const step = ARROW_STEPS[key.kind];
-      if (step !== undefined) {
-        move(step.dx + step.dy * perRow);
-        return;
-      }
-      if (key.kind === "enter") {
-        const hex = xterm256Hex(this.gridIndex);
-        this.view = "brandColors";
-        this.applyColorPick(hex);
-        return;
-      }
-      if (key.kind === "escape") {
-        this.view = "brandColors";
-        this.refresh();
-      }
+      this.brand.handleKey(key);
       return;
     }
     if (this.view === "providerAdd") {

@@ -3,7 +3,9 @@ import { brandName } from "../shared/brand";
 import { toDataUrl } from "../shared/images";
 import type { ModelRole } from "../shared/types";
 import { renderImage, type LoadedImage } from "./images";
-import { C, chip, fit, fmtSecs, meter, WIDTH, wrap, type Tty } from "./tui";
+import { ANSI as C } from "../shared/tokens";
+import { fit, type Tty, WIDTH, wrap } from "./term";
+import { chip, fmtSecs, meter } from "./widgets";
 
 const rawUrl = process.env.AGENT_URL ?? `http://127.0.0.1:${process.env.AGENT_PORT ?? "7800"}`;
 const baseUrl = new URL(rawUrl);
