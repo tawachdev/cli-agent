@@ -1,10 +1,9 @@
-import { cwd } from "node:process";
-import { join } from "node:path";
+
 import { brandColors, brandName, colorForLetter, } from "../shared/brand";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, } from "node:fs";
 import { saveClipboardImage } from "./clipboard";
 import { spawn } from "node:child_process";
-import { imageChipName, loadImagesFromPaths, locateImagePaths, MAX_IMAGES, type LoadedImage, type LocatedImage } from "./images";
+import type { LoadedImage, } from "./images";
 import { ImageLayer, type ImageLayerOptions, type Placement } from "./image-layer";
 import type { Thumb } from "./thumbs";
 import { glyphWord } from "../shared/glyphs";
@@ -13,6 +12,7 @@ import { PRODUCT_VERSION } from "../shared/version";
 
 import { COMMANDS, type MimonTier, type ProviderEntry, type SlashCommand, TIERS, tipsList } from "./catalog";
 import type { Key } from "./keys";
+import { type Attachment, type AttachmentHost, Attachments, looksLikeBase64Image } from "./attachments";
 import { BrandFlow } from "./views/brand";
 import { ModelPick } from "./views/model-pick";
 import { ProvidersFlow } from "./views/providers";
@@ -69,16 +69,6 @@ export interface TuiOptions extends ImageLayerOptions {
   openImage?: (image: LoadedImage) => void;
 }
 
-interface Attachment {
-  path: string;
-  name: string;
-  image: LoadedImage | null;
-  thumb: Thumb | null;
-  loading: Promise<void> | null;
-}
-
-
-
 const defaultClipboardSave = (destDir: string): Promise<string | null> => saveClipboardImage(destDir);
 
 const defaultOpenImage = (image: LoadedImage): void => {
@@ -113,18 +103,14 @@ export class Tui {
   private typeahead = "";
   private submitQueued = false;
 
-  private pendingImages: Attachment[] = [];
-  private pendingPaths = new Set<string>();
-  private recovering = new Set<string>();
-  private ownedUploads = new Set<string>();
   private readonly images: ImageLayer;
   private readonly brand: BrandFlow;
+  private readonly attachments: Attachments;
   private readonly providerViews: ProvidersFlow;
   private readonly modelPick: ModelPick;
   private chatImages = new Map<string, { image: LoadedImage; thumb: Thumb | null }>();
   private chatImageSeq = 0;
   private framePlacements: Placement[] = [];
-  private attachJobs = new Set<Promise<void>>();
   private history: string[] = [];
   private workingLine = "";
   private chatLines: string[] = [];
@@ -164,6 +150,23 @@ export class Tui {
       },
     };
     this.brand = new BrandFlow(frame, hooks);
+    const prompt: AttachmentHost = {
+      get input() {
+        return tui.input;
+      },
+      set input(value: string) {
+        tui.input = value;
+      },
+      get cursor() {
+        return tui.cursor;
+      },
+      set cursor(value: number) {
+        tui.cursor = value;
+      },
+      refresh: () => this.refresh(),
+      notice: (message) => this.notice(message),
+    };
+    this.attachments = new Attachments(prompt, this.images, options.clipboardSave ?? defaultClipboardSave);
     this.providerViews = new ProvidersFlow(frame, hooks);
     this.modelPick = new ModelPick(frame, hooks);
   }
@@ -254,8 +257,8 @@ export class Tui {
       return C.dim + trunc("▌ working — esc to stop", maxText) + C.reset;
     }
     if (this.input === "") {
-      const hint = this.pendingImages.length > 0
-        ? "Say what to do with " + (this.pendingImages.length > 1 ? "these images" : "this image") + "… enter sends · esc removes"
+      const hint = this.attachments.count > 0
+        ? "Say what to do with " + (this.attachments.count > 1 ? "these images" : "this image") + "… enter sends · esc removes"
         : 'Ask anything… "fix the flaky test in auth"';
       return C.dim + trunc(hint, maxText) + C.reset;
     }
@@ -267,7 +270,7 @@ export class Tui {
 
   private renderStatus(): string {
     const label = trunc(this.tier.label, Math.max(3, Math.min(9, this.innerWidth() - 3)));
-    const images = this.pendingImages.length > 0 ? " · ▤" + this.pendingImages.length + " attached" : "";
+    const images = this.attachments.count > 0 ? " · ▤" + this.attachments.count + " attached" : "";
     const meta = trunc(this.statusExtra + " · ctx " + this.ctxPct + "% · s " + this.sessionShort + images, Math.max(0, this.innerWidth() - 7 - label.length));
     return C.teal + "●" + C.reset + " " + C.bold + C.cream + label + C.reset + C.dim + meta + C.reset;
   }
@@ -435,7 +438,7 @@ export class Tui {
     } else {
       const bannerRows = this.bannerActive && this.rows >= 7 ? (this.usable >= 14 ? 2 : 1) : 0;
       const chrome = 1 + (this.usable >= 16 && this.rows >= 5 ? 1 : 0);
-      const trayChip = this.pendingImages.length > 0 ? 1 : 0;
+      const trayChip = this.attachments.count > 0 ? 1 : 0;
       const chatBudget = Math.max(0, this.rows - bannerRows - chrome - menu.length - overlay.length - trayChip - 1);
       if (this.bannerActive && bannerRows > 0) {
         if (this.usable >= 14) {
@@ -463,8 +466,8 @@ export class Tui {
         for (const visual of visuals) lines.push(plainClip(visual, this.usable - 1));
       }
       for (const flyLine of [...menu, ...overlay]) lines.push(flyLine);
-      if (this.pendingImages.length > 0) {
-        lines.push(C.teal + "▤ " + C.reset + plainClip(this.pendingImages.map((p) => p.name).join(" · "), Math.max(4, this.usable - 3)));
+      if (this.attachments.count > 0) {
+        lines.push(C.teal + "▤ " + C.reset + plainClip(this.attachments.list.map((p) => p.name).join(" · "), Math.max(4, this.usable - 3)));
       }
       this.inputRow = lines.length;
       lines.push(this.bar() + this.renderInput());
@@ -690,7 +693,7 @@ export class Tui {
     this.cursor += 1;
     this.menuIndex = 0;
     this.historyIndex = null;
-    this.detectAttachments();
+    this.attachments.detect();
   }
 
   private insertPasteText(ch: string): void {
@@ -709,15 +712,6 @@ export class Tui {
     }
   }
 
-  private looksLikeBase64Image(text: string): boolean {
-    const body = text.replace(/\s+/g, "");
-    if (body.length < 500) return false;
-    const dataUrl = /^data:image\/[a-z+.-]+;base64,/.test(body);
-    if (dataUrl) return true;
-    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(body)) return false;
-    return body.startsWith("iVBORw0KGgo") || body.startsWith("/9j/") || body.startsWith("R0lGODlh") || body.startsWith("UklGR");
-  }
-
   private commitPaste(): void {
     const text = this.pasteBuf;
     this.pasteBuf = "";
@@ -726,72 +720,22 @@ export class Tui {
       return;
     }
     if (this.view === "providers" && this.providerViews.paste(text)) return;
-    if (this.looksLikeBase64Image(text)) {
-      this.track(this.attachClipboardImage());
+    if (looksLikeBase64Image(text)) {
+      this.attachments.pasteFromClipboard();
       return;
     }
     for (const ch of text) this.applyPasteChar(ch);
-    if (this.pendingImages.length > 0 && this.input.trim() === "") {
+    if (this.attachments.count > 0 && this.input.trim() === "") {
       this.input = "";
       this.cursor = 0;
     }
     this.refresh();
   }
 
-  private async attachClipboardImage(): Promise<void> {
-    if (this.pendingImages.length >= MAX_IMAGES) {
-      this.notice("✘ skipped — max " + MAX_IMAGES + " images per message");
-      return;
-    }
-    if (this.recovering.has("clipboard")) return;
-    this.recovering.add("clipboard");
-    try {
-      const save = this.options.clipboardSave ?? defaultClipboardSave;
-      const saved = await save(join(cwd(), ".agent", "uploads"));
-      if (!saved) {
-        this.notice("✘ pasted image could not be read — copy it again (Cmd+C), then paste here");
-        return;
-      }
-      if (this.pendingPaths.has(saved)) return;
-      this.pendingPaths.add(saved);
-      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, thumb: null, loading: null });
-      await this.loadPending(saved);
-    } finally {
-      this.recovering.delete("clipboard");
-    }
-  }
-
-  private detectAttachments(): void {
-    const located = locateImagePaths(this.input);
-    for (const hit of located.reverse()) {
-      if (this.pendingPaths.has(hit.path)) continue;
-      if (!existsSync(hit.path)) {
-        this.track(this.recoverPastedImage(hit));
-        continue;
-      }
-      if (this.pendingImages.length >= MAX_IMAGES) {
-        this.pendingPaths.add(hit.path);
-        this.notice("✘ " + hit.path + " — skipped, max " + MAX_IMAGES + " images per message");
-        continue;
-      }
-      this.input = this.input.slice(0, hit.start) + this.input.slice(hit.end);
-      this.cursor = Math.min(this.cursor, this.input.length);
-      this.pendingPaths.add(hit.path);
-      this.pendingImages.push({ path: hit.path, name: imageChipName(hit.path), image: null, thumb: null, loading: null });
-      void this.loadPending(hit.path);
-    }
-    // a path pasted on its own leaves only whitespace behind — give the prompt back
-    if (located.length > 0 && this.pendingImages.length > 0 && this.input.trim() === "") {
-      this.input = "";
-      this.cursor = 0;
-    }
-    if (located.length > 0) this.refresh();
-  }
-
   // The composer tray: attached images wait here, above the input, until the
   // message is sent — so the user can explain what the model should do with them.
   private trayBlock(): { lines: string[]; places: Array<{ line: number; placement: Omit<Placement, "row"> }> } {
-    const count = this.pendingImages.length;
+    const count = this.attachments.count;
     if (count === 0) return { lines: [], places: [] };
     const budget = Math.max(4, this.innerWidth() - 4);
     const gap = " ".repeat(TRAY_GAP);
@@ -800,9 +744,9 @@ export class Tui {
     const pad = (text: string, width: number): string => plainClip(text, width) + " ".repeat(Math.max(0, width - visibleLen(text)));
     const caption = (att: Attachment, width: number): string => C.teal + "▤ " + C.reset + C.cream + trunc(att.name, Math.max(1, width - 2)) + C.reset;
     if (maxRows === 0 || tileCols * count + TRAY_GAP * (count - 1) > budget) {
-      return { lines: [this.pendingImages.map((att) => caption(att, 24)).join(gap)], places: [] };
+      return { lines: [this.attachments.list.map((att) => caption(att, 24)).join(gap)], places: [] };
     }
-    const tiles = this.pendingImages.map((att) => ({ att, cells: this.images.cells(att.image, att.thumb, tileCols, maxRows) }));
+    const tiles = this.attachments.list.map((att) => ({ att, cells: this.images.cells(att.image, att.thumb, tileCols, maxRows) }));
     const height = Math.max(1, ...tiles.map((tile) => tile.cells.lines.length));
     const lines: string[] = [];
     for (let r = 0; r < height; r++) {
@@ -837,79 +781,13 @@ export class Tui {
   // ctrl+o: open the attached images (or the last one sent) in the system viewer.
   openInViewer(): void {
     const opener = this.options.openImage ?? defaultOpenImage;
-    const staged = this.pendingImages.flatMap((p) => (p.image ? [p.image] : []));
+    const staged = this.attachments.loaded();
     if (staged.length > 0) {
       for (const image of staged) opener(image);
       return;
     }
     const last = [...this.chatImages.values()].at(-1);
     if (last) opener(last.image);
-  }
-
-  private track(job: Promise<void>): void {
-    this.attachJobs.add(job);
-    void job.finally(() => this.attachJobs.delete(job));
-  }
-
-  // Enter can land while a drop or clipboard paste is still being read; wait for it
-  // so the image goes out with the message instead of being silently dropped.
-  async settleAttachments(): Promise<void> {
-    await Promise.all([...this.attachJobs]);
-    await Promise.all(this.pendingImages.map((p) => p.loading ?? Promise.resolve()));
-  }
-
-  private loadPending(path: string): Promise<void> {
-    const job = (async () => {
-      const { images, errors } = await loadImagesFromPaths([path]);
-      const entry = this.pendingImages.find((p) => p.path === path);
-      if (!entry) return;
-      if (images[0]) {
-        entry.image = images[0]!;
-        const cached = this.images.thumbFor(entry.image);
-        entry.thumb = cached.ready;
-        this.refresh();
-        if (!entry.thumb) {
-          entry.thumb = await cached.promise;
-          this.refresh();
-        }
-      } else if (errors[0]) {
-        this.pendingImages = this.pendingImages.filter((p) => p.path !== path);
-        this.pendingPaths.delete(path);
-        this.notice("✘ " + errors[0]!);
-      }
-    })();
-    const entry = this.pendingImages.find((p) => p.path === path);
-    if (entry) entry.loading = job;
-    return job;
-  }
-
-  private async recoverPastedImage(hit: LocatedImage): Promise<void> {
-    if (!hit.path.includes("TemporaryItems")) return;
-    if (this.recovering.has(hit.path) || this.pendingPaths.has(hit.path)) return;
-    if (this.pendingImages.length >= MAX_IMAGES) {
-      this.notice("✘ skipped — max " + MAX_IMAGES + " images per message");
-      return;
-    }
-    this.recovering.add(hit.path);
-    try {
-      const save = this.options.clipboardSave ?? defaultClipboardSave;
-      const saved = await save(join(cwd(), ".agent", "uploads"));
-      const current = locateImagePaths(this.input).find((l) => l.path === hit.path);
-      if (!current) return;
-      if (!saved) {
-        this.notice("✘ pasted image is gone and the clipboard holds no image — copy it again (Cmd+C), then paste here");
-        return;
-      }
-      this.input = this.input.slice(0, current.start) + this.input.slice(current.end);
-      if (this.input.trim() === "") this.input = "";
-      this.cursor = Math.min(this.cursor, this.input.length);
-      this.pendingPaths.add(saved);
-      this.ownedUploads.add(saved);
-      this.pendingImages.push({ path: saved, name: imageChipName(saved), image: null, thumb: null, loading: null });
-      await this.loadPending(saved);
-    } finally {
-      this.recovering.delete(hit.path);
-    }
   }
 
   showError(message: string): void {
@@ -978,30 +856,23 @@ export class Tui {
   }
 
   releaseSentUploads(): void {
-    for (const path of this.ownedUploads) {
-      try {
-        rmSync(path, { force: true });
-      } catch {}
-    }
-    this.ownedUploads.clear();
+    this.attachments.releaseSent();
+  }
+
+  async settleAttachments(): Promise<void> {
+    await this.attachments.settle();
   }
 
   takePendingImages(): LoadedImage[] {
-    const taken = this.pendingImages.flatMap((p) => (p.image ? [p.image] : []));
-    const missing = this.pendingImages.filter((p) => !p.image).map((p) => p.path);
-    this.pendingImages = [];
-    this.pendingPaths.clear();
-    for (const path of missing) this.notice("✘ " + path + " — could not be loaded, skipped");
-    return taken;
+    return this.attachments.take();
   }
 
   hasPendingImages(): boolean {
-    return this.pendingImages.length > 0;
+    return this.attachments.count > 0;
   }
 
   clearPendingImages(): void {
-    this.pendingImages = [];
-    this.pendingPaths.clear();
+    this.attachments.clear();
   }
 
   private recall(direction: "up" | "down"): void {
@@ -1135,9 +1006,8 @@ export class Tui {
         if (this.cursor > 0) {
           this.input = this.input.slice(0, this.cursor - 1) + this.input.slice(this.cursor);
           this.cursor -= 1;
-        } else if (this.input === "" && this.pendingImages.length > 0) {
-          const removed = this.pendingImages.pop()!;
-          this.pendingPaths.delete(removed.path);
+        } else if (this.input === "" && this.attachments.count > 0) {
+          this.attachments.removeLast();
         }
         break;
       case "ctrl-o":
@@ -1184,8 +1054,8 @@ export class Tui {
         this.input = "";
         this.cursor = 0;
         this.menuIndex = 0;
-        if (this.pendingImages.length > 0) {
-          this.clearPendingImages();
+        if (this.attachments.count > 0) {
+          this.attachments.clear();
           this.notice("· attachments cleared ·");
           return;
         }
