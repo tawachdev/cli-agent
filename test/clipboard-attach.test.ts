@@ -226,6 +226,8 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
     expect(dests).toHaveLength(1);
     expect(dests[0]).toContain(join(".agent", "uploads"));
     expect(tui.hasPendingImages()).toBe(true);
+    tui.hide();
+    tui.show();
     expect(tui.takePendingImages()[0]!.path).toBe(file);
     const frame = tty.chunks.join("").slice(tty.chunks.join("").lastIndexOf("\x1b[H"));
     const plainFrame = frame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
@@ -314,27 +316,49 @@ describe("pasted dead TemporaryItems paths recover from the clipboard", () => {
   });
 });
 
-describe("attachments open in the system viewer", () => {
-  it("renders protocol images inline at attach and opens the viewer only without a protocol", async () => {
+describe("attachments stay in the terminal", () => {
+  it("draws protocol images in the composer and never launches a viewer on attach", async () => {
     const dir = join(tmpdir(), "mimon-clip-open");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "real.png");
     writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
-    const opened: string[] = [];
     const { tui, tty } = makeTui({ support: "iterm" });
     tui.show();
     paste(tui, file);
     await settle();
     expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
-    const { tui: tui2, tty: tty2 } = makeTui({ opened });
+    expect(tty.chunks.join("")).toContain("attached");
+    expect(tui.hasPendingImages()).toBe(true);
+
+    const opened: string[] = [];
+    const { tui: tui2, tty: tty2 } = makeTui({ opened, support: "none" });
     tui2.show();
     paste(tui2, file);
     await settle();
-    expect(opened).toEqual([file]);
+    expect(opened).toEqual([]);
     expect(tty2.chunks.join("")).not.toContain("]1337;File=inline=1");
-    expect(tty.chunks.join("")).toContain("]1337;File=inline=1");
-    expect(tty.chunks.join("")).toContain("attached");
-    expect(tui.hasPendingImages()).toBe(true);
+    expect(tty2.chunks.join("")).toContain("▀");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("ctrl+o opens the attached image in the system viewer on demand", async () => {
+    const dir = join(tmpdir(), "mimon-clip-ctrl-o");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "real.png");
+    writeFileSync(file, buildPng(30, 10, () => [200, 30, 40]));
+    const opened: string[] = [];
+    const tty = new MockTty();
+    const tui = new Tui(tty, {
+      onSubmit: () => {}, onCommand: () => {}, onTierChange: () => {}, onAbort: () => {}, onExit: () => {},
+      onSetKey: () => {}, onRemoveKey: () => {}, onTestProvider: () => {}, onBindModel: () => {}, onWizardKey: () => {},
+      onWizardModel: () => {}, onTierModelPick: () => {}, onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {},
+      onAddProvider: () => {},
+    }, { imageSupport: "none", openImage: (image) => opened.push(image.path) });
+    tui.show();
+    paste(tui, file);
+    await settle();
+    tui.handleKey({ kind: "ctrl-o" });
+    expect(opened).toEqual([file]);
     rmSync(dir, { recursive: true, force: true });
   });
 });
