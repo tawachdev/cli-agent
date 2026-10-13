@@ -65,6 +65,7 @@ async function main(): Promise<void> {
   let taskFailed = false;
 
   const bye = (): void => {
+    ui?.dispose();
     stdout.write("\x1b[?2004l\x1b[?1049l");
     cleanup();
     chat.close();
@@ -79,6 +80,7 @@ async function main(): Promise<void> {
     stdin.resume();
     const handleTurn = async (t: string): Promise<void> => {
       try {
+        await tui.settleAttachments();
         const attached = tui.takePendingImages();
         const { images: fromText, errors } = await loadImages(t);
         const images = [...attached, ...fromText.filter((image) => !attached.some((a) => a.path === image.path))].slice(0, MAX_IMAGES);
@@ -147,6 +149,7 @@ async function main(): Promise<void> {
             "esc stop turn / close menu · ctrl+c quit",
             "/new session · /model picker · /providers keys · /setup connect",
             "/brand name & colors · /stop abort",
+            "drop or paste an image · ⌫ removes it · ctrl+o opens it",
           ]);
           return;
         case "/exit":
@@ -323,7 +326,7 @@ async function main(): Promise<void> {
       printAbove: (lines) => {
         for (const line of lines) tui.historyPush(line);
       },
-      showImage: (image) => tui.openImage(image),
+      showImage: (image) => tui.showImage(image),
       stream: (text) => tui.historyStream(text),
       streamStart: () => {},
       streamEnd: () => tui.historyStreamEnd(),
@@ -501,6 +504,7 @@ async function main(): Promise<void> {
       .catch(() => {});
     await new Promise<void>(() => {});
   } catch (error) {
+    ui?.dispose();
     stdout.write("\x1b[?2004l\x1b[?1049l");
     cleanup();
     chat.close();

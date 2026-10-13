@@ -3,9 +3,11 @@ import { existsSync } from "node:fs";
 import { imageDims, sniffImageMime, type ImageMime } from "../shared/images";
 import { C, type Tty } from "./tui";
 import { decodePng } from "./png";
+import { colorDepth, halfBlockLines, type ColorDepth } from "./halfblock";
+import { itermImage, kittyShow } from "./protocols";
+import { fitCells } from "./thumbs";
 
 const IMAGE_EXT_RE = /(?:[^\s\\]|\\.)+\.(?:png|jpe?g|gif|webp|bmp)/gi;
-const KITTY_CHUNK = 4096;
 
 export const MAX_IMAGES = 4;
 export const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
@@ -126,43 +128,24 @@ export async function loadImages(text: string): Promise<{ images: LoadedImage[];
 export type ImageSupport = "iterm" | "kitty" | "none";
 
 export function imageSupport(env: Record<string, string | undefined> = process.env): ImageSupport {
+  // tmux swallows the image escapes; half-blocks still work there
   if (env["TMUX"]) return "none";
   const program = env["TERM_PROGRAM"] ?? "";
-  if (program === "iTerm.app" || program === "WezTerm" || program === "mintty") return "iterm";
+  if (program === "iTerm.app" || program === "WezTerm" || program === "mintty" || env["LC_TERMINAL"] === "iTerm2") return "iterm";
   const term = env["TERM"] ?? "";
-  if (env["KITTY_WINDOW_ID"] || env["GHOSTTY_RESOURCES_DIR"] || term.includes("kitty") || term.includes("ghostty")) {
+  if (env["KITTY_WINDOW_ID"] || env["GHOSTTY_RESOURCES_DIR"] || program === "ghostty" || term.includes("kitty") || term.includes("ghostty")) {
     return "kitty";
   }
   return "none";
 }
 
+// Scrollback renderer payloads (one-shot mode): the cursor moves past the image.
 export function itermImagePayload(image: LoadedImage, widthCells: number, heightRows: number): string {
-  const name = Buffer.from(image.name).toString("base64");
-  return (
-    "\x1b]1337;File=inline=1;preserveAspectRatio=1;size=" +
-    image.bytes +
-    ";width=" +
-    widthCells +
-    ";height=" +
-    heightRows +
-    ";name=" +
-    name +
-    ":" +
-    image.base64 +
-    "\x07"
-  );
+  return itermImage(image.base64, image.name, widthCells, heightRows, false);
 }
 
 export function kittyImagePayload(image: LoadedImage, widthCells: number, heightRows: number): string {
-  const chunks: string[] = [];
-  const geometry = "w=" + widthCells + ",h=" + heightRows + ",";
-  for (let i = 0; i < image.base64.length; i += KITTY_CHUNK) {
-    const last = i + KITTY_CHUNK >= image.base64.length;
-    const control = i === 0 ? "f=100,a=T,q=2," + geometry : "q=2,";
-    chunks.push("\x1b_G" + control + "m=" + (last ? 0 : 1) + ";" + image.base64.slice(i, i + KITTY_CHUNK) + "\x1b\\");
-  }
-  if (chunks.length === 0) chunks.push("\x1b_Gf=100,a=T,q=2," + geometry + "m=0;\x1b\\");
-  return chunks.join("");
+  return kittyShow(image.base64, widthCells, heightRows);
 }
 
 function humanSize(bytes: number): string {
@@ -171,14 +154,18 @@ function humanSize(bytes: number): string {
   return bytes + " B";
 }
 
-export function fallbackPanel(image: LoadedImage, width: number): string {
-  const dims = image.width !== null && image.height !== null ? image.width + "×" + image.height : image.mime;
-  const meta = [dims, humanSize(image.bytes), image.path];
+export function imageMeta(image: LoadedImage): string {
+  const dims = image.width !== null && image.height !== null ? image.width + "×" + image.height : image.mime.replace("image/", "");
+  return dims + " · " + humanSize(image.bytes);
+}
+
+export function fallbackPanel(image: LoadedImage, width: number, hint = true): string {
+  const meta = [imageMeta(image), image.path];
   const lines = [
     "  " + C.teal + "▤ " + C.reset + C.bold + image.name + C.reset,
     "  " + C.dim + trunc(meta.join("  ·  "), width - 4) + C.reset,
-    "  " + C.dim + trunc("inline pixels need iTerm2, WezTerm, kitty or Ghostty — the image still reaches the model", width - 4) + C.reset,
   ];
+  if (hint) lines.push("  " + C.dim + trunc("inline pixels need iTerm2, WezTerm, kitty or Ghostty — the image still reaches the model", width - 4) + C.reset);
   return lines.join("\n") + "\n";
 }
 
@@ -187,15 +174,17 @@ function trunc(s: string, max: number): string {
 }
 
 export function inlineImagePayload(tty: Tty, image: LoadedImage, maxWidthCells: number, maxRowsCells: number, support: ImageSupport): string {
-  const width = Math.max(10, Math.min(maxWidthCells, tty.columns > 0 ? tty.columns - 6 : 60));
-  const rows = Math.max(2, Math.min(maxRowsCells, Math.ceil((width * 2 * (image.height ?? 1)) / (image.width ?? 1))));
+  const cap = Math.max(10, Math.min(maxWidthCells, tty.columns > 0 ? tty.columns - 6 : 60));
+  const { cols, rows } = fitCells(image.width ?? 0, image.height ?? 0, cap, Math.max(2, maxRowsCells));
   if (support === "iterm") {
-    return itermImagePayload(image, width, rows);
+    return itermImagePayload(image, cols, rows);
   }
-  if (support === "kitty") {
-    return kittyImagePayload(image, width, rows);
+  if (support === "kitty" && image.mime === "image/png") {
+    return kittyImagePayload(image, cols, rows);
   }
-  return fallbackPanel(image, tty.columns > 0 ? tty.columns : 80);
+  const preview = pixelPreviewLines(image, cols, rows, colorDepth());
+  const panel = fallbackPanel(image, tty.columns > 0 ? tty.columns : 80, preview.length === 0);
+  return preview.length > 0 ? preview.map((line) => "  " + line).join("\n") + "\n" + panel : panel;
 }
 
 export function renderImage(tty: Tty, image: LoadedImage, maxWidthCells = 60, maxHeightCells?: number, support: ImageSupport = imageSupport()): void {
@@ -203,119 +192,10 @@ export function renderImage(tty: Tty, image: LoadedImage, maxWidthCells = 60, ma
   tty.write(inlineImagePayload(tty, image, maxWidthCells, heightCap, support) + "\n");
 }
 
-const XTERM16_RGB: Array<[number, number, number]> = [
-  [0, 0, 0], [205, 0, 0], [0, 205, 0], [205, 205, 0],
-  [0, 0, 238], [85, 85, 255], [205, 0, 205], [0, 205, 205],
-  [229, 229, 229], [127, 127, 127], [255, 0, 0], [0, 255, 0],
-  [255, 255, 0], [92, 92, 255], [255, 0, 255], [0, 255, 255],
-];
-const CUBE_STEPS = [0, 95, 135, 175, 215, 255];
-const PALETTE256: Array<[number, number, number]> = Array.from({ length: 256 }, (_v, i): [number, number, number] => {
-  if (i < 16) return XTERM16_RGB[i]!;
-  if (i < 232) {
-    const n = i - 16;
-    return [CUBE_STEPS[Math.floor(n / 36)]!, CUBE_STEPS[Math.floor(n / 6) % 6]!, CUBE_STEPS[n % 6]!];
-  }
-  const v = 8 + (i - 232) * 10;
-  return [v, v, v];
-});
-
-function nearestPaletteIndex(r: number, g: number, b: number): number {
-  let best = 16;
-  let bestDist = Infinity;
-  for (let i = 0; i < 256; i++) {
-    const p = PALETTE256[i]!;
-    const dr = r - p[0]!;
-    const dg = g - p[1]!;
-    const db = b - p[2]!;
-    const dist = dr * dr + dg * dg + db * db;
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i;
-    }
-  }
-  return best;
-}
-
-export function pixelPreviewLines(image: LoadedImage, maxCols = 40, maxRows = 12): string[] {
+export function pixelPreviewLines(image: LoadedImage, maxCols = 40, maxRows = 12, depth: ColorDepth = "256"): string[] {
   if (image.mime !== "image/png") return [];
   const pixels = decodePng(image.base64);
   if (!pixels) return [];
-  const ratio = pixels.width / pixels.height;
-  let cols = Math.min(maxCols, Math.max(8, Math.round(maxRows * 2 * ratio)));
-  let rows = Math.max(2, Math.round(cols / (2 * ratio)));
-  if (rows > maxRows) {
-    rows = maxRows;
-    cols = Math.max(8, Math.round(rows * 2 * ratio));
-  }
-  const gridRows = rows * 2;
-  const grid: Array<[number, number, number]> = [];
-  for (let gy = 0; gy < gridRows; gy++) {
-    for (let cx = 0; cx < cols; cx++) {
-      const x0 = cx * pixels.width / cols;
-      const x1 = (cx + 1) * pixels.width / cols;
-      const y0 = gy * pixels.height / gridRows;
-      const y1 = (gy + 1) * pixels.height / gridRows;
-      const sx0 = Math.max(0, Math.floor(x0));
-      const sy0 = Math.max(0, Math.floor(y0));
-      const sx1 = Math.min(pixels.width, Math.ceil(x1));
-      const sy1 = Math.min(pixels.height, Math.ceil(y1));
-      const stride = Math.max(1, Math.floor(Math.max(sx1 - sx0, sy1 - sy0) / 24));
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let n = 0;
-      for (let y = sy0; y < sy1; y += stride) {
-        for (let x = sx0; x < sx1; x += stride) {
-          const o = (y * pixels.width + x) * 4;
-          r += pixels.data[o]!;
-          g += pixels.data[o + 1]!;
-          b += pixels.data[o + 2]!;
-          n += 1;
-        }
-      }
-      grid.push(n === 0 ? [0, 0, 0] : [r / n, g / n, b / n]);
-    }
-  }
-  const idx: number[] = [];
-  for (let gy = 0; gy < gridRows; gy++) {
-    for (let cx = 0; cx < cols; cx++) {
-      const at = (x: number, y: number): [number, number, number] | null =>
-        x < 0 || x >= cols || y >= gridRows ? null : grid[y * cols + x]!;
-      const me = at(cx, gy)!;
-      const pick = nearestPaletteIndex(
-        Math.max(0, Math.min(255, Math.round(me[0]!))),
-        Math.max(0, Math.min(255, Math.round(me[1]!))),
-        Math.max(0, Math.min(255, Math.round(me[2]!))),
-      );
-      idx.push(pick);
-      const p = PALETTE256[pick]!;
-      const er = me[0]! - p[0]!;
-      const eg = me[1]! - p[1]!;
-      const eb = me[2]! - p[2]!;
-      const push = (x: number, y: number, share: number): void => {
-        const target = at(x, y);
-        if (target) {
-          target[0] = target[0]! + (er * share);
-          target[1] = target[1]! + (eg * share);
-          target[2] = target[2]! + (eb * share);
-        }
-      };
-      push(cx + 1, gy, 7 / 16);
-      push(cx - 1, gy + 1, 3 / 16);
-      push(cx, gy + 1, 5 / 16);
-      push(cx + 1, gy + 1, 1 / 16);
-    }
-  }
-  const lines: string[] = [];
-  for (let ry = 0; ry < rows; ry++) {
-    let line = "";
-    for (let cx = 0; cx < cols; cx++) {
-      const top = idx[ry * 2 * cols + cx]!;
-      const bot = idx[(ry * 2 + 1) * cols + cx]!;
-      line += "\x1b[38;5;" + top + ";48;5;" + bot + "m▀";
-    }
-    lines.push(line + C.reset);
-  }
-  return lines;
+  const { cols, rows } = fitCells(pixels.width, pixels.height, maxCols, maxRows);
+  return halfBlockLines(pixels, cols, Math.max(1, rows), depth);
 }

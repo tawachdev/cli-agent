@@ -158,13 +158,15 @@ describe("terminal image protocols", () => {
     expect(imageSupport({ TERM: "xterm-256color" })).toBe("none");
     expect(imageSupport({ TERM_PROGRAM: "iTerm.app", TMUX: "/tmp/tmux-0/default,1,0" })).toBe("none");
     expect(imageSupport({ TERM: "screen-256color", TMUX: "1" })).toBe("none");
+    expect(imageSupport({ TERM_PROGRAM: "ghostty", TERM: "xterm-256color" })).toBe("kitty");
+    expect(imageSupport({ LC_TERMINAL: "iTerm2", TERM: "xterm-256color" })).toBe("iterm");
   });
 
   it("builds an iTerm inline-image escape with width and size", () => {
     const payload = itermImagePayload(image, 40, 10);
     expect(payload.startsWith("\x1b]1337;File=inline=1;")).toBe(true);
     expect(payload).toContain("preserveAspectRatio=1");
-    expect(payload).toContain("size=1234");
+    expect(payload).toContain("size=" + Buffer.from(PNG_1X1, "base64").length);
     expect(payload).toContain("width=40");
     expect(payload.endsWith("\x07")).toBe(true);
     expect(payload).toContain(":" + PNG_1X1);
@@ -175,14 +177,16 @@ describe("terminal image protocols", () => {
     const payload = kittyImagePayload(big, 30, 8);
     const chunks = payload.split("\x1b\\").filter((c) => c.length > 0);
     expect(chunks.length).toBe(2);
-    expect(chunks[0]).toContain("f=100,a=T,q=2,w=30,h=8,m=1;");
+    // c/r size the box in cells; w/h would crop the source to that many pixels
+    expect(chunks[0]).toContain("f=100,a=T,q=2,c=30,r=8,m=1;");
+    expect(chunks[0]).not.toContain("w=30");
     expect(chunks[1]).toContain("m=0;");
     const small = kittyImagePayload(image, 30, 8);
     expect(small).toContain("m=0;");
     expect(small).not.toContain("m=1;");
   });
 
-  it("falls back to a metadata panel without dumping raw bytes", () => {
+  it("falls back to half-block pixels plus a metadata panel without dumping raw bytes", () => {
     class MockTty implements Tty {
       chunks: string[] = [];
       columns = 80;
@@ -195,11 +199,16 @@ describe("terminal image protocols", () => {
       }
     }
     const tty = new MockTty();
-    renderImage(tty, image, 60);
+    renderImage(tty, image, 60, undefined, "none");
     const t = tty.text();
     expect(t).toContain("shot.png");
     expect(t).toContain("1×1");
-    expect(t).toContain("inline pixels need iTerm2");
+    expect(t).toContain("▀");
     expect(t).not.toContain(PNG_1X1);
+    const jpeg = new MockTty();
+    renderImage(jpeg, { ...image, mime: "image/jpeg", name: "photo.jpg" }, 60, undefined, "none");
+    expect(jpeg.text()).toContain("photo.jpg");
+    expect(jpeg.text()).toContain("inline pixels need iTerm2");
+    expect(jpeg.text()).not.toContain("▀");
   });
 });

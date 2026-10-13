@@ -68,7 +68,7 @@ describe("inline image payloads", () => {
   it("iterm and kitty payloads carry a contain box", () => {
     const img = { ...asLoaded(buildPng(4, 4, () => [1, 2, 3])), mime: "image/png" as const };
     expect(itermImagePayload(img, 20, 12)).toContain(";width=20;height=12;");
-    expect(kittyImagePayload(img, 20, 12)).toContain("w=20,h=12,");
+    expect(kittyImagePayload(img, 20, 12)).toContain("c=20,r=12,");
   });
 
   it("renderImage caps tall portraits by height instead of width", () => {
@@ -90,7 +90,7 @@ describe("in-frame image preview", () => {
     }
   }
 
-  it("attached png shows a quiet chip — no block rows, no protocol escapes", async () => {
+  it("attached png shows a real pixel thumbnail in the composer on plain terminals — no protocol escapes", async () => {
     const dir = join(tmpdir(), "mimon-frame-img");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "drop.png");
@@ -102,18 +102,29 @@ describe("in-frame image preview", () => {
     onWizardModel: () => {},
     onTierModelPick: () => {},
       onBrandName: () => {}, onBrandColors: () => {}, onBrandReset: () => {}, onAddProvider: () => {},
-    });
+    }, { imageSupport: "none", colorDepth: "256" });
     tui.show();
     for (const ch of "see " + file) tui.handleKey({ kind: "char", ch });
     await new Promise((resolve) => setTimeout(resolve, 30));
+    tui.hide();
+    tui.show();
     const raw = tty.chunks.join("");
     expect(raw).not.toContain("\x1b]1337;");
     expect(raw).not.toContain("\x1b_G");
-    expect(raw).not.toContain("▀");
     const frame = raw.slice(raw.lastIndexOf("\x1b[H"));
-    const plainFrame = frame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
-    expect(plainFrame).toContain("▤ drop.png");
-    expect(plainFrame).toContain("attached");
+    const rows = frame.split("\r\n");
+    const blockRows = rows.filter((row) => row.includes("▀"));
+    expect(blockRows.length).toBeGreaterThan(1);
+    expect(blockRows.length).toBeLessThanOrEqual(6);
+    const plain = rows.map((row) => row.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ""));
+    const divider = plain.findIndex((row) => row.includes("├"));
+    const input = plain.findIndex((row) => row.includes("see"));
+    const firstBlock = rows.findIndex((row) => row.includes("▀"));
+    // the thumbnail sits in the composer: below the divider, above the text being typed
+    expect(firstBlock).toBeGreaterThan(divider);
+    expect(firstBlock).toBeLessThan(input);
+    expect(plain.join("\n")).toContain("▤ drop.png");
+    expect(plain.join("\n")).toContain("attached");
     expect(tui.hasPendingImages()).toBe(true);
     rmSync(dir, { recursive: true, force: true });
   });

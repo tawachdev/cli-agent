@@ -48,7 +48,7 @@ Writes and execs wait on a visible diff; read-only tools just run. The [live dem
 |------------|---------------|
 | Terminal-native TUI | pixel-font boot screen, boxed prompt, model picker, permission cards; repaints cleanly at any terminal size |
 | Any model, your keys | anthropic, openai, deepseek, glm, gemini, or any OpenAI-compatible endpoint; keys live in the macOS Keychain — never logged, never returned |
-| Images in the terminal | drop a path, see real pixels on iTerm2/WezTerm/kitty/Ghostty, a clean info panel elsewhere; the model sees it either way |
+| Images in the terminal | drop or paste an image and it waits in the prompt while you explain what to do with it; real pixels on iTerm2/WezTerm/kitty/Ghostty, a color half-block preview everywhere else (Terminal.app, tmux) |
 | Make it yours | rename the agent and repaint it — per letter if you want — from a 256-color grid, presets, or custom hex; saved for every launch |
 | Local engine | loopback-only server on `127.0.0.1:7800`; the CLI refuses non-loopback engines |
 | Ask-first tools | writes and execs show a diff and wait for your key; every call lands in an append-only audit log |
@@ -62,6 +62,7 @@ The `/` menu is the control panel: `/setup` connects a provider, `/providers` ma
 | `enter` | send · `/` command menu · `tab` cycle model tier |
 | `/setup` `/providers` `/model` | wizard · keys & custom providers · tier routing |
 | `esc` | stop a turn / close a menu · `ctrl+c` quit |
+| `⌫` on an empty prompt | remove the last attached image · `esc` clears them all · `ctrl+o` opens them in the system viewer |
 
 ## Configuration
 
