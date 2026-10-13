@@ -11,9 +11,11 @@ import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
 
-import { BIND_TARGETS, COMMANDS, type MimonTier, type ProviderEntry, type SlashCommand, TIERS, tipsList } from "./catalog";
+import { COMMANDS, type MimonTier, type ProviderEntry, type SlashCommand, TIERS, tipsList } from "./catalog";
 import type { Key } from "./keys";
 import { BrandFlow } from "./views/brand";
+import { ModelPick } from "./views/model-pick";
+import { ProvidersFlow } from "./views/providers";
 import type { Frame } from "./views/frame";
 import { plainClip, trunc, type Tty, visibleLen, wrap } from "./term";
 
@@ -93,7 +95,7 @@ export class Tui {
   tier: MimonTier = TIERS[1]!;
   private input = "";
   private cursor = 0;
-  private view: "prompt" | "picker" | "permission" | "providers" | "provider" | "keyInput" | "bindTo" | "brand" | "providerAdd" | "modelPick" | "help" = "prompt";
+  private view: "prompt" | "picker" | "permission" | "providers" | "modelPick" | "brand" | "help" = "prompt";
   private menuIndex = 0;
   private pickerIndex = 1;
   private shown = false;
@@ -107,26 +109,18 @@ export class Tui {
   private sessionShort = "";
   private permissionResolve: ((answer: "a" | "v" | "n") => void) | null = null;
   private bindings: Record<string, string> | null = null;
-  private providers: ProviderEntry[] = [];
-  private providerIndex = 0;
-  private openProvider: ProviderEntry | null = null;
-  private providerItemIndex = 0;
-  private keyBuffer = "";
-  private bindModel = "";
-  private wizardMode = false;
   private statusExtra = "";
   private typeahead = "";
   private submitQueued = false;
 
-  private addFields: [string, string, string] = ["", "", ""];
-  private addFieldIndex = 0;
-  private addError = "";
   private pendingImages: Attachment[] = [];
   private pendingPaths = new Set<string>();
   private recovering = new Set<string>();
   private ownedUploads = new Set<string>();
   private readonly images: ImageLayer;
   private readonly brand: BrandFlow;
+  private readonly providerViews: ProvidersFlow;
+  private readonly modelPick: ModelPick;
   private chatImages = new Map<string, { image: LoadedImage; thumb: Thumb | null }>();
   private chatImageSeq = 0;
   private framePlacements: Placement[] = [];
@@ -145,11 +139,6 @@ export class Tui {
   private pasting = false;
   private pasteBreak = false;
   private pasteBuf = "";
-  private modelPickProvider = "";
-  private modelPickList: string[] = [];
-  private modelPickIndex = 0;
-  private modelPickOffset = 0;
-  private modelPickRole = "";
 
 
   constructor(
@@ -166,6 +155,7 @@ export class Tui {
       get usable() {
         return tui.usable;
       },
+      innerWidth: () => this.innerWidth(),
       nestedWidth: () => this.nestedWidth(),
       boxed: (title, body) => this.boxed(title, body),
       refresh: () => this.refresh(),
@@ -174,6 +164,8 @@ export class Tui {
       },
     };
     this.brand = new BrandFlow(frame, hooks);
+    this.providerViews = new ProvidersFlow(frame, hooks);
+    this.modelPick = new ModelPick(frame, hooks);
   }
 
   private get cols(): number {
@@ -333,85 +325,6 @@ export class Tui {
     return lines;
   }
 
-  private providersLines(): string[] {
-    const titleBody = this.usable >= 22 ? "── cloud providers " + "─".repeat(Math.max(4, Math.min(this.usable - 24, 28))) : "── providers ──";
-    const lines: string[] = [];
-    if (this.wizardMode) {
-      lines.push("  " + C.gold + C.bold + "✦ welcome to " + brandName().toLowerCase() + C.reset);
-      lines.push("  " + C.dim + trunc("pick a provider and paste its API key — it never leaves this machine", Math.max(6, this.usable - 2)) + C.reset);
-    }
-    lines.push("  " + C.dim + trunc(titleBody, Math.max(6, this.usable - 2)) + C.reset);
-    const statusBudget = 12;
-    const nameBudget = Math.max(8, this.usable - statusBudget - 8);
-    for (let i = 0; i < this.providers.length; i++) {
-      const p = this.providers[i]!;
-      const sel = i === this.providerIndex;
-      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
-      const name = (sel ? C.bold + C.teal : C.bold + C.cream) + trunc(p.name, nameBudget) + C.reset;
-      const status = p.keySet ? C.green + "key saved" + C.reset : C.dim + "no key" + C.reset;
-      lines.push("  " + cursorCell + name + "  " + status);
-    }
-    if (this.providers.length === 0) lines.push("  " + C.dim + "no providers" + C.reset);
-    {
-      const sel = this.providerIndex === this.providers.length;
-      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
-      const text = sel ? C.bold + C.teal + "+ add provider (any OpenAI-compatible URL)" + C.reset : C.dim + "+ add provider" + C.reset;
-      lines.push("  " + cursorCell + text);
-    }
-    const footer = this.usable >= 42 ? "↑↓ move · enter open · esc close" : "↑↓ · enter · esc";
-    lines.push("  " + C.dim + trunc(footer, Math.max(6, this.usable - 2)) + C.reset);
-    return lines;
-  }
-
-  private providerItems(): string[] {
-    const p = this.openProvider;
-    if (!p) return [];
-    const items: Array<{ text: string; kind: "model" | "action" }> = p.models.map((m) => ({ text: m, kind: "model" as const }));
-    items.push({ text: p.keySet ? "replace key" : "set key", kind: "action" });
-    if (p.keySet) items.push({ text: "remove key", kind: "action" });
-    items.push({ text: "test key", kind: "action" });
-    if (this.providerItemIndex >= items.length) this.providerItemIndex = Math.max(0, items.length - 1);
-    const lines: string[] = [
-      "  " + C.dim + trunc("── " + p.name + (p.keySet ? " · key saved" : " · no key") + " ", Math.max(6, this.usable - 2)) + C.reset,
-    ];
-    const budget = Math.max(8, this.usable - 6);
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]!;
-      const sel = i === this.providerItemIndex;
-      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
-      const text = sel ? C.bold + C.teal + trunc(item.text, budget) + C.reset : item.kind === "model" ? C.cream + trunc(item.text, budget) + C.reset : C.dim + trunc(item.text, budget) + C.reset;
-      lines.push("  " + cursorCell + text);
-    }
-    lines.push("  " + C.dim + trunc("↑↓ move · enter select · esc back", Math.max(6, this.usable - 2)) + C.reset);
-    return lines;
-  }
-
-  private keyInputLines(): string[] {
-    const masked = "●".repeat(Math.min(this.keyBuffer.length, Math.max(4, this.usable - 40)));
-    const body = [
-      C.bold + trunc("API key for " + (this.openProvider?.name ?? ""), this.usable - 6) + C.reset,
-      C.cream + masked + C.reset + C.inverse + " " + C.reset,
-      C.dim + trunc("stored in your Keychain — never displayed, never logged", Math.max(6, this.usable - 6)) + C.reset,
-      C.dim + trunc("enter save · esc cancel", Math.max(6, this.usable - 6)) + C.reset,
-    ];
-    return this.boxed("provider key", body);
-  }
-
-  private bindToLines(): string[] {
-    const title = "── bind " + this.bindModel + " to ──";
-    const lines: string[] = ["  " + C.dim + trunc(title, Math.max(6, this.usable - 2)) + C.reset];
-    const budget = Math.max(8, this.usable - 6);
-    for (let i = 0; i < BIND_TARGETS.length; i++) {
-      const target = BIND_TARGETS[i]!;
-      const sel = i === this.providerItemIndex;
-      const cursorCell = sel ? C.teal + "❯ " + C.reset : "  ";
-      const text = sel ? C.bold + C.teal + trunc(target.label, budget) + C.reset : C.bold + C.cream + trunc(target.label, budget) + C.reset;
-      lines.push("  " + cursorCell + text);
-    }
-    lines.push("  " + C.dim + trunc("↑↓ move · enter bind · esc cancel", Math.max(6, this.usable - 2)) + C.reset);
-    return lines;
-  }
-
   private centered(content: string): string {
     const budget = Math.max(4, this.innerWidth() - 4);
     const lead = Math.max(0, Math.floor((budget - visibleLen(content)) / 2));
@@ -432,13 +345,9 @@ export class Tui {
     const overlay =
       this.view === "help" ? this.helpLines
       : this.view === "picker" ? this.renderPicker()
-      : this.view === "providers" ? this.providersLines()
-      : this.view === "provider" ? this.providerItems()
-      : this.view === "keyInput" ? this.keyInputLines()
-      : this.view === "bindTo" ? this.bindToLines()
+      : this.view === "providers" ? this.providerViews.lines()
       : this.view === "brand" ? this.brand.lines()
-      : this.view === "providerAdd" ? this.providerAddLines()
-      : this.view === "modelPick" ? this.modelPickLines()
+      : this.view === "modelPick" ? this.modelPick.lines()
       : [];
     const lines: string[] = [];
     const placements: Placement[] = [];
@@ -700,100 +609,26 @@ export class Tui {
   }
 
   openModelPick(provider: string, models: string[], preferred?: string, role?: string): void {
-    this.modelPickProvider = provider;
-    this.modelPickList = models;
-    this.modelPickIndex = preferred ? Math.max(0, models.indexOf(preferred)) : 0;
-    this.modelPickOffset = 0;
-    this.modelPickRole = role ?? "";
-    if (models.length === 0) return;
-    this.clampModelPickOffset();
+    if (!this.modelPick.open(provider, models, preferred, role)) return;
     this.view = "modelPick";
     this.refresh();
   }
 
   openProviders(providers: ProviderEntry[]): void {
-    this.providers = providers;
-    if (this.openProvider) {
-      this.openProvider = providers.find((p) => p.name === this.openProvider?.name) ?? null;
-    }
-    this.view = this.openProvider ? "provider" : "providers";
-    this.providerIndex = Math.min(this.providerIndex, Math.max(0, providers.length - 1));
+    this.providerViews.open(providers);
+    this.view = "providers";
     this.refresh();
   }
 
   // refresh provider data in place — never steals focus from the chat prompt
   updateProviders(providers: ProviderEntry[]): void {
-    this.providers = providers;
-    if (this.openProvider) {
-      this.openProvider = providers.find((p) => p.name === this.openProvider?.name) ?? null;
-    }
-    if (this.view === "providers" || this.view === "provider") this.refresh();
-  }
-
-  private clampModelPickOffset(): void {
-    const window = 10;
-    if (this.modelPickIndex < this.modelPickOffset) this.modelPickOffset = this.modelPickIndex;
-    if (this.modelPickIndex >= this.modelPickOffset + window) {
-      this.modelPickOffset = this.modelPickIndex - window + 1;
-    }
-  }
-
-  private modelPickLines(): string[] {
-    const body: string[] = [];
-    const budget = Math.max(6, this.usable - 4);
-    const window = 10;
-    const start = this.modelPickOffset;
-    const end = Math.min(this.modelPickList.length, start + window);
-    body.push(C.dim + trunc("pick a model — it drives all tiers (change later in /model)", budget) + C.reset);
-    for (let i = start; i < end; i++) {
-      const active = i === this.modelPickIndex;
-      const marker = active ? C.teal + "❯ " + C.reset : "  ";
-      body.push(marker + (active ? C.cream + this.modelPickList[i]! + C.reset : this.modelPickList[i]!));
-    }
-    if (this.modelPickList.length > window) {
-      body.push(C.dim + `${this.modelPickIndex + 1}/${this.modelPickList.length}` + C.reset);
-    }
-    body.push(C.dim + trunc("↑↓ move · enter select · esc keep current", budget) + C.reset);
-    return body;
-  }
-
-  private providerAddLines(): string[] {
-    const labels = ["name (a-z, 0-9, -)", "base url (https://…)", "models (comma separated)"];
-    const body: string[] = [];
-    const budget = Math.max(8, this.innerWidth() - 2);
-    for (let i = 0; i < labels.length; i++) {
-      const active = i === this.addFieldIndex;
-      const marker = active ? C.teal + "❯ " + C.reset : "  ";
-      const label = trunc(labels[i]!, 24);
-      const value = this.addFields[i]!;
-      const room = budget - label.length - 2 - (active ? 1 : 0);
-      const tail = room > 4 && value.length > room ? "…" + value.slice(-(room - 1)) : value;
-      const field = active
-        ? C.bold + label + C.reset + "  " + C.cream + tail + C.reset + C.inverse + " " + C.reset
-        : value
-          ? C.dim + label + C.reset + "  " + C.dim + tail + C.reset
-          : C.dim + label + C.reset;
-      body.push(marker + field);
-    }
-    if (this.addError) {
-      body.push(C.red + trunc(this.addError, this.usable - 6) + C.reset);
-    }
-    body.push(C.dim + trunc("enter next · esc cancel", Math.max(6, this.usable - 6)) + C.reset);
-    return this.boxed("add provider · any OpenAI-compatible endpoint", body);
+    this.providerViews.setProviders(providers);
+    if (this.view === "providers" && this.providerViews.showsProviderData()) this.refresh();
   }
 
   openWizard(providers: ProviderEntry[]): void {
-    this.providers = providers;
-    this.openProvider = null;
-    this.wizardMode = true;
+    this.providerViews.openWizard(providers);
     this.view = "providers";
-    this.providerIndex = 0;
-    this.refresh();
-  }
-
-  exitWizard(): void {
-    this.wizardMode = false;
-    this.view = "prompt";
     this.refresh();
   }
 
@@ -890,20 +725,7 @@ export class Tui {
       this.refresh();
       return;
     }
-    if (this.view === "keyInput") {
-      this.keyBuffer += text.replace(/\n+/g, " ").slice(0, 200);
-      this.refresh();
-      return;
-    }
-    if (this.view === "providerAdd") {
-      const field = this.addFields[this.addFieldIndex];
-      if (field !== undefined) {
-        this.addFields[this.addFieldIndex] = (field + text.replace(/\n+/g, " ")).slice(0, 200);
-        this.addError = "";
-      }
-      this.refresh();
-      return;
-    }
+    if (this.view === "providers" && this.providerViews.paste(text)) return;
     if (this.looksLikeBase64Image(text)) {
       this.track(this.attachClipboardImage());
       return;
@@ -1225,59 +1047,6 @@ export class Tui {
     this.hooks.onTierModelPick(t.id);
   }
 
-  private selectProviderItem(): void {
-    if (this.view === "providers") {
-      if (this.providerIndex >= this.providers.length) {
-        this.addFields = ["", "", ""];
-        this.addFieldIndex = 0;
-        this.addError = "";
-        this.view = "providerAdd";
-        this.refresh();
-        return;
-      }
-      const p = this.providers[this.providerIndex];
-      if (!p) return;
-      this.openProvider = p;
-      this.providerItemIndex = 0;
-      this.view = this.wizardMode ? "keyInput" : "provider";
-      this.refresh();
-      return;
-    }
-    if (this.view === "provider") {
-      const p = this.openProvider;
-      if (!p) return;
-      if (this.providerItemIndex < p.models.length) {
-        this.bindModel = p.models[this.providerItemIndex] ?? "";
-        this.providerItemIndex = 0;
-        this.view = "bindTo";
-        this.refresh();
-        return;
-      }
-      const actions = p.keySet ? ["set", "remove", "test"] : ["set", "test"];
-      const action = actions[this.providerItemIndex - p.models.length];
-      if (action === "set") {
-        this.keyBuffer = "";
-        this.view = "keyInput";
-        this.refresh();
-      } else if (action === "remove") {
-        this.hooks.onRemoveKey(p.name);
-      } else if (action === "test") {
-        this.hooks.onTestProvider(p.name, p.models[0] ?? "");
-      }
-      return;
-    }
-    if (this.view === "bindTo") {
-      const target = BIND_TARGETS[this.providerItemIndex];
-      const p = this.openProvider;
-      if (!target || !p || !this.bindModel) return;
-      const binding = p.name + "/" + this.bindModel;
-      this.view = "prompt";
-      this.openProvider = null;
-      this.refresh();
-      this.hooks.onBindModel(target.role, binding);
-    }
-  }
-
   handleKey(key: Key): void {
     if (key.kind === "ctrl-c") {
       this.hooks.onExit();
@@ -1341,162 +1110,16 @@ export class Tui {
       }
       return;
     }
-    if (this.view === "keyInput") {
-      if (key.kind === "char") {
-        this.keyBuffer += key.ch;
-        this.refresh();
-      } else if (key.kind === "backspace") {
-        this.keyBuffer = this.keyBuffer.slice(0, -1);
-        this.refresh();
-      } else if (key.kind === "enter") {
-        const name = this.openProvider?.name ?? "";
-        const keyValue = this.keyBuffer;
-        this.keyBuffer = "";
-        const wizard = this.wizardMode;
-        if (wizard) {
-          this.openProvider = null;
-          this.exitWizard();
-        } else {
-          this.view = "provider";
-          this.refresh();
-        }
-        if (name && keyValue) {
-          if (wizard) this.hooks.onWizardKey(name, keyValue);
-          else this.hooks.onSetKey(name, keyValue);
-        }
-      } else if (key.kind === "escape") {
-        this.keyBuffer = "";
-        if (this.wizardMode) this.openProvider = null;
-        this.view = this.wizardMode ? "providers" : "provider";
-        this.refresh();
-      }
-      return;
-    }
-    if (this.view === "modelPick") {
-      const count = this.modelPickList.length;
-      if (count === 0) {
-        this.view = "prompt";
-        this.refresh();
-        return;
-      }
-      if (key.kind === "up") {
-        this.modelPickIndex = (this.modelPickIndex + count - 1) % count;
-        this.clampModelPickOffset();
-        this.refresh();
-        return;
-      }
-      if (key.kind === "down") {
-        this.modelPickIndex = (this.modelPickIndex + 1) % count;
-        this.clampModelPickOffset();
-        this.refresh();
-        return;
-      }
-      if (key.kind === "enter") {
-        const model = this.modelPickList[this.modelPickIndex]!;
-        const name = this.modelPickProvider;
-        const role = this.modelPickRole;
-        this.view = "prompt";
-        this.refresh();
-        if (role) this.hooks.onBindModel(role, name + "/" + model);
-        else this.hooks.onWizardModel(name, model);
-        return;
-      }
-      if (key.kind === "escape") {
-        this.view = "prompt";
-        this.refresh();
-      }
-      return;
-    }
     if (this.view === "brand") {
       this.brand.handleKey(key);
       return;
     }
-    if (this.view === "providerAdd") {
-      const label = this.addFieldIndex === 0 ? "name" : this.addFieldIndex === 1 ? "base url" : "models";
-      if (key.kind === "char" && this.addFields[this.addFieldIndex]!.length < 200) {
-        this.addFields[this.addFieldIndex] = this.addFields[this.addFieldIndex]! + key.ch;
-        this.addError = "";
-        this.refresh();
-      } else if (key.kind === "backspace") {
-        this.addFields[this.addFieldIndex] = this.addFields[this.addFieldIndex]!.slice(0, -1);
-        this.refresh();
-      } else if (key.kind === "up" && this.addFieldIndex > 0) {
-        this.addFieldIndex -= 1;
-        this.addError = "";
-        this.refresh();
-      } else if (key.kind === "down" && this.addFieldIndex < 2) {
-        this.addFieldIndex += 1;
-        this.refresh();
-      } else if (key.kind === "enter") {
-        const [name, url, models] = this.addFields;
-        if (this.addFieldIndex < 2 && !this.addFields[this.addFieldIndex]) {
-          this.addError = label + " is required";
-          this.refresh();
-          return;
-        }
-        if (this.addFieldIndex === 0 && !/^[a-z0-9][a-z0-9-]*$/.test(name!)) {
-          this.addError = "name: lowercase letters, digits, -";
-          this.refresh();
-          return;
-        }
-        if (this.addFieldIndex === 1 && !/^https:\/\//.test(url!) && !/^http:\/\/127\.0\.0\.1/.test(url!)) {
-          this.addError = "url must be https:// (or http://127.0.0.1)";
-          this.refresh();
-          return;
-        }
-        if (this.addFieldIndex < 2) {
-          this.addFieldIndex += 1;
-          this.refresh();
-          return;
-        }
-        const list = (models ?? "").split(",").map((m) => m.trim()).filter(Boolean);
-        this.addFields = ["", "", ""];
-        this.addFieldIndex = 0;
-        this.addError = "";
-        this.view = "providers";
-        this.refresh();
-        this.hooks.onAddProvider(name!, url!, list);
-      } else if (key.kind === "escape") {
-        this.addFields = ["", "", ""];
-        this.addFieldIndex = 0;
-        this.addError = "";
-        this.view = "providers";
-        this.refresh();
-      }
+    if (this.view === "providers") {
+      this.providerViews.handleKey(key);
       return;
     }
-    if (this.view === "providers" || this.view === "provider" || this.view === "bindTo") {
-      const count =
-        this.view === "providers" ? this.providers.length + 1
-        : this.view === "bindTo" ? BIND_TARGETS.length
-        : (this.openProvider?.models.length ?? 0) + (this.openProvider?.keySet ? 3 : 2);
-      if (count === 0) return;
-      const move = (delta: number) => {
-        if (this.view === "providers") {
-          this.providerIndex = (this.providerIndex + delta + count) % count;
-        } else {
-          this.providerItemIndex = (this.providerItemIndex + delta + count) % count;
-        }
-        this.refresh();
-      };
-      if (key.kind === "escape") {
-        if (this.view === "provider") {
-          this.openProvider = null;
-          this.view = "providers";
-        } else if (this.view === "bindTo") {
-          this.view = "provider";
-        } else if (this.wizardMode) {
-          this.exitWizard();
-          return;
-        } else {
-          this.view = "prompt";
-        }
-        this.refresh();
-        return;
-      }
-      if (key.kind === "up") move(-1);
-      else if (key.kind === "down") move(1);
-      else if (key.kind === "enter") this.selectProviderItem();
+    if (this.view === "modelPick") {
+      this.modelPick.handleKey(key);
       return;
     }
     this.handlePromptKey(key);

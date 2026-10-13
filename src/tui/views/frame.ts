@@ -4,7 +4,8 @@
 export interface Frame {
   readonly rows: number;
   readonly usable: number;
-  // width of a boxed panel's content, in cells
+  // width inside the main box, and inside a boxed panel within it, in cells
+  innerWidth(): number;
   nestedWidth(): number;
   boxed(title: string, body: string[]): string[];
   refresh(): void;
