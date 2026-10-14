@@ -1,0 +1,29 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`golden TUI session renders and behaves exactly as pinned 1`] = `
+[
+  "onTierChange [{"id":"mimon2","label":"MIMON 2","blurb":"balanced · code · default","dot":"\\u001b[38;5;223m"}]",
+  "onTierModelPick ["mimon2"]",
+  "onBrandName ["NOVA"]",
+  "onBrandColors [["green","#eeeeee","teal","teal","#112233"]]",
+  "onBrandColors [["teal"]]",
+  "onBindModel ["mimon2","openai/gpt-5-mini"]",
+  "onSetKey ["openai","sk-xy"]",
+  "onBindModel ["mimon2","openai/gpt-5"]",
+  "onAddProvider ["my-llm","https://llm.example/v1",["m1","m2"]]",
+  "onWizardKey ["gemini","key2"]",
+  "onWizardModel ["openai","model-0"]",
+  "onBindModel ["coder","openai/b"]",
+  "onSubmit ["explain"]",
+  "perm v",
+  "onSubmit ["typed"]",
+  "onAbort []",
+]
+`;
+
+exports[`golden TUI session renders and behaves exactly as pinned 2`] = `
+{
+  "bytes": 291257,
+  "sha256": "dae52ad7074da0e509ff432811a3c0e221c478790cc4c8b135bc0efa4617a993",
+}
+`;

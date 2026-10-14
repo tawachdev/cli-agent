@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { readJsonObject, writeJsonAtomic } from "./shared/json-file";
 import { BRAND_PALETTE, DEFAULT_BRAND, DEFAULT_COLORS, validColorEntry, validColorList } from "../shared/brand";
 
 const NAME_RE = /^[A-Za-z]{2,12}$/;
@@ -49,13 +49,8 @@ export class BrandStore {
   }
 
   private read(): z.infer<typeof fileSchema> | null {
-    if (!existsSync(this.path())) return null;
-    try {
-      const parsed = fileSchema.safeParse(JSON.parse(readFileSync(this.path(), "utf8")));
-      return parsed.success ? parsed.data : null;
-    } catch {
-      return null;
-    }
+    const parsed = fileSchema.safeParse(readJsonObject(this.path()));
+    return parsed.success ? parsed.data : null;
   }
 
   private mergeCustom(current: string[] | undefined, applied: string[] | null | undefined): string[] {
@@ -80,15 +75,11 @@ export class BrandStore {
       colors: applied ?? current?.colors ?? envColors(this.env) ?? DEFAULT_COLORS,
       customColors: this.mergeCustom(current?.customColors, applied),
     };
-    const dir = join(this.workspaceRoot, ".agent");
-    mkdirSync(dir, { recursive: true });
-    await Bun.write(this.path(), JSON.stringify(next, null, 2) + "\n");
+    writeJsonAtomic(this.path(), next);
   }
 
   async reset(): Promise<void> {
-    const dir = join(this.workspaceRoot, ".agent");
-    mkdirSync(dir, { recursive: true });
-    await Bun.write(this.path(), JSON.stringify({ name: DEFAULT_BRAND, colors: DEFAULT_COLORS, customColors: [] }, null, 2) + "\n");
+    writeJsonAtomic(this.path(), { name: DEFAULT_BRAND, colors: DEFAULT_COLORS, customColors: [] });
   }
 
   effective(): BrandIdentity {

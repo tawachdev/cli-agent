@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Chat } from "../src/tui/chat";
 import { brandName } from "../src/shared/brand";
 import { glyphWord } from "../src/shared/glyphs";
-import { Tui, type Key, type Tty } from "../src/tui/tui";
+import { Tui, type Tty } from "../src/tui/tui";
 
 class VirtualTerminal {
   cols: number;
@@ -180,7 +180,6 @@ function makeVt(rows: number, cols: number): { vt: VirtualTerminal; tui: Tui; ca
   return { vt, tui, cap };
 }
 
-const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
 
 function type(tui: Tui, s: string): void {
   for (const ch of s) tui.handleKey({ kind: "char", ch });
@@ -775,7 +774,6 @@ describe("double-send repro", () => {
     };
     tui.show();
     const type = (s: string) => { for (const ch of s) tui.handleKey({ kind: "char", ch }); };
-    const ui = chat.ui;
     const send = async (msg: string) => {
       type(msg);
       key(tui, "enter");

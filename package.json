@@ -12,13 +12,17 @@
     "stage": "bun run scripts/stage.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "build:bin": "bun build --compile bin/agent.ts --outfile dist/agent"
+    "build:bin": "bun build --compile bin/agent.ts --outfile dist/agent",
+    "lint": "biome lint --error-on-warnings",
+    "check": "bun run typecheck && bun run lint && bun test",
+    "release": "bun run scripts/release.ts"
   },
   "dependencies": {
     "hono": "^4.13.8",
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@biomejs/biome": "2",
     "@types/bun": "^1.4.2",
     "typescript": "^7.0.2"
   }

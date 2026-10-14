@@ -74,7 +74,7 @@ function startUpstream(): { server: ReturnType<typeof Bun.serve>; calls: Upstrea
   return { server, calls, url: `http://127.0.0.1:${server.port}` };
 }
 
-function startBackend(workspaceRoot: string, upstreamUrl: string): { server: ReturnType<typeof Bun.serve>; url: string } {
+function startBackend(workspaceRoot: string): { server: ReturnType<typeof Bun.serve>; url: string } {
   const db = openDb(":memory:");
   runMigrations(db, migrations);
   const audit = new SqliteAudit(db);
@@ -142,7 +142,7 @@ let world: World | null = null;
 beforeAll(() => {
   const upstream = startUpstream();
   const workspace = mkdtempSync(join(tmpdir(), "mimon-e2e-"));
-  const backend = startBackend(workspace, upstream.url);
+  const backend = startBackend(workspace);
   const api = (path: string, body?: unknown, method?: "POST" | "PUT") =>
     fetch(backend.url + path, {
       method: method ?? (body === undefined ? "GET" : "POST"),

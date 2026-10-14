@@ -185,7 +185,7 @@ describe("provider serialization of canonical history", () => {
     const userTurn = messages.find(
       (m) => m.role === "user" && Array.isArray(m.content) && (m.content as Array<Record<string, unknown>>).some((b) => b["type"] === "tool_result"),
     );
-    const results = (userTurn?.content as Array<Record<string, unknown>>).filter((b) => b["type"] === "tool_result");
+    const results = (userTurn!.content as Array<Record<string, unknown>>).filter((b) => b["type"] === "tool_result");
     expect(results.map((b) => b["tool_use_id"])).toEqual([CALL_A.id, CALL_B.id]);
   });
 });

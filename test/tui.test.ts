@@ -11,7 +11,6 @@ import {
   TIERS,
   Tui,
   visibleLen,
-  type Key,
   type MimonTier,
   type Tty,
 } from "../src/tui/tui";
@@ -906,7 +905,7 @@ describe("failure print channel", () => {
   const chunks: string[] = [];
   function makeChat() {
     chunks.length = 0;
-    let errors: string[] = [];
+    const errors: string[] = [];
     const tty = { write: (d: string) => chunks.push(d), columns: 100, rows: 40 };
     const chat = new Chat(tty, async () => "n");
     chat.onError = (m: string) => errors.push(m);
@@ -948,7 +947,7 @@ describe("failure print channel", () => {
   it("with uiHandlesErrors nothing raw is written outside the box", () => {
     const { chat } = makeChat();
     chat.uiHandlesErrors = true;
-    let errors: string[] = [];
+    const errors: string[] = [];
     chat.onError = (m: string) => errors.push(m);
     chat.onEvent({ type: "turn.failed", payload: { reason: "boom" } });
     chat.onEvent({ type: "turn.aborted", payload: {} });

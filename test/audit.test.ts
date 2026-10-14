@@ -15,7 +15,7 @@ import { fsReadTool } from "../src/engine/tools/fs/read";
 
 class FakeProvider implements ModelProvider {
   constructor(private readonly turns: StreamChunk[][]) {}
-  async *complete(req: GenerateRequest): AsyncGenerator<StreamChunk> {
+  async *complete(_req: GenerateRequest): AsyncGenerator<StreamChunk> {
     for (const chunk of this.turns.shift() ?? []) {
       yield chunk;
     }

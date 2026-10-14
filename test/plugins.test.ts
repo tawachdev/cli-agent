@@ -2,23 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { mkdtemp, mkdir, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { z } from "zod";
 import { loadPluginDir, loadPluginRoots } from "../src/engine/plugins/loader";
 import { ToolRegistry } from "../src/engine/tools/registry";
-import type { Tool } from "../src/engine/tools/types";
-
-const fixtureSchema = z.object({ x: z.string() });
-const fixtureTool: Tool<typeof fixtureSchema> = {
-  name: "plugin.echo",
-  description: "test plugin tool",
-  permissionClass: "read",
-  schema: fixtureSchema,
-  target: (input) => input.x,
-  async invoke(input) {
-    return { ok: true, data: { echoed: input.x } };
-  },
-};
-
 
 describe("plugin trust boundary", () => {
   const TOOL_SOURCE =

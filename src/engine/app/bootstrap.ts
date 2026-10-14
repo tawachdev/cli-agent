@@ -87,7 +87,7 @@ if (unboundRoles.length > 0) {
         break;
       }
     } catch {
-      continue;
+      // provider unreachable or rejected the key — try the next one
     }
   }
   if (!chosen && keyed.length > 0) chosen = keyed[0];

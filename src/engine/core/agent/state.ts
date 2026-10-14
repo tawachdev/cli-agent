@@ -1,5 +1,5 @@
 import type { Db } from "../../db/client";
-import { parseToolCalls, type PersistedToolCall } from "../../models/types";
+import type { PersistedToolCall } from "../../models/types";
 
 export interface SessionRow {
   id: string;

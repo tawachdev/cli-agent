@@ -2,14 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Db } from "../../db/client";
 import { appendMessage, createSession, getSession, listMessages } from "../../core/agent/state";
-import { PendingPermissions } from "../../core/permissions/pending";
-import type { StreamRegistry } from "../ws/agent-stream";
 
-export function createSessionsRoute(
-  db: Db,
-  pending: PendingPermissions,
-  streams: StreamRegistry,
-): Hono {
+export function createSessionsRoute(db: Db): Hono {
   const route = new Hono();
   const createBody = z.object({ title: z.string().min(1).max(200).optional() });
 

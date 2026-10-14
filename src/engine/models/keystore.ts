@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { readJsonObject, writeJsonAtomic } from "../shared/json-file";
 
 export interface KeyStore {
   get(name: string): string | null;
@@ -19,20 +19,15 @@ function keyFile(): string {
 }
 
 function readKeyFile(): Record<string, string> {
-  if (!existsSync(keyFile())) return {};
-  try {
-    const parsed = JSON.parse(readFileSync(keyFile(), "utf8")) as Record<string, string>;
-    return typeof parsed === "object" && parsed !== null ? parsed : {};
-  } catch {
-    return {};
+  const keys: Record<string, string> = {};
+  for (const [name, value] of Object.entries(readJsonObject(keyFile()))) {
+    if (typeof value === "string") keys[name] = value;
   }
+  return keys;
 }
 
 function writeKeyFile(keys: Record<string, string>): void {
-  const dir = join(homedir(), ".agent");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(keyFile(), JSON.stringify(keys, null, 2) + "\n", { mode: 0o600 });
-  chmodSync(keyFile(), 0o600);
+  writeJsonAtomic(keyFile(), keys, 0o600);
 }
 
 export class KeychainKeyStore implements KeyStore {

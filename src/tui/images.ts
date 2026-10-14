@@ -1,7 +1,8 @@
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import { imageDims, sniffImageMime, type ImageMime } from "../shared/images";
-import { C, type Tty } from "./tui";
+import { ANSI as C } from "../shared/tokens";
+import type { Tty } from "./term";
 import { decodePng } from "./png";
 import { colorDepth, halfBlockLines, type ColorDepth } from "./halfblock";
 import { itermImage, kittyShow } from "./protocols";

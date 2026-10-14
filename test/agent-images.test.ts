@@ -123,7 +123,6 @@ describe("images on the /agent/run route", () => {
     runMigrations(db, migrations);
     const audit = new SqliteAudit(db);
     const pending = new PendingPermissions();
-    const permissions = new PermissionEngine(defaultPolicyFile(), pending, audit);
     const provider = new FakeProvider([[{ type: "token", text: "ok" }]]);
     const agent = makeAgent(db, provider);
     const app = createServer({

@@ -1,5 +1,13 @@
-const DEFAULT_MAX_BYTES = 32 * 1024;
+// Child processes for tools and checks. Shell commands run in their own process
+// group so a stop reaches every process they started: killing only `sh` leaves
+// children like `sleep` or `bun test` running with our pipes still open, and the
+// read never ends.
+
+const DEFAULT_MAX_CHARS = 32 * 1024;
 const DEFAULT_TIMEOUT_MS = 120_000;
+const KILL_GRACE_MS = 2_000;
+
+export type Child = Bun.Subprocess<"ignore", "pipe", "pipe">;
 
 export interface ProcResult {
   exitCode: number;
@@ -7,18 +15,75 @@ export interface ProcResult {
   stderr: string;
 }
 
-async function readCapped(
+// Reads a stream to the end, keeping at most `maxChars`. It always drains the
+// stream so the child never blocks on a full pipe.
+export async function readCapped(
   stream: ReadableStream<Uint8Array>,
-  maxBytes: number,
-  buf: { text: string },
-): Promise<void> {
+  maxChars: number = DEFAULT_MAX_CHARS,
+): Promise<{ text: string; truncated: boolean }> {
   const decoder = new TextDecoder();
+  let text = "";
+  let truncated = false;
   for await (const chunk of stream) {
-    if (buf.text.length < maxBytes) {
-      buf.text += decoder.decode(chunk, { stream: true });
+    if (truncated) continue;
+    text += decoder.decode(chunk, { stream: true });
+    if (text.length >= maxChars) {
+      text = text.slice(0, maxChars);
+      truncated = true;
     }
   }
-  buf.text += decoder.decode();
+  if (!truncated) text += decoder.decode();
+  return { text, truncated };
+}
+
+export function spawnShell(command: string, cwd: string): Child {
+  return Bun.spawn(["sh", "-c", command], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "ignore",
+    detached: true,
+  });
+}
+
+function signalGroup(proc: Child, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-proc.pid, signal);
+  } catch {
+    // ESRCH: the group is already gone — nothing left to stop
+  }
+}
+
+// SIGTERM the whole group, then SIGKILL whatever ignores it after a grace period.
+export async function stopTree(proc: Child, graceMs: number = KILL_GRACE_MS): Promise<void> {
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
+  signalGroup(proc, "SIGTERM");
+  const force = setTimeout(() => signalGroup(proc, "SIGKILL"), graceMs);
+  force.unref?.();
+  await proc.exited;
+  clearTimeout(force);
+}
+
+// Stops `proc` when the signal aborts or the deadline passes, and reports which one fired.
+export function guard(proc: Child, signal: AbortSignal | undefined, timeoutMs: number): {
+  timedOut: () => boolean;
+  release: () => void;
+} {
+  let timedOut = false;
+  const abort = () => void stopTree(proc);
+  signal?.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(() => {
+    timedOut = true;
+    void stopTree(proc);
+  }, timeoutMs);
+  timer.unref?.();
+  return {
+    timedOut: () => timedOut,
+    release: () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    },
+  };
 }
 
 export async function runProc(
@@ -28,20 +93,12 @@ export async function runProc(
   if (opts.signal?.aborted) {
     return { exitCode: -1, stdout: "", stderr: "aborted before start" };
   }
-  const proc = Bun.spawn(args, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
-  const abort = () => proc.kill();
-  opts.signal?.addEventListener("abort", abort, { once: true });
-  const timer = setTimeout(() => proc.kill(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  timer.unref?.();
-  const out = { text: "" };
-  const err = { text: "" };
+  const proc = Bun.spawn(args, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore", detached: true });
+  const stop = guard(proc, opts.signal, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
-    const readers = [readCapped(proc.stdout, DEFAULT_MAX_BYTES, out), readCapped(proc.stderr, DEFAULT_MAX_BYTES, err)];
-    const exitCode = await proc.exited;
-    await Promise.allSettled(readers);
-    return { exitCode, stdout: out.text, stderr: err.text };
+    const [stdout, stderr, exitCode] = await Promise.all([readCapped(proc.stdout), readCapped(proc.stderr), proc.exited]);
+    return { exitCode, stdout: stdout.text, stderr: stderr.text };
   } finally {
-    clearTimeout(timer);
-    opts.signal?.removeEventListener("abort", abort);
+    stop.release();
   }
 }
