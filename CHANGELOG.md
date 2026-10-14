@@ -5,6 +5,8 @@ with every user-visible change; `bun run release` moves it under the new version
 
 ## Unreleased
 
+## 0.1.19 — 2026-10-14
+
 ### Images
 - Pasted or dropped images wait in the composer above the prompt, so you can say what the model should do with them; Enter sends them together and they move under your message in the transcript.
 - kitty and Ghostty show the whole image (it was cropped to a sliver), iTerm2 and WezTerm draw it inside the box at every width, and every other terminal (Terminal.app, VS Code, tmux) shows a color thumbnail instead of opening an external viewer.
