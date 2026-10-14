@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync, realpathSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { z } from "zod";
 import type { ToolRegistry } from "../tools/registry";
 import type { AnyTool } from "../tools/types";
@@ -54,11 +54,11 @@ export async function loadPluginDir(
     throw new Error("plugin entry not found: " + entryPath);
   }
   const realRoot = realpathSync(root);
-  const realEntryDir = realpathSync(dirname(entryPath));
-  if (realEntryDir !== realRoot && !realEntryDir.startsWith(realRoot + sep)) {
+  const realEntry = realpathSync(entryPath);
+  if (!realEntry.startsWith(realRoot + sep)) {
     throw new Error("plugin entry escapes the plugin directory through a symlink: " + manifest.entry);
   }
-  const module = (await import(entryPath)) as { tools?: AnyTool[]; default?: AnyTool };
+  const module = (await import(realEntry)) as { tools?: AnyTool[]; default?: AnyTool };
   const tools = module.tools ?? (module.default ? [module.default] : []);
   if (tools.length === 0) {
     throw new Error("plugin exports no tools: " + manifest.name);

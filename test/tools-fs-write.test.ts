@@ -57,5 +57,19 @@ describe("fs.write and fs.edit tools", () => {
     });
     expect(editPreview).toContain("+ c");
     expect(editPreview).toContain("- b");
+    expect(editPreview).toContain("(first occurrence)");
+    const replaceAllPreview = fsEditTool.preview?.({ path: "new.txt", oldText: "a", newText: "b", replaceAll: true });
+    expect(replaceAllPreview).toContain("(every occurrence)");
+  });
+
+  it("writes newText literally, without expanding $ replacement patterns", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fsedit-"));
+    await writeFile(join(root, "price.ts"), "const price = OLD;\n");
+    const edited = await fsEditTool.invoke(
+      { path: "price.ts", oldText: "OLD", newText: "`$&$'$1`", replaceAll: false },
+      { workspaceRoot: root },
+    );
+    expect(edited.ok).toBe(true);
+    expect(await readFile(join(root, "price.ts"), "utf8")).toBe("const price = `$&$'$1`;\n");
   });
 });

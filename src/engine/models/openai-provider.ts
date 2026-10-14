@@ -148,8 +148,9 @@ export class OpenAICompatProvider implements ModelProvider {
     let usage: StreamChunk | null = null;
     let buffer = "";
     let streamDone = false;
+    const decoder = new TextDecoder();
     for await (const piece of response.body) {
-      buffer += new TextDecoder().decode(piece);
+      buffer += decoder.decode(piece, { stream: true });
       let newline = buffer.indexOf("\n");
       while (newline !== -1) {
         const line = buffer.slice(0, newline).trim();

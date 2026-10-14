@@ -58,8 +58,8 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
   let usage: TokenUsage | null = null;
   const ids = { sessionId: deps.sessionId, taskId: deps.taskId };
 
+  let active = deps.binding;
   const callWithFailover = async <T>(run: (binding: ModelBinding) => Promise<T>): Promise<T> => {
-    let active = deps.binding;
     for (;;) {
       try {
         return await run(active);
@@ -104,6 +104,7 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
         },
         deps.signal,
       )) {
+        deps.signal?.throwIfAborted();
         if (chunk.type === "token") {
           turnContent += chunk.text;
           deps.publish("token.delta", { text: chunk.text });
@@ -146,7 +147,7 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
     for (const [index, call] of persistedCalls.entries()) {
       deps.publish("tool.requested", { name: call.name, arguments: call.arguments });
       deps.publish("tool.started", { name: call.name });
-      deps.audit?.write("tool.requested", { name: call.name, arguments: JSON.stringify(call.arguments).slice(0, 500) });
+      deps.audit?.write("tool.requested", { name: call.name, arguments: JSON.stringify(call.arguments).slice(0, 500) }, ids);
       const startedAt = Date.now();
       const argumentsError = turnCalls[index]?.argumentsError;
       const result: ToolResult = argumentsError
@@ -155,7 +156,7 @@ export async function runTurn(deps: TurnDeps, task: string, images: string[] = [
             deps.publish("permission.requested", request),
           );
       const durationMs = Date.now() - startedAt;
-      deps.audit?.write("tool.result", { name: call.name, ok: result.ok, durationMs });
+      deps.audit?.write("tool.result", { name: call.name, ok: result.ok, durationMs }, ids);
       const observation = truncateObservation(JSON.stringify(result));
       deps.publish("tool.result", {
         name: call.name,

@@ -66,7 +66,7 @@ const decisions = [
   },
   {
     name: "Append-only audit",
-    why: "Every tool call and every permission decision lands in an append-only log. It is the receipts of the session: useful to you, impossible to rewrite.",
+    why: "Every tool call and every permission decision lands in an append-only log. It is the receipts of the session: the app only ever appends to it, never edits or deletes a row.",
   },
   {
     name: "A PNG decoder from scratch",
@@ -153,7 +153,7 @@ const tree = [
     <section id="turn" class="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
       <h2 class="reveal text-3xl font-bold tracking-tight sm:text-4xl">One turn, traced</h2>
       <p class="reveal mt-4 max-w-prose text-sm leading-relaxed text-fog">
-        A real turn, annotated with what the engine is doing at each step. The step labels on the
+        A scripted sample turn, annotated with what the engine is doing at each step. The step labels on the
         left are the actual phases of the loop.
       </p>
       <div class="reveal mt-8 overflow-hidden rounded-lg border border-line bg-panel shadow-2xl" style="--d: 60ms">

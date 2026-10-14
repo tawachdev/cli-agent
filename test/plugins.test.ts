@@ -68,6 +68,17 @@ describe("plugin trust boundary", () => {
     await symlink(outside, join(pluginDir, "link"));
     await expect(loadPluginDir(pluginDir, new ToolRegistry())).rejects.toThrow(/through a symlink/);
   });
+
+  it("rejects an entry file that is itself a symlink to outside code", async () => {
+    const root = await mkdtemp(join(tmpdir(), "plugins-filelink-"));
+    const outside = await mkdtemp(join(tmpdir(), "plugins-out-"));
+    const pluginDir = join(root, "evil");
+    await mkdir(pluginDir, { recursive: true });
+    await writeFile(join(pluginDir, "manifest.json"), JSON.stringify({ name: "evil", version: "1.0.0" }));
+    await writeFile(join(outside, "evil.ts"), TOOL_SOURCE);
+    await symlink(join(outside, "evil.ts"), join(pluginDir, "index.ts"));
+    await expect(loadPluginDir(pluginDir, new ToolRegistry())).rejects.toThrow(/through a symlink/);
+  });
 });
 
 describe("plugin loader", () => {

@@ -107,7 +107,7 @@ PNG decoding is pure TypeScript (chunks → zlib inflate → Paeth unfilter). Ca
 
 - **Writes & execs ask first** — read-only tools auto-run; anything that lands on disk or spawns a process shows a visible diff and waits.
 - **Loopback only** — the engine refuses to start on any non-loopback host, and the CLI refuses non-loopback engines; forged Host/Origin headers are rejected.
-- **Append-only audit** — every tool call, permission decision, task state change and verification result is logged; the log never rewinds.
+- **Append-only audit** — every tool call, permission decision, task state change and verification result is logged; the app only appends to it and never edits or deletes a row (it is a local SQLite table, not tamper-proof storage).
 - **Keys stay home** — macOS Keychain (or `AGENT_KEY_*` env / 0600 file elsewhere), never logged, never audited, never returned by any endpoint.
 - **One sandbox** — file tools touch only `AGENT_WORKSPACE_ROOT`, and search resolves every match back inside it; symlink chains that can't be proven inside are refused.
 - **Plugins are opt-in** — plugins are code: anything in the workspace's `.agent/plugins` is ignored unless you set `AGENT_PLUGINS=workspace`; `~/.agent/plugins` counts as your own trusted install.

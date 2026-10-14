@@ -4,7 +4,7 @@ import { toDataUrl } from "../shared/images";
 import type { ModelRole } from "../shared/types";
 import { renderImage, type LoadedImage } from "./images";
 import { ANSI as C } from "../shared/tokens";
-import { fit, type Tty, WIDTH, wrap } from "./term";
+import { fit, stripTerminalControls, type Tty, WIDTH, wrap } from "./term";
 import { chip, fmtSecs, meter } from "./widgets";
 
 const rawUrl = process.env.AGENT_URL ?? `http://127.0.0.1:${process.env.AGENT_PORT ?? "7800"}`;
@@ -20,9 +20,20 @@ assertLocal(baseUrl);
 
 export const backendOrigin = baseUrl.origin;
 
+const PREVIEW_LINES = 16;
+
 interface StreamEvent {
   type: string;
   payload: Record<string, unknown>;
+}
+
+export function sanitizeEngineData<T>(value: T): T {
+  if (typeof value === "string") return stripTerminalControls(value) as T;
+  if (Array.isArray(value)) return value.map(sanitizeEngineData) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, sanitizeEngineData(inner)])) as T;
+  }
+  return value;
 }
 
 async function request(path: string, body?: unknown, method?: "POST" | "PUT" | "DELETE"): Promise<Record<string, unknown>> {
@@ -37,7 +48,7 @@ async function request(path: string, body?: unknown, method?: "POST" | "PUT" | "
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: "error",
   });
-  return (await response.json()) as Record<string, unknown>;
+  return sanitizeEngineData((await response.json()) as Record<string, unknown>);
 }
 
 export interface ProviderInfo {
@@ -193,7 +204,7 @@ export class Chat {
     ws.addEventListener("message", (m) => {
       if (generation !== this.wsGeneration) return;
       try {
-        this.onEvent(JSON.parse(m.data as string) as StreamEvent).catch((error: Error) => {
+        this.onEvent(sanitizeEngineData(JSON.parse(m.data as string) as StreamEvent)).catch((error: Error) => {
           stdout.write(C.red + "  ✘ event failed: " + error.message + C.reset + "\n");
         });
       } catch (error) {
@@ -369,7 +380,10 @@ export class Chat {
     const preview = p["preview"] as string | undefined;
     if (preview) {
       const box = WIDTH() - 6;
-      for (const line of wrap(preview, box).slice(0, 16)) {
+      const lines = wrap(preview, box);
+      const shown = lines.slice(0, PREVIEW_LINES);
+      if (lines.length > shown.length) shown.push("… " + (lines.length - shown.length) + " more lines not shown");
+      for (const line of shown) {
         const colored = line.startsWith("+") ? C.green + line : line.startsWith("-") ? C.red + line : C.dim + line;
         if (this.ui) this.ui.printAbove(["  " + colored]);
         else this.tty.write("  " + colored + C.reset + "\n");

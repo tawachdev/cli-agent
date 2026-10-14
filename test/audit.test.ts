@@ -69,6 +69,14 @@ describe("audit trail", () => {
     expect(requested.arguments.length).toBeLessThanOrEqual(500);
     const result = JSON.parse(readAudit(db).find((row) => row.type === "tool.result")?.payload as string);
     expect(result).toMatchObject({ name: "fs.read", ok: expect.any(Boolean) });
+    const toolRows = db
+      .query("SELECT session_id, task_id FROM audit_events WHERE type IN ('tool.requested', 'tool.result')")
+      .all() as { session_id: string | null; task_id: string | null }[];
+    expect(toolRows.length).toBe(2);
+    for (const row of toolRows) {
+      expect(row.session_id).toBe(session.id);
+      expect(row.task_id).toEqual(expect.any(String));
+    }
     db.close();
   });
 

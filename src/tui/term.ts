@@ -94,3 +94,10 @@ export function trunc(s: string, max: number): string {
 export function padCell(text: string, width: number): string {
   return text + " ".repeat(Math.max(1, width - visibleLen(text)));
 }
+
+const TERMINAL_ESCAPE = /\x1b(?:\[[0-?]*[ -/]*[@-~]?|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[PX^_][^\x1b]*(?:\x1b\\)?|[\x20-\x7e]?)|\x9b[0-?]*[ -/]*[@-~]?|\x9d[^\x07\x9c]*[\x07\x9c]?/g;
+const CONTROL_CHAR = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
+
+export function stripTerminalControls(text: string): string {
+  return text.replace(TERMINAL_ESCAPE, "").replace(CONTROL_CHAR, "");
+}

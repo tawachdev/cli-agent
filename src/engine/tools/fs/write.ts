@@ -40,7 +40,9 @@ export const fsEditTool: Tool<typeof editInputSchema> = {
   permissionClass: "write",
   schema: editInputSchema,
   target: (input) => input.path,
-  preview: (input) => "edit " + input.path + "\n" + lineDiff(input.oldText, input.newText),
+  preview: (input) =>
+    "edit " + input.path + (input.replaceAll ? " (every occurrence)" : " (first occurrence)") + "\n" +
+    lineDiff(input.oldText, input.newText),
   async invoke(input, ctx) {
     const target = scopedPath(ctx.workspaceRoot, input.path);
     if (!target) return { ok: false, error: "path outside workspace: " + input.path };
@@ -52,7 +54,7 @@ export const fsEditTool: Tool<typeof editInputSchema> = {
     }
     const updated = input.replaceAll
       ? content.split(input.oldText).join(input.newText)
-      : content.replace(input.oldText, input.newText);
+      : content.replace(input.oldText, () => input.newText);
     await writeFile(target, updated, "utf8");
     return { ok: true, data: { path: input.path, bytes: updated.length } };
   },

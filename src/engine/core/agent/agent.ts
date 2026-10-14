@@ -62,7 +62,6 @@ export class AbortRegistry {
     const entry = this.entries.get(taskId);
     if (!entry) return false;
     entry.controller.abort();
-    this.entries.delete(taskId);
     return true;
   }
 

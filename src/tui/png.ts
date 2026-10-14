@@ -7,6 +7,7 @@ export interface RgbaPixels {
 }
 
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const MAX_PIXELS = 36_000_000;
 
 function paeth(a: number, b: number, c: number): number {
   const p = a + b - c;
@@ -61,19 +62,20 @@ function decodePngInner(base64: string): RgbaPixels | null {
     }
     offset += 12 + length;
   }
-  if (width <= 0 || height <= 0 || width > 20000 || height > 20000) return null;
+  if (width <= 0 || height <= 0 || width * height > MAX_PIXELS) return null;
   if (bitDepth !== 8 || interlace !== 0) return null;
   if (colorType !== 0 && colorType !== 2 && colorType !== 3 && colorType !== 4 && colorType !== 6) return null;
 
   const channels = colorType === 0 ? 1 : colorType === 2 ? 3 : colorType === 3 ? 1 : colorType === 4 ? 2 : 4;
+  const stride = width * channels;
+  const expectedBytes = (stride + 1) * height;
   let raw: Buffer;
   try {
-    raw = inflateSync(Buffer.concat(idat));
+    raw = inflateSync(Buffer.concat(idat), { maxOutputLength: expectedBytes });
   } catch {
     return null;
   }
-  const stride = width * channels;
-  if (raw.length < (stride + 1) * height) return null;
+  if (raw.length < expectedBytes) return null;
 
   const out = new Uint8Array(width * height * 4);
   let prev = new Uint8Array(stride);
