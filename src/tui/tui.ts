@@ -5,7 +5,6 @@ import { saveClipboardImage } from "./clipboard";
 import { spawn } from "node:child_process";
 import type { LoadedImage, } from "./images";
 import { ImageLayer, type ImageLayerOptions, type Placement } from "./image-layer";
-import type { Thumb } from "./thumbs";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";
 import { PRODUCT_VERSION } from "../shared/version";
@@ -13,6 +12,7 @@ import { PRODUCT_VERSION } from "../shared/version";
 import { COMMANDS, type MimonTier, type ProviderEntry, type SlashCommand, TIERS, tipsList } from "./catalog";
 import type { Key } from "./keys";
 import { type Attachment, type AttachmentHost, Attachments, looksLikeBase64Image } from "./attachments";
+import { Transcript } from "./transcript";
 import { BrandFlow } from "./views/brand";
 import { ModelPick } from "./views/model-pick";
 import { ProvidersFlow } from "./views/providers";
@@ -27,8 +27,6 @@ export { fit, plainClip, type Tty, visibleLen, WIDTH, wrap } from "./term";
 export { chip, fmtSecs, meter, panel, splash } from "./widgets";
 
 const PASTE_INPUT_CAP = 4096;
-// chat entries that stand for an image block rather than a line of text
-const IMAGE_ENTRY = "\u0000image:";
 // image boxes, in terminal cells
 const TRAY_GAP = 2;
 const TRAY_TILE_MIN_COLS = 6;
@@ -106,18 +104,15 @@ export class Tui {
   private readonly images: ImageLayer;
   private readonly brand: BrandFlow;
   private readonly attachments: Attachments;
+  private readonly transcript: Transcript;
   private readonly providerViews: ProvidersFlow;
   private readonly modelPick: ModelPick;
-  private chatImages = new Map<string, { image: LoadedImage; thumb: Thumb | null }>();
-  private chatImageSeq = 0;
   private framePlacements: Placement[] = [];
   private history: string[] = [];
   private workingLine = "";
-  private chatLines: string[] = [];
   private helpLines: string[] = [];
   private bannerActive = false;
   private bannerVersion = "";
-  private chatStreamOpen = false;
   private lastLines: string[] = [];
   private lastCols = 0;
   private lastRows = 0;
@@ -166,6 +161,7 @@ export class Tui {
       refresh: () => this.refresh(),
       notice: (message) => this.notice(message),
     };
+    this.transcript = new Transcript(this.images, () => this.refresh());
     this.attachments = new Attachments(prompt, this.images, options.clipboardSave ?? defaultClipboardSave);
     this.providerViews = new ProvidersFlow(frame, hooks);
     this.modelPick = new ModelPick(frame, hooks);
@@ -382,31 +378,9 @@ export class Tui {
       const contentCol = this.boxLead().length + 3;
       const imageCols = Math.max(8, Math.min(inner - 2, TRANSCRIPT_IMAGE_COLS));
       const imageRows = Math.max(3, Math.min(TRANSCRIPT_IMAGE_ROWS, Math.floor(this.rows * 0.4)));
-      const visuals: Array<{ text: string; place?: Omit<Placement, "row"> }> = [];
-      for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < budget; i--) {
-        const entry = this.chatLines[i]!;
-        if (entry.startsWith(IMAGE_ENTRY)) {
-          const id = entry.slice(IMAGE_ENTRY.length);
-          const shown = this.chatImages.get(id);
-          if (!shown) continue;
-          let block = this.images.captioned(shown.image, shown.thumb, imageCols, imageRows);
-          // never slice an image in half at the top edge — collapse it to its caption
-          if (visuals.length + block.lines.length > budget) block = { lines: block.lines.slice(0, 1), box: null };
-          for (let j = block.lines.length - 1; j >= 0 && visuals.length < budget; j--) {
-            const box = block.box;
-            visuals.unshift(box && j === box.line && shown.thumb
-              ? { text: block.lines[j]!, place: { slot: "chat:" + id, thumb: shown.thumb, name: shown.image.name, col: contentCol + 2 + box.col, cols: box.cols, rows: box.rows } }
-              : { text: block.lines[j]! });
-          }
-          continue;
-        }
-        const wrapped = wrap(entry, inner);
-        for (let j = wrapped.length - 1; j >= 0 && visuals.length < budget; j--) {
-          visuals.unshift({ text: wrapped[j]! });
-        }
-      }
+      const visuals = this.transcript.rows(budget, inner, { cols: imageCols, rows: imageRows });
       for (const visual of visuals) {
-        if (visual.place) placements.push({ ...visual.place, row: lines.length });
+        if (visual.place) placements.push({ ...visual.place, row: lines.length, col: contentCol + 2 + visual.place.col });
         lines.push(this.boxLine("  " + visual.text));
       }
       if (this.workingLine) lines.push(this.boxLine("  " + this.workingLine));
@@ -448,21 +422,8 @@ export class Tui {
           lines.push(C.teal + C.bold + "✦ " + brandName() + C.reset);
         }
       }
-      if (chatBudget > 0 && this.chatLines.length > 0) {
-        const inner = Math.max(8, this.usable - 1);
-        const visuals: string[] = [];
-        for (let i = this.chatLines.length - 1; i >= 0 && visuals.length < chatBudget; i--) {
-          const entry = this.chatLines[i]!;
-          if (entry.startsWith(IMAGE_ENTRY)) {
-            const shown = this.chatImages.get(entry.slice(IMAGE_ENTRY.length));
-            if (shown) visuals.unshift(C.teal + "▤ " + C.reset + shown.image.name);
-            continue;
-          }
-          const wrapped = wrap(entry, inner);
-          for (let j = wrapped.length - 1; j >= 0 && visuals.length < chatBudget; j--) {
-            visuals.unshift(wrapped[j]!);
-          }
-        }
+      if (chatBudget > 0 && !this.transcript.isEmpty) {
+        const visuals = this.transcript.plainRows(chatBudget, Math.max(8, this.usable - 1));
         for (const visual of visuals) lines.push(plainClip(visual, this.usable - 1));
       }
       for (const flyLine of [...menu, ...overlay]) lines.push(flyLine);
@@ -569,8 +530,7 @@ export class Tui {
   }
 
   notice(msg: string): void {
-    this.chatLines.push(C.dim + trunc(msg, Math.max(6, this.usable - 2)) + C.reset);
-    this.chatStreamOpen = false;
+    this.transcript.push(C.dim + trunc(msg, Math.max(6, this.usable - 2)) + C.reset);
     this.refresh();
   }
 
@@ -763,19 +723,8 @@ export class Tui {
 
   // Put a sent image into the transcript, right under the message that carried it.
   showImage(image: LoadedImage): void {
-    const id = String(++this.chatImageSeq);
-    const cached = this.images.thumbFor(image);
-    const shown = { image, thumb: cached.ready };
-    this.chatImages.set(id, shown);
-    this.chatLines.push(IMAGE_ENTRY + id);
-    this.chatStreamOpen = false;
+    this.transcript.addImage(image);
     this.refresh();
-    if (!shown.thumb) {
-      void cached.promise.then((thumb) => {
-        shown.thumb = thumb;
-        this.refresh();
-      });
-    }
   }
 
   // ctrl+o: open the attached images (or the last one sent) in the system viewer.
@@ -786,32 +735,26 @@ export class Tui {
       for (const image of staged) opener(image);
       return;
     }
-    const last = [...this.chatImages.values()].at(-1);
-    if (last) opener(last.image);
+    const last = this.transcript.lastImage();
+    if (last) opener(last);
   }
 
   showError(message: string): void {
     const width = Math.max(10, this.innerWidth() - 6);
     const wrapped = wrap(message.replace(/\s+/g, " ").trim(), width);
     wrapped.forEach((l, i) => {
-      this.chatLines.push(C.red + (i === 0 ? "✘ " : "  ") + l + C.reset);
+      this.transcript.push(C.red + (i === 0 ? "✘ " : "  ") + l + C.reset);
     });
     this.refresh();
   }
 
   historyPush(line: string): void {
-    this.chatLines.push(line);
-    this.chatStreamOpen = false;
+    this.transcript.push(line);
     this.refresh();
   }
 
   historyStream(text: string): void {
-    if (this.chatLines.length === 0 || !this.chatStreamOpen) {
-      this.chatLines.push(text);
-      this.chatStreamOpen = true;
-    } else {
-      this.chatLines[this.chatLines.length - 1]! += text;
-    }
+    this.transcript.stream(text);
     this.refresh();
   }
 
@@ -840,12 +783,11 @@ export class Tui {
   }
 
   historyStreamEnd(): void {
-    this.chatStreamOpen = false;
+    this.transcript.endStream();
   }
 
   historyReplaceLast(line: string): void {
-    if (this.chatLines.length === 0) this.chatLines.push(line);
-    else this.chatLines[this.chatLines.length - 1]! = line;
+    this.transcript.replaceLast(line);
     this.refresh();
   }
 

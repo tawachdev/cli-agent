@@ -8,14 +8,15 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildPng } from "./helpers/png";
-import { decodeChunk, Tui } from "../src/tui/tui";
+import { decodeChunk, Tui, type TuiHooks } from "../src/tui/tui";
 
 async function session(): Promise<{ output: string; hooks: string[] }> {
   const out: string[] = [];
   const log: string[] = [];
   const tty = { write: (d: string) => out.push(d), columns: 100, rows: 34 };
   const rec = (name: string) => (...a: unknown[]) => log.push(name + " " + JSON.stringify(a));
-  const hooks = Object.fromEntries(["onSubmit","onCommand","onTierChange","onAbort","onExit","onSetKey","onRemoveKey","onTestProvider","onBindModel","onWizardKey","onWizardModel","onTierModelPick","onBrandName","onBrandColors","onBrandReset","onAddProvider"].map((n) => [n, rec(n)]));
+  // every hook records its name and arguments, so the pinned list shows what the app did
+  const hooks = Object.fromEntries(["onSubmit","onCommand","onTierChange","onAbort","onExit","onSetKey","onRemoveKey","onTestProvider","onBindModel","onWizardKey","onWizardModel","onTierModelPick","onBrandName","onBrandColors","onBrandReset","onAddProvider"].map((n) => [n, rec(n)])) as unknown as TuiHooks;
   const tui = new Tui(tty, hooks, { imageSupport: "none", colorDepth: "256", openImage: rec("open") });
   const k = (s: string) => { if (s === ESC) return tui.handleKey({ kind: "escape" }); for (const key of decodeChunk(s).keys) tui.handleKey(key); };
   const ESC="\x1b";
@@ -52,7 +53,7 @@ async function session(): Promise<{ output: string; hooks: string[] }> {
   writeFileSync(dir + "/g.png", buildPng(40, 20, (x, y) => [x * 6, y * 12, 100]));
   k("\x1b[200~" + dir + "/g.png\x1b[201~"); await new Promise((r) => setTimeout(r, 60));
   k("explain"); k(ENTER); await tui.settleAttachments(); const imgs = tui.takePendingImages();
-  tui.historyPush("YOU explain"); tui.showImage(imgs[0]); await new Promise((r) => setTimeout(r, 30));
+  tui.historyPush("YOU explain"); tui.showImage(imgs[0]!); await new Promise((r) => setTimeout(r, 30));
   tui.historyStream("streamed "); tui.historyStream("answer"); tui.historyStreamEnd(); tui.endBusy();
   tui.notice("a notice"); tui.showError("an error that is long enough to wrap across the box width for sure, yes indeed it is");
   tui.setChatStatus("RUNNING", 3); tui.setRuntime(42, "abcdef123456");
