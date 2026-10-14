@@ -182,7 +182,7 @@ describe("agent orchestration", () => {
     const db = openDb(":memory:");
     runMigrations(db, migrations);
     const hangUntilAborted: ModelProvider = {
-      async *complete(req, signal) {
+      async *complete(_req, signal) {
         await new Promise<never>((_resolve, reject) => {
           signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
         });
@@ -215,5 +215,25 @@ describe("agent orchestration", () => {
       SessionNotFoundError,
     );
     db.close();
+  });
+});
+
+describe("broken tool-call arguments", () => {
+  it("answers the model with an error instead of running the tool on empty arguments", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db, migrations);
+    const provider = new FakeProvider([
+      [{ type: "tool_call", call: { name: "fs.read", arguments: {}, argumentsError: "tool arguments were not a valid JSON object, the call was not run: {\"pa" } }],
+      [{ type: "token", text: "Retrying." }],
+    ]);
+    const agent = makeAgent(db, provider);
+    const session = createSession(db, null);
+    const events: RecordedEvent[] = [];
+    await agent.runTask(session.id, "read", "coder", (type, payload) => events.push({ type, payload }));
+    const result = events.find((event) => event.type === "tool.result")?.payload as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("not a valid JSON object");
+    const lastRequest = provider.requests.at(-1)!;
+    expect(JSON.stringify(lastRequest.messages)).toContain("not a valid JSON object");
   });
 });

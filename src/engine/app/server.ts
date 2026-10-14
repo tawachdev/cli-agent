@@ -9,7 +9,7 @@ import { createSetupRoute } from "../api/routes/setup";
 import { upgradeWebSocket, type StreamRegistry } from "../api/ws/agent-stream";
 import type { Agent } from "../core/agent/agent";
 import type { AuditWriter } from "../core/audit/audit";
-import { PendingPermissions } from "../core/permissions/pending";
+import type { PendingPermissions } from "../core/permissions/pending";
 import type { Db } from "../db/client";
 import type { BrandStore } from "../brand";
 import type { BindingsStore } from "../models/bindings";
@@ -81,7 +81,7 @@ export function createServer(deps: ServerDeps): Hono {
   app.route("/providers", createProvidersRoute(deps.registry, deps.audit));
   app.route("/setup", createSetupRoute(deps.bindings, deps.registry, deps.workspaceRoot, deps.audit));
   app.route("/brand", createBrandRoute(deps.brand, deps.audit));
-  app.route("/sessions", createSessionsRoute(deps.db, deps.pending, deps.streams));
+  app.route("/sessions", createSessionsRoute(deps.db));
   app.route("/agent", createAgentRoute(deps.agent, deps.streams, deps.pending, deps.db));
   app.get(
     "/sessions/:id/stream",

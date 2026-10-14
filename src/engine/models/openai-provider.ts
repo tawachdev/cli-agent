@@ -1,4 +1,5 @@
 import { sniffImageMime, toDataUrl } from "../../shared/images";
+import { parseToolArguments } from "./types";
 import type {
   ChatMessage,
   GenerateRequest,
@@ -122,18 +123,10 @@ function toToolCalls(pending: Map<number, PendingToolCall>): ToolCall[] {
   const indexes = [...pending.keys()].sort((a, b) => a - b);
   for (const index of indexes) {
     const pendingCall = pending.get(index) as PendingToolCall;
-    let args: Record<string, unknown> = {};
-    if (pendingCall.arguments) {
-      try {
-        args = JSON.parse(pendingCall.arguments) as Record<string, unknown>;
-      } catch {
-        args = {};
-      }
-    }
     calls.push({
       id: pendingCall.id,
       name: pendingCall.name,
-      arguments: args,
+      ...parseToolArguments(pendingCall.arguments ?? ""),
       ...(pendingCall.signature ? { thoughtSignature: pendingCall.signature } : {}),
     });
   }

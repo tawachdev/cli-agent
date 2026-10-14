@@ -1,4 +1,5 @@
 import { sniffImageMime } from "../../shared/images";
+import { parseToolArguments } from "./types";
 import type {
   ChatMessage,
   GenerateRequest,
@@ -175,15 +176,7 @@ export class AnthropicProvider implements ModelProvider {
           } else if (event.type === "content_block_stop") {
             const block = blocks.get(event.index ?? 0);
             if (block) {
-              let args: Record<string, unknown> = {};
-              if (block.arguments) {
-                try {
-                  args = JSON.parse(block.arguments) as Record<string, unknown>;
-                } catch {
-                  args = {};
-                }
-              }
-              const call: ToolCall = { id: block.id || undefined, name: block.name, arguments: args };
+              const call: ToolCall = { id: block.id || undefined, name: block.name, ...parseToolArguments(block.arguments ?? "") };
               yield { type: "tool_call", call };
               blocks.delete(event.index ?? 0);
             }

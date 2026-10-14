@@ -2,8 +2,8 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { sniffImageMime, stripDataUrl } from "../../../shared/images";
 import type { Db } from "../../db/client";
-import { Agent, SessionNotFoundError, TurnError } from "../../core/agent/agent";
-import { PendingPermissions } from "../../core/permissions/pending";
+import { type Agent, SessionNotFoundError, TurnError } from "../../core/agent/agent";
+import type { PendingPermissions } from "../../core/permissions/pending";
 import type { StreamRegistry } from "../ws/agent-stream";
 
 export function createAgentRoute(

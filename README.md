@@ -89,7 +89,7 @@ Custom OpenAI-compatible endpoints (Groq, OpenRouter, Together, LM Studio...) ar
 
 ## Images in the terminal
 
-Drag an image into the prompt — or paste one you copied (Finder, browser, screenshot): the path disappears, the image renders as a preview, and a `▤N` counter appears in the status bar — enter sends it (esc clears attachments). Or just type a path:
+Drag an image into the prompt — or paste one you copied (Finder, browser, screenshot): it waits in the composer above the prompt while you say what the model should do with it, then enter sends both and the image moves under your message. ⌫ on an empty prompt removes the last image, esc removes them all, ctrl+o opens them in the system viewer. Or just type a path:
 
 ```sh
 mimon "what does /path/to/screenshot.png show?"
@@ -97,9 +97,9 @@ mimon "what does /path/to/screenshot.png show?"
 
 | Terminal | What you see |
 |----------|--------------|
-| iTerm2, WezTerm, mintty | inline pixels (iterm protocol) |
-| kitty, Ghostty | inline pixels (kitty protocol, chunked) |
-| anything else | clean info panel — the model still gets the image |
+| iTerm2, WezTerm, mintty | real pixels (iTerm protocol) |
+| kitty, Ghostty | real pixels (kitty protocol: sent once, placed by cells) |
+| Terminal.app, VS Code, tmux, anything else | a color half-block thumbnail (truecolor or 256) |
 
 PNG decoding is pure TypeScript (chunks → zlib inflate → Paeth unfilter). Caps: 4 images per message, 6 MB each, png/jpeg/gif/webp/bmp, validated by magic bytes end to end. Images need a vision-capable model on the active tier; models without tool support are handled automatically by the engine.
 
@@ -124,7 +124,10 @@ Technical identifiers (`AGENT_*` env vars, `.agent/` state folder, `agent` Keych
 ## Verify
 
 ```sh
-bun run typecheck        tsc --noEmit, strict
-bun test                 TUI resize storms, pixel font, image pipeline, engine routes
+bun run check            typecheck + lint + tests — the same gate CI runs
+bun test                 TUI resize storms, image pipeline, engine routes, and the real
+                         CLI driven in a pseudo-terminal as iTerm2, kitty and plain
 bun run stage            renders every TUI state (works with AGENT_NAME / AGENT_COLORS)
 ```
+
+Releases: write what changed under **Unreleased** in `CHANGELOG.md`, then on a clean `main` run `bun run release patch` (or `minor`, `major`, `x.y.z`, `--dry-run`). It bumps every version site, runs the gate, commits and tags; `git push origin main --follow-tags` publishes.

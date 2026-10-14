@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
+import { readJsonObject, writeJsonAtomic } from "../shared/json-file";
 
 export const RUNNABLE_ROLES = ["coder", "general", "mimon1", "mimon2", "mimon3", "mimonMax"] as const;
 
@@ -28,14 +28,13 @@ export class BindingsStore {
   }
 
   private readFile(): Partial<Record<RunnableRole, string>> {
-    const path = this.filePath();
-    if (!existsSync(path)) return {};
-    try {
-      const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<Record<RunnableRole, string>>;
-      return typeof parsed === "object" && parsed !== null ? parsed : {};
-    } catch {
-      return {};
+    const file = readJsonObject(this.filePath());
+    const out: Partial<Record<RunnableRole, string>> = {};
+    for (const role of RUNNABLE_ROLES) {
+      const value = file[role];
+      if (typeof value === "string") out[role] = value;
     }
+    return out;
   }
 
   get(role: RunnableRole): string {
@@ -59,12 +58,6 @@ export class BindingsStore {
   }
 
   async set(role: RunnableRole, binding: string): Promise<void> {
-    const path = this.filePath();
-    const current = this.readFile();
-    const dir = dirname(path);
-    mkdirSync(dir, { recursive: true });
-    const tmp = join(dir, `.${basename(path)}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`);
-    writeFileSync(tmp, JSON.stringify({ ...current, [role]: binding }, null, 2) + "\n");
-    renameSync(tmp, path);
+    writeJsonAtomic(this.filePath(), { ...this.readFile(), [role]: binding });
   }
 }

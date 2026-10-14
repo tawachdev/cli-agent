@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { relative, sep } from "node:path";
 import { z } from "zod";
 import type { Tool } from "../types";
 import { scopedPath } from "../../shared/paths";
