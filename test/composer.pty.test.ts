@@ -68,3 +68,12 @@ describe.skipIf(!python || process.platform === "win32")("composer in a real ter
     }, 120_000);
   }
 });
+
+describe.skipIf(!python || process.platform === "win32")("resize storm in a real terminal", () => {
+  it("keeps exactly one box through nine resizes", async () => {
+    const run = Bun.spawn([python!, join(ROOT, "scripts", "pty-resize-test.py"), process.execPath], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+    const [out, code] = await Promise.all([new Response(run.stdout).text(), run.exited]);
+    if (code !== 0) console.log(out);
+    expect(out).toContain("RESULT: PASS");
+  }, 120_000);
+});

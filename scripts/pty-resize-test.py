@@ -1,4 +1,13 @@
-import os, pty, time, fcntl, termios, struct, sys, re, select, signal
+"""Drag the real CLI through a storm of resizes and check one clean box survives.
+
+usage: pty-resize-test.py [BUN]   (defaults to the bun on PATH)
+"""
+import os, pty, random, shutil, tempfile, time, fcntl, termios, struct, sys, re, select, signal
+
+BUN = sys.argv[1] if len(sys.argv) > 1 else shutil.which("bun")
+if not BUN:
+    sys.exit("bun not found — pass its path as the first argument")
+WORKSPACE = tempfile.mkdtemp(prefix="mimon-resize-")
 
 def set_size(fd, cols, rows):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
@@ -6,8 +15,9 @@ def set_size(fd, cols, rows):
 pid, master = pty.fork()
 if pid == 0:
     os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    env = dict(os.environ, TERM="xterm-256color", AGENT_DB_PATH="/tmp/ptytest.db", AGENT_WORKSPACE_ROOT="/tmp/ptytest")
-    os.execve("/opt/homebrew/bin/bun", ["bun", "run", "bin/agent.ts"], env)
+    env = dict(os.environ, TERM="xterm-256color", HOME=WORKSPACE, AGENT_PORT=str(random.randint(20000, 40000)),
+               AGENT_DB_PATH=os.path.join(WORKSPACE, "agent.db"), AGENT_WORKSPACE_ROOT=WORKSPACE)
+    os.execve(BUN, [BUN, "run", "bin/agent.ts"], env)
 
 set_size(master, 120, 40)
 buf = b""
@@ -52,5 +62,6 @@ final_tops = len(re.findall(r"╭", final))
 print(f"alt_screen={alt} clears={clears} total_ask={asks}")
 print(f"FINAL: ask={final_asks} tops={final_tops}")
 ok = alt and clears >= 5 and final_asks == 1 and final_tops == 1
+shutil.rmtree(WORKSPACE, ignore_errors=True)
 print("RESULT:", "PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)
