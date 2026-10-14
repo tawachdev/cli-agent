@@ -1,5 +1,3 @@
-// The real CLI in a real pseudo-terminal, end to end: it boots its own engine,
-// talks to a fake OpenAI-compatible provider, and we paste an image into it.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

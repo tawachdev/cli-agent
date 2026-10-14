@@ -1,5 +1,3 @@
-// Raw terminal input decoded into key events.
-
 export type Key =
   | { kind: "char"; ch: string }
   | { kind: "enter" | "backspace" | "delete" | "up" | "down" | "left" | "right" | "home" | "end" | "escape" | "tab" | "ctrl-c" | "ctrl-p" | "ctrl-o" | "unknown" | "paste-start" | "paste-end" };
@@ -50,7 +48,6 @@ export function decodeChunk(chunk: string): { keys: Key[]; rest: string } {
   return { keys, rest: "" };
 }
 
-// arrow keys as grid moves: callers turn dy into rows of their own width
 export const ARROW_STEPS: Partial<Record<Key["kind"], { dx: number; dy: number }>> = {
   up: { dx: 0, dy: -1 },
   down: { dx: 0, dy: 1 },

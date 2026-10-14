@@ -177,7 +177,6 @@ describe("terminal image protocols", () => {
     const payload = kittyImagePayload(big, 30, 8);
     const chunks = payload.split("\x1b\\").filter((c) => c.length > 0);
     expect(chunks.length).toBe(2);
-    // c/r size the box in cells; w/h would crop the source to that many pixels
     expect(chunks[0]).toContain("f=100,a=T,q=2,c=30,r=8,m=1;");
     expect(chunks[0]).not.toContain("w=30");
     expect(chunks[1]).toContain("m=0;");

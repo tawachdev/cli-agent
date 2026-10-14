@@ -1,5 +1,3 @@
-// /brand: rename the agent and repaint it — one color for the whole name or one
-// per letter, from presets, saved custom colors, a hex value or the 256 grid.
 import { BRAND_PALETTE, entryColor, validColorEntry, xterm256Hex } from "../../shared/brand";
 import { ANSI as C } from "../../shared/tokens";
 import { ARROW_STEPS, type Key } from "../keys";
@@ -53,7 +51,6 @@ export class BrandFlow {
     this.customColors = colors;
   }
 
-  // the palette lists the saved custom colors, so it repaints when they change
   showsPalette(): boolean {
     return this.step === "colors";
   }
@@ -124,8 +121,6 @@ export class BrandFlow {
     return "picking for letter " + letter + " (" + (this.picks.length + 1) + "/" + this.lettersTotal() + ")";
   }
 
-  // ── menu ──
-
   private menuLines(): string[] {
     const title = this.current
       ? "make it yours · " + this.current.name + " · " + this.current.colors.join(" + ")
@@ -153,8 +148,6 @@ export class BrandFlow {
       }
     }
   }
-
-  // ── name ──
 
   private nameLines(): string[] {
     const body = [C.bold + "New name:" + C.reset + " " + C.cream + this.nameBuffer + C.reset + C.inverse + " " + C.reset];
@@ -189,8 +182,6 @@ export class BrandFlow {
     }
   }
 
-  // ── one color or one per letter ──
-
   private colorModeLines(): string[] {
     return this.frame.boxed("brand colors", [...this.choiceLines(COLOR_MODES, this.modeIndex), this.hint("↑↓ move · enter select · esc back")]);
   }
@@ -208,8 +199,6 @@ export class BrandFlow {
       this.go("menu");
     }
   }
-
-  // ── palette ──
 
   private paletteEntries(): string[] {
     return [...Object.keys(BRAND_PALETTE), ...this.customColors, CUSTOM_HEX, ALL_256];
@@ -295,8 +284,6 @@ export class BrandFlow {
     this.frame.refresh();
   }
 
-  // ── custom hex ──
-
   private hexLines(): string[] {
     const entry = validColorEntry(this.hexBuffer);
     const swatch = entry ? entryColor(entry) + "██" + C.reset : C.dim + "██" + C.reset;
@@ -330,8 +317,6 @@ export class BrandFlow {
       this.go("colors");
     }
   }
-
-  // ── 256-color grid ──
 
   private gridPerRow(): number {
     return Math.max(4, Math.floor((this.frame.nestedWidth() - 2) / 3));

@@ -1,5 +1,3 @@
-// Terminal text primitives: the output surface, and measuring, clipping and
-// wrapping text by display cells rather than UTF-16 units.
 import { stdout } from "node:process";
 import { ANSI as C } from "../shared/tokens";
 
@@ -93,8 +91,6 @@ export function trunc(s: string, max: number): string {
   return out;
 }
 
-
-// Pads to `width` cells, always leaving at least one space after the text.
 export function padCell(text: string, width: number): string {
   return text + " ".repeat(Math.max(1, width - visibleLen(text)));
 }

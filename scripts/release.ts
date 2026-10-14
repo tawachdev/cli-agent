@@ -1,8 +1,3 @@
-// Cut a release: bump every version site, move the Unreleased changelog notes
-// under the new version, run the full gate, then commit and tag. Pushing the tag
-// (printed at the end) is what triggers .github/workflows/release.yml.
-//
-//   bun run release patch|minor|major|x.y.z [--dry-run]
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { currentVersion, SEMVER_RE, writeVersion } from "./versions";
@@ -28,8 +23,6 @@ export function nextVersion(current: string, requested: string): string {
   return next;
 }
 
-// Moves the notes under "## Unreleased" to a dated section for `version`, leaving
-// an empty Unreleased section on top for the next round.
 export function cutChangelog(text: string, version: string, date: string): string {
   const start = text.indexOf(UNRELEASED);
   if (start === -1) throw new Error("CHANGELOG.md has no '" + UNRELEASED + "' section");

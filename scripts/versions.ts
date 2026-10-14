@@ -1,5 +1,3 @@
-// Every place the product version is written. A release bumps them all; the
-// version test fails CI if any of them drifts from package.json.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -27,7 +25,6 @@ export function versionSites(): VersionSite[] {
     const manifest = readJson(file);
     sites.push({ file, where: "version", version: String(manifest["version"]) });
     const optional = (manifest["optionalDependencies"] ?? {}) as Record<string, string>;
-    // package.local.json points at file: paths for local installs — those are not versions
     for (const [name, version] of Object.entries(optional)) {
       if (SEMVER_RE.test(version)) sites.push({ file, where: name, version });
     }

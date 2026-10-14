@@ -1,6 +1,3 @@
-// Images attached to the message being written: dropped or typed paths, clipboard
-// pastes, and macOS screenshot paths whose file is already gone. They wait here
-// until the message is sent.
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cwd } from "node:process";
@@ -16,7 +13,6 @@ export interface Attachment {
   loading: Promise<void> | null;
 }
 
-// The prompt the attachments come from: image paths are lifted out of its text.
 export interface AttachmentHost {
   input: string;
   cursor: number;
@@ -40,7 +36,6 @@ export class Attachments {
   private pending: Attachment[] = [];
   private paths = new Set<string>();
   private recovering = new Set<string>();
-  // files we saved from the clipboard ourselves, deleted once sent
   private owned = new Set<string>();
   private jobs = new Set<Promise<void>>();
 
@@ -58,7 +53,6 @@ export class Attachments {
     return this.pending.length;
   }
 
-  // Lifts every image path out of the prompt text and starts loading it.
   detect(): void {
     const located = locateImagePaths(this.host.input);
     for (const hit of located.reverse()) {
@@ -75,7 +69,6 @@ export class Attachments {
       this.cutFromInput(hit);
       this.add(hit.path);
     }
-    // a path pasted on its own leaves only whitespace behind — give the prompt back
     if (located.length > 0 && this.pending.length > 0 && this.host.input.trim() === "") {
       this.host.input = "";
       this.host.cursor = 0;
@@ -101,14 +94,11 @@ export class Attachments {
     return this.pending.flatMap((p) => (p.image ? [p.image] : []));
   }
 
-  // Enter can land while a drop or clipboard paste is still being read; wait for it
-  // so the image goes out with the message instead of being silently dropped.
   async settle(): Promise<void> {
     await Promise.all([...this.jobs]);
     await Promise.all(this.pending.map((p) => p.loading ?? Promise.resolve()));
   }
 
-  // Hands the loaded images to the message being sent and empties the tray.
   take(): LoadedImage[] {
     const taken = this.loaded();
     const missing = this.pending.filter((p) => !p.image).map((p) => p.path);
@@ -121,9 +111,7 @@ export class Attachments {
     for (const path of this.owned) {
       try {
         rmSync(path, { force: true });
-      } catch {
-        // best effort: the uploads folder is swept on the next engine start too
-      }
+      } catch {}
     }
     this.owned.clear();
   }
@@ -193,8 +181,6 @@ export class Attachments {
     }
   }
 
-  // macOS hands drag-and-drop screenshots over as a TemporaryItems path that is
-  // often deleted before we read it; the same image is still on the clipboard.
   private async recover(hit: LocatedImage): Promise<void> {
     if (!hit.path.includes("TemporaryItems")) return;
     if (this.recovering.has(hit.path) || this.paths.has(hit.path)) return;

@@ -129,7 +129,6 @@ export async function loadImages(text: string): Promise<{ images: LoadedImage[];
 export type ImageSupport = "iterm" | "kitty" | "none";
 
 export function imageSupport(env: Record<string, string | undefined> = process.env): ImageSupport {
-  // tmux swallows the image escapes; half-blocks still work there
   if (env["TMUX"]) return "none";
   const program = env["TERM_PROGRAM"] ?? "";
   if (program === "iTerm.app" || program === "WezTerm" || program === "mintty" || env["LC_TERMINAL"] === "iTerm2") return "iterm";
@@ -140,7 +139,6 @@ export function imageSupport(env: Record<string, string | undefined> = process.e
   return "none";
 }
 
-// Scrollback renderer payloads (one-shot mode): the cursor moves past the image.
 export function itermImagePayload(image: LoadedImage, widthCells: number, heightRows: number): string {
   return itermImage(image.base64, image.name, widthCells, heightRows, false);
 }

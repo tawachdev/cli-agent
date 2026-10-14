@@ -1,4 +1,3 @@
-// What the TUI offers: model tiers, bind targets, slash commands and tips.
 import { brandName } from "../shared/brand";
 import { ANSI as C } from "../shared/tokens";
 

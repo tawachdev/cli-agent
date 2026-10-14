@@ -3,8 +3,6 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 
 const MAX_LINK_HOPS = 8;
 
-// Resolves symlinks lexically up to MAX_LINK_HOPS; returns null when the chain
-// is too deep, so callers fail closed instead of trusting an unresolved path.
 function realish(path: string, hops: number): string | null {
   let stat: ReturnType<typeof lstatSync> | undefined;
   try {

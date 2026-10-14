@@ -1,6 +1,3 @@
-// Small JSON config files (keys, model bindings, brand) that the user can't afford
-// to lose. A file that does not parse is moved aside instead of being treated as
-// empty — otherwise the next write would replace everything in it with one entry.
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
@@ -12,17 +9,13 @@ export function readJsonObject(path: string): Record<string, unknown> {
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
-  } catch {
-    // falls through to quarantine
-  }
+  } catch {}
   const aside = path + ".corrupt-" + Date.now();
   renameSync(path, aside);
   console.error("[mimon] " + path + " was not valid JSON; kept it as " + aside + " and started fresh");
   return {};
 }
 
-// Write to a temp file and rename over the target, so a crash mid-write never
-// leaves a half-written file behind.
 export function writeJsonAtomic(path: string, value: unknown, mode?: number): void {
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });

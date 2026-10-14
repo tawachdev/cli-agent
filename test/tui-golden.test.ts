@@ -1,7 +1,3 @@
-// One long, scripted session through every TUI view and flow. The complete byte
-// stream and every hook call are pinned, so a refactor that changes what the user
-// sees — or what the app does — fails here. After an intended change, review the
-// diff in the hook list, then refresh with: bun test test/tui-golden.test.ts -u
 import { describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -15,7 +11,6 @@ async function session(): Promise<{ output: string; hooks: string[] }> {
   const log: string[] = [];
   const tty = { write: (d: string) => out.push(d), columns: 100, rows: 34 };
   const rec = (name: string) => (...a: unknown[]) => log.push(name + " " + JSON.stringify(a));
-  // every hook records its name and arguments, so the pinned list shows what the app did
   const hooks = Object.fromEntries(["onSubmit","onCommand","onTierChange","onAbort","onExit","onSetKey","onRemoveKey","onTestProvider","onBindModel","onWizardKey","onWizardModel","onTierModelPick","onBrandName","onBrandColors","onBrandReset","onAddProvider"].map((n) => [n, rec(n)])) as unknown as TuiHooks;
   const tui = new Tui(tty, hooks, { imageSupport: "none", colorDepth: "256", openImage: rec("open") });
   const k = (s: string) => { if (s === ESC) return tui.handleKey({ kind: "escape" }); for (const key of decodeChunk(s).keys) tui.handleKey(key); };
@@ -27,9 +22,9 @@ async function session(): Promise<{ output: string; hooks: string[] }> {
   tui.openPicker({ mimon1: "a/b" }); k(DOWN); k(UP); k(ENTER);
   tui.showHelp(["line one", "line two"]); k("x");
   const brand = { name: "MIMON", colors: ["teal", "gold"], customColors: ["#112233"] };
-  tui.openBrand(brand); k(DOWN); k(UP); k(UP); k(DOWN); k(DOWN); k(ENTER); // reset
+  tui.openBrand(brand); k(DOWN); k(UP); k(UP); k(DOWN); k(DOWN); k(ENTER);
   tui.openBrand(brand); k(ENTER); k("A"); k(ENTER); k("bc"); k(BS); k("De"); k(ESC); k(ENTER); k("Nova"); k(ENTER);
-  tui.openBrand(brand); k(DOWN); k(ENTER); k(DOWN); k(ENTER); // per letter
+  tui.openBrand(brand); k(DOWN); k(ENTER); k(DOWN); k(ENTER);
   k(RIGHT); k(DOWN); k(ENTER); k(LEFT); k(ENTER); k(ESC); k(ENTER);
   for (let i = 0; i < 40; i++) k(DOWN);
   k(ENTER); k("#12"); k(ENTER); k("3456"); k(ENTER);
@@ -38,7 +33,7 @@ async function session(): Promise<{ output: string; hooks: string[] }> {
   tui.setBrandCustomColors(["#abcdef"]);
   tui.openBrand(brand); k(DOWN); k(ENTER); k(ENTER); k(ENTER); k(ESC); k(ESC); k(ESC);
   const providers = [{ name: "openai", models: ["gpt-5", "gpt-5-mini"], keySet: true }, { name: "gemini", models: ["g"], keySet: false }];
-  tui.openProviders(providers); k(DOWN); k(UP); k(ENTER); k(DOWN); k(ENTER); k(DOWN); k(ENTER); // bind
+  tui.openProviders(providers); k(DOWN); k(UP); k(ENTER); k(DOWN); k(ENTER); k(DOWN); k(ENTER);
   tui.openProviders(providers); k(ENTER); k(DOWN); k(DOWN); k(ENTER); k("sk-xyz"); k(BS); k(ENTER); k(DOWN); k(DOWN); k(DOWN); k(ENTER); k(DOWN); k(ENTER); k(ESC); k(ESC);
   tui.openProviders(providers); k(DOWN); k(DOWN); k(ENTER); k(ENTER); k("Bad"); k(ENTER); k(BS); k(BS); k(BS); k("my-llm"); k(ENTER); k("ftp://x"); k(ENTER);
   for (let i = 0; i < 7; i++) k(BS);
@@ -62,7 +57,6 @@ async function session(): Promise<{ output: string; hooks: string[] }> {
   tty.columns = 60; tty.rows = 20; tui.refresh(); tty.columns = 30; tty.rows = 10; tui.refresh();
   k("\t"); k("\x10"); k(ESC);
   rmSync(dir, { recursive: true, force: true });
-  // the image lives in a per-run temp dir; its path must not leak into the frames
   return { output: out.join("").split(dir).join("<tmp>"), hooks: log };
 }
 

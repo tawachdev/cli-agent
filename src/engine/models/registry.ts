@@ -246,8 +246,6 @@ export class ProviderRegistry {
     if (!provider.listModels) return def.models;
     try {
       const live = await provider.listModels();
-      // curated defaults first so the wizard lands on a known-good chat model,
-      // then the rest of the live list minus entries that cannot chat
       const curated = def.models.filter((model) => live.includes(model));
       const rest = live.filter(
         (model) => !curated.includes(model) && !NON_CHAT_MODEL.test(model),

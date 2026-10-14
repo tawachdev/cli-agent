@@ -1,5 +1,3 @@
-// /providers and the /setup wizard: browse providers, set / remove / test a key,
-// bind one of a provider's models to a tier, or add any OpenAI-compatible endpoint.
 import { brandName } from "../../shared/brand";
 import { ANSI as C } from "../../shared/tokens";
 import { BIND_TARGETS, type ProviderEntry } from "../catalog";
@@ -40,7 +38,6 @@ export class ProvidersFlow {
     private readonly hooks: ProvidersHooks,
   ) {}
 
-  // re-entering /providers lands back on the provider that was open, if it still exists
   open(providers: ProviderEntry[]): void {
     this.setProviders(providers);
     this.step = this.openProvider ? "provider" : "list";
@@ -62,12 +59,10 @@ export class ProvidersFlow {
     }
   }
 
-  // the list and provider screens show key status, so they repaint on new data
   showsProviderData(): boolean {
     return this.step === "list" || this.step === "provider";
   }
 
-  // A paste lands in the field being typed; returns false when this screen takes no text.
   paste(text: string): boolean {
     const flat = text.replace(/\n+/g, " ");
     if (this.step === "key") {
@@ -115,8 +110,6 @@ export class ProvidersFlow {
     return "  " + (selected ? C.teal + "❯ " + C.reset : "  ") + text;
   }
 
-  // ── list ──
-
   private listLines(): string[] {
     const usable = this.frame.usable;
     const title = usable >= 22 ? "── cloud providers " + "─".repeat(Math.max(4, Math.min(usable - 24, 28))) : "── providers ──";
@@ -140,8 +133,6 @@ export class ProvidersFlow {
     return lines;
   }
 
-  // ── one provider: its models (enter binds) and key actions ──
-
   private actions(p: ProviderEntry): Array<"set" | "remove" | "test"> {
     return p.keySet ? ["set", "remove", "test"] : ["set", "test"];
   }
@@ -164,8 +155,6 @@ export class ProvidersFlow {
     lines.push(this.line("↑↓ move · enter select · esc back"));
     return lines;
   }
-
-  // ── bind a model to a tier ──
 
   private bindLines(): string[] {
     const lines = [this.line("── bind " + this.bindModel + " to ──")];
@@ -247,8 +236,6 @@ export class ProvidersFlow {
     this.hooks.onBindModel(target.role, p.name + "/" + this.bindModel);
   }
 
-  // ── API key ──
-
   private keyLines(): string[] {
     const usable = this.frame.usable;
     const masked = "●".repeat(Math.min(this.keyBuffer.length, Math.max(4, usable - 40)));
@@ -288,8 +275,6 @@ export class ProvidersFlow {
       this.go(this.wizard ? "list" : "provider");
     }
   }
-
-  // ── add an OpenAI-compatible provider ──
 
   private addLines(): string[] {
     const usable = this.frame.usable;

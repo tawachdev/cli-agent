@@ -1,4 +1,3 @@
-// Scrollback widgets for the one-shot (non-TUI) mode and the boot splash.
 import { brandColors, brandName, colorForLetter } from "../shared/brand";
 import { glyphWord } from "../shared/glyphs";
 import { ANSI as C } from "../shared/tokens";

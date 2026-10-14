@@ -1,4 +1,3 @@
-// Pick one model from a provider's list — after /setup, or to bind a tier from /model.
 import { ANSI as C } from "../../shared/tokens";
 import type { Key } from "../keys";
 import { trunc } from "../term";
@@ -16,7 +15,6 @@ export class ModelPick {
   private models: string[] = [];
   private index = 0;
   private offset = 0;
-  // set when binding a tier; empty when finishing the setup wizard
   private role = "";
 
   constructor(
@@ -24,7 +22,6 @@ export class ModelPick {
     private readonly hooks: ModelPickHooks,
   ) {}
 
-  // returns false when there is nothing to pick from
   open(provider: string, models: string[], preferred?: string, role?: string): boolean {
     this.provider = provider;
     this.models = models;

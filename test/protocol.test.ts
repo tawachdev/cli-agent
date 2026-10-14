@@ -143,9 +143,7 @@ describe("provider serialization of canonical history", () => {
     const mock = captureServer("/chat/completions", "data: [DONE]\n\n");
     const provider = new OpenAICompatProvider(mock.url, "sk-test", "fake");
     const request: GenerateRequest = { model: "m", messages: reloaded(), numCtx: 4096 };
-    for await (const _ of provider.complete(request)) {
-      // drain
-    }
+    for await (const _ of provider.complete(request)) {}
     mock.stop();
 
     const messages = mock.bodies[0]?.["messages"] as Array<Record<string, unknown>>;
@@ -168,9 +166,7 @@ describe("provider serialization of canonical history", () => {
     const mock = captureServer("/messages", "data: {\"type\":\"message_stop\"}\n\n");
     const provider = new AnthropicProvider(mock.url, "sk-test", "fake");
     const request: GenerateRequest = { model: "m", messages: reloaded(), numCtx: 4096 };
-    for await (const _ of provider.complete(request)) {
-      // drain
-    }
+    for await (const _ of provider.complete(request)) {}
     mock.stop();
 
     const messages = mock.bodies[0]?.["messages"] as Array<{ role: string; content: unknown }>;

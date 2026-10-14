@@ -9,9 +9,7 @@ function binaryCandidates() {
   try {
     const name = `@mohamed-taaouch/${platform}`;
     entries.push(path.join(path.dirname(require.resolve(`${name}/package.json`)), "bin", "mimon"));
-  } catch {
-    // platform package not resolvable — fall through to the error below
-  }
+  } catch {}
   return entries;
 }
 

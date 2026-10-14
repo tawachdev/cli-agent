@@ -42,8 +42,6 @@ interface OpenAIToolMessage {
 
 function toOpenAIMessages(messages: ChatMessage[]): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
-  // legacy fallback: tool results with no persisted call id are grouped under one
-  // synthetic assistant tool_calls turn so old sessions still serialize legally
   const pendingResults: { id: string; name: string; content: string }[] = [];
   let callSeq = 0;
   const flushResults = () => {

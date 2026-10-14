@@ -1,13 +1,9 @@
-// Upper-half-block art: each cell carries two vertical pixels (fg = top, bg = bottom).
-// Works in every color terminal, including tmux and Terminal.app.
 import type { RgbaPixels } from "./png";
 
 export type ColorDepth = "truecolor" | "256";
 type Rgb = [number, number, number];
 
-// Transparent pixels are painted over the brand background.
 const MATTE: Rgb = [10, 10, 16];
-// Cap on samples per axis inside one cell, so huge sources stay cheap to preview.
 const SAMPLES_PER_CELL = 24;
 
 export function colorDepth(env: Record<string, string | undefined> = process.env): ColorDepth {
@@ -52,7 +48,6 @@ function nearestPaletteIndex(color: Rgb): number {
   return best;
 }
 
-// Region-average the source into a cols × gridRows grid, alpha-blended over the matte.
 function sampleGrid(pixels: RgbaPixels, cols: number, gridRows: number): Rgb[] {
   const grid: Rgb[] = [];
   for (let gy = 0; gy < gridRows; gy++) {
@@ -78,7 +73,6 @@ function sampleGrid(pixels: RgbaPixels, cols: number, gridRows: number): Rgb[] {
   return grid;
 }
 
-// Floyd–Steinberg onto the xterm-256 palette; returns one palette index per grid cell.
 function dither256(grid: Rgb[], cols: number, gridRows: number): number[] {
   const indices: number[] = [];
   const spread = (x: number, y: number, error: Rgb, share: number): void => {

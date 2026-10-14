@@ -48,7 +48,6 @@ function type(tui: Tui, text: string): void {
 
 const settle = (ms = 40): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// A full repaint, split into screen rows (plain text) plus the raw escape stream.
 function fullFrame(tui: Tui, tty: MockTty): { rows: string[]; raw: string } {
   tui.hide();
   const mark = tty.chunks.length;
@@ -206,7 +205,6 @@ describe("protocol images are drawn inside the box", () => {
     expect(left).toBeGreaterThan(0);
     expect(col).toBeGreaterThan(left);
     expect(col + width).toBeLessThan(right);
-    // 2:1 source in 1:2 cells → square-ish box
     expect(width).toBe(height * 4);
     rmSync(dir, { recursive: true, force: true });
   });
@@ -233,12 +231,10 @@ describe("protocol images are drawn inside the box", () => {
     expect(first).toContain("a=t,f=100,t=d,");
     expect(first).toMatch(/a=p,i=\d+,p=\d+,c=\d+,r=\d+,C=1,q=2/);
     expect(first).not.toMatch(/a=p[^\\]*,w=/);
-    // a chat line grows the box upward; the bottom-anchored tray does not move
     const steady = tty.chunks.length;
     tui.notice("a new line above the composer");
     type(tui, "x");
     expect(tty.since(steady)).not.toContain("\x1b_G");
-    // a resize moves it: stale placements are wiped, the pixels are not resent
     const mark = tty.chunks.length;
     tty.columns = 72;
     tui.refresh();

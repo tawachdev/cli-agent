@@ -120,7 +120,6 @@ describe("in-frame image preview", () => {
     const divider = plain.findIndex((row) => row.includes("├"));
     const input = plain.findIndex((row) => row.includes("see"));
     const firstBlock = rows.findIndex((row) => row.includes("▀"));
-    // the thumbnail sits in the composer: below the divider, above the text being typed
     expect(firstBlock).toBeGreaterThan(divider);
     expect(firstBlock).toBeLessThan(input);
     expect(plain.join("\n")).toContain("▤ drop.png");

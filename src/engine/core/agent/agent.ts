@@ -169,9 +169,7 @@ export class Agent {
         const from = transitionTaskState(this.deps.db, row.id, target);
         publish("state.changed", { taskId: row.id, from, state: target });
         audit("task.state", { from, state: target });
-      } catch {
-        // already terminal (e.g. completed before a post-completion write failed) — keep the terminal state
-      }
+      } catch {}
       if (controller.signal.aborted) {
         updateTaskResult(this.deps.db, row.id, { result: JSON.stringify({ aborted: true }) });
         publish("turn.aborted", { taskId: row.id, reason: "aborted by user" });

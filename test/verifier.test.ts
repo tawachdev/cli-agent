@@ -50,8 +50,6 @@ describe("runCheck statuses", () => {
 });
 
 describe("stopping a command stops everything it started", () => {
-  // A killed orphan can linger as a zombie when PID 1 does not reap (containers);
-  // it is dead all the same, so read the process state instead of probing with kill -0.
   const alive = (pid: number): boolean => {
     const state = Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]).stdout.toString().trim();
     return state !== "" && !state.startsWith("Z");

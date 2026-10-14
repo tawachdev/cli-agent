@@ -1,5 +1,3 @@
-// Turns an attached image into a small, terminal-ready thumbnail: decoded once,
-// downscaled, and re-encoded so repaints never ship megabytes through the pty.
 import { deflateSync } from "node:zlib";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,22 +5,15 @@ import { join } from "node:path";
 import { decodePng, type RgbaPixels } from "./png";
 import type { LoadedImage } from "./images";
 
-// Long side of the PNG we hand to iTerm/kitty: crisp in a thumbnail box, light to repaint.
 const PROTOCOL_EDGE = 480;
-// iTerm can draw any format natively; past this size we would rather show a chip
-// than push the original bytes through the pty on every repaint.
 const ORIGINAL_INLINE_CAP = 2 * 1024 * 1024;
 
 export interface Thumb {
-  // kitty image id — the pixels are transmitted once, then only placed
   id: number;
   width: number;
   height: number;
-  // downscaled RGBA for half-block rendering, null when we could not decode
   pixels: RgbaPixels | null;
-  // base64 PNG for kitty (PNG only) and iTerm
   png: string | null;
-  // base64 bytes iTerm can draw: the PNG thumb, else the small original
   inline: string | null;
 }
 
@@ -69,8 +60,6 @@ export function encodePng(pixels: RgbaPixels): Buffer {
   ]);
 }
 
-// Box-filter downscale so every source pixel contributes — no aliasing on text
-// in screenshots, which point sampling would shred.
 export function downscale(src: RgbaPixels, maxEdge: number): RgbaPixels {
   const scale = Math.min(1, maxEdge / Math.max(src.width, src.height));
   if (scale >= 1) return src;
@@ -122,8 +111,6 @@ async function sipsToPng(path: string): Promise<Uint8Array | null> {
   }
 }
 
-// Non-PNG sources (jpeg, gif, webp, bmp) need a converter for kitty and the
-// half-block preview. macOS always ships sips; elsewhere we fall back to a chip.
 export const defaultToPng: ToPng = (path) =>
   process.platform === "darwin" ? sipsToPng(path) : Promise.resolve(null);
 
@@ -139,8 +126,8 @@ export async function makeThumb(image: LoadedImage, toPng: ToPng = defaultToPng)
   const original = image.bytes <= ORIGINAL_INLINE_CAP ? image.base64 : null;
   const originalPng = image.mime === "image/png" ? original : null;
   let png: string | null;
-  if (!small) png = originalPng; // undecodable PNG (16-bit, interlaced): the terminal still draws it
-  else if (small === decoded && originalPng) png = originalPng; // already small: reuse the bytes as-is
+  if (!small) png = originalPng;
+  else if (small === decoded && originalPng) png = originalPng;
   else png = encodePng(small).toString("base64");
   nextKittyId += 1;
   return {
@@ -153,8 +140,6 @@ export async function makeThumb(image: LoadedImage, toPng: ToPng = defaultToPng)
   };
 }
 
-// Contain box in terminal cells. A cell is about twice as tall as it is wide,
-// so one row covers two "square" pixels of height.
 export function fitCells(width: number, height: number, maxCols: number, maxRows: number): { cols: number; rows: number } {
   const capCols = Math.max(1, Math.floor(maxCols));
   const capRows = Math.max(1, Math.floor(maxRows));

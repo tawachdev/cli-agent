@@ -27,14 +27,12 @@ export { fit, plainClip, type Tty, visibleLen, WIDTH, wrap } from "./term";
 export { chip, fmtSecs, meter, panel, splash } from "./widgets";
 
 const PASTE_INPUT_CAP = 4096;
-// image boxes, in terminal cells
 const TRAY_GAP = 2;
 const TRAY_TILE_MIN_COLS = 6;
 const TRAY_TILE_MAX_COLS = 20;
 const TRANSCRIPT_IMAGE_COLS = 44;
 const TRANSCRIPT_IMAGE_ROWS = 14;
 
-// Thumbnail height in the composer tray; 0 means the screen is too short — names only.
 function trayRowsFor(screenRows: number): number {
   if (screenRows >= 34) return 6;
   if (screenRows >= 26) return 5;
@@ -120,7 +118,6 @@ export class Tui {
   private pasting = false;
   private pasteBreak = false;
   private pasteBuf = "";
-
 
   constructor(
     private readonly tty: Tty,
@@ -466,7 +463,6 @@ export class Tui {
     const view = frame.slice(dropped).map((line) => (visibleLen(line) <= budget ? line : C.reset + plainClip(line, budget)));
     const inputRow = Math.max(0, Math.min(this.inputRow - dropped, view.length - 1));
     const cursorCol = Math.max(0, Math.min(this.cursorCol, cols - 1));
-    // only images whose whole box is on screen get drawn; the rest stay blank cells
     const placements = this.framePlacements
       .map((p) => ({ ...p, row: p.row - dropped }))
       .filter((p) => p.row >= 0 && p.row + p.rows <= view.length && p.col + p.cols <= budget);
@@ -481,7 +477,6 @@ export class Tui {
       }
       parts.push(this.images.paint(placements, rewritten));
     } else {
-      // an image moved or the frame was rebuilt: wipe stale pixels before drawing
       parts.push(this.images.wipe());
       for (let i = 0; i < view.length; i++) {
         parts.push(view[i]! + "\x1b[K" + (i < view.length - 1 ? "\r\n" : ""));
@@ -523,7 +518,6 @@ export class Tui {
     this.lastLines = [];
   }
 
-  // Drop every image we handed the terminal; call before leaving the alt screen.
   dispose(): void {
     const out = this.images.dispose();
     if (out) this.tty.write(out);
@@ -583,7 +577,6 @@ export class Tui {
     this.refresh();
   }
 
-  // refresh provider data in place — never steals focus from the chat prompt
   updateProviders(providers: ProviderEntry[]): void {
     this.providerViews.setProviders(providers);
     if (this.view === "providers" && this.providerViews.showsProviderData()) this.refresh();
@@ -692,8 +685,6 @@ export class Tui {
     this.refresh();
   }
 
-  // The composer tray: attached images wait here, above the input, until the
-  // message is sent — so the user can explain what the model should do with them.
   private trayBlock(): { lines: string[]; places: Array<{ line: number; placement: Omit<Placement, "row"> }> } {
     const count = this.attachments.count;
     if (count === 0) return { lines: [], places: [] };
@@ -721,13 +712,11 @@ export class Tui {
     return { lines, places };
   }
 
-  // Put a sent image into the transcript, right under the message that carried it.
   showImage(image: LoadedImage): void {
     this.transcript.addImage(image);
     this.refresh();
   }
 
-  // ctrl+o: open the attached images (or the last one sent) in the system viewer.
   openInViewer(): void {
     const opener = this.options.openImage ?? defaultOpenImage;
     const staged = this.attachments.loaded();

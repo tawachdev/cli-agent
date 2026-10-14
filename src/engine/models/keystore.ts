@@ -45,8 +45,6 @@ export class KeychainKeyStore implements KeyStore {
 
   set(name: string, key: string): void {
     if (process.platform === "darwin") {
-      // known limitation: `security` only reliably reads the secret from argv here,
-      // where it is briefly visible to other local processes via ps
       const run = Bun.spawnSync(["security", "add-generic-password", "-s", SERVICE, "-a", name, "-w", key, "-U"]);
       if (run.exitCode !== 0) {
         throw new Error(`could not store the key in Keychain (exit ${run.exitCode})`);

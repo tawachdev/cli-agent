@@ -29,7 +29,6 @@ publish_if_new() {
 }
 
 for plat in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
-  # bin/ is gitignored, so a fresh clone does not have it yet
   mkdir -p "npm/platforms/$plat/bin"
   cp "dist/agent-$plat" "npm/platforms/$plat/bin/mimon"
   publish_if_new "$PWD/npm/platforms/$plat"

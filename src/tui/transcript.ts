@@ -1,5 +1,3 @@
-// The conversation above the prompt: lines, a streaming answer, and the images
-// sent with messages. It decides which of the newest entries fit on screen.
 import { ANSI as C } from "../shared/tokens";
 import type { ImageLayer } from "./image-layer";
 import type { LoadedImage } from "./images";
@@ -15,7 +13,6 @@ interface SentImage {
 
 export interface TranscriptRow {
   text: string;
-  // pixels the terminal paints over this row and the ones below; col is relative to the text
   place?: { slot: string; thumb: Thumb; name: string; col: number; cols: number; rows: number };
 }
 
@@ -35,7 +32,6 @@ export class Transcript {
     this.streaming = false;
   }
 
-  // Appends to the answer being streamed, starting a new line when none is open.
   stream(text: string): void {
     const last = this.entries.at(-1);
     if (this.streaming && last?.kind === "text") last.text += text;
@@ -52,7 +48,6 @@ export class Transcript {
     else this.entries[this.entries.length - 1] = { kind: "text", text };
   }
 
-  // A sent image, placed right under the message that carried it.
   addImage(image: LoadedImage): void {
     const id = String(++this.imageSeq);
     const cached = this.layer.thumbFor(image);
@@ -72,7 +67,6 @@ export class Transcript {
     return [...this.images.values()].at(-1)?.image ?? null;
   }
 
-  // The newest rows that fit in `budget` lines, oldest first.
   rows(budget: number, width: number, imageBox: { cols: number; rows: number }): TranscriptRow[] {
     const rows: TranscriptRow[] = [];
     for (let i = this.entries.length - 1; i >= 0 && rows.length < budget; i--) {
@@ -85,7 +79,6 @@ export class Transcript {
       const sent = this.images.get(entry.id);
       if (!sent) continue;
       let block = this.layer.captioned(sent.image, sent.thumb, imageBox.cols, imageBox.rows);
-      // never slice an image in half at the top edge — collapse it to its caption
       if (rows.length + block.lines.length > budget) block = { lines: block.lines.slice(0, 1), box: null };
       for (let j = block.lines.length - 1; j >= 0 && rows.length < budget; j--) {
         const box = block.box;
@@ -99,7 +92,6 @@ export class Transcript {
     return rows;
   }
 
-  // The same, for the borderless layout on tiny screens: images become a one-line chip.
   plainRows(budget: number, width: number): string[] {
     const rows: string[] = [];
     for (let i = this.entries.length - 1; i >= 0 && rows.length < budget; i--) {

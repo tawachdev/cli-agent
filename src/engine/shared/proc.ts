@@ -1,8 +1,3 @@
-// Child processes for tools and checks. Shell commands run in their own process
-// group so a stop reaches every process they started: killing only `sh` leaves
-// children like `sleep` or `bun test` running with our pipes still open, and the
-// read never ends.
-
 const DEFAULT_MAX_CHARS = 32 * 1024;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const KILL_GRACE_MS = 2_000;
@@ -15,8 +10,6 @@ export interface ProcResult {
   stderr: string;
 }
 
-// Reads a stream to the end, keeping at most `maxChars`. It always drains the
-// stream so the child never blocks on a full pipe.
 export async function readCapped(
   stream: ReadableStream<Uint8Array>,
   maxChars: number = DEFAULT_MAX_CHARS,
@@ -49,12 +42,9 @@ export function spawnShell(command: string, cwd: string): Child {
 function signalGroup(proc: Child, signal: NodeJS.Signals): void {
   try {
     process.kill(-proc.pid, signal);
-  } catch {
-    // ESRCH: the group is already gone — nothing left to stop
-  }
+  } catch {}
 }
 
-// SIGTERM the whole group, then SIGKILL whatever ignores it after a grace period.
 export async function stopTree(proc: Child, graceMs: number = KILL_GRACE_MS): Promise<void> {
   if (proc.exitCode !== null || proc.signalCode !== null) return;
   signalGroup(proc, "SIGTERM");
@@ -64,7 +54,6 @@ export async function stopTree(proc: Child, graceMs: number = KILL_GRACE_MS): Pr
   clearTimeout(force);
 }
 
-// Stops `proc` when the signal aborts or the deadline passes, and reports which one fired.
 export function guard(proc: Child, signal: AbortSignal | undefined, timeoutMs: number): {
   timedOut: () => boolean;
   release: () => void;
