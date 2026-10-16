@@ -192,6 +192,17 @@ const server = Bun.serve({
   idleTimeout: 255,
 });
 
+const PARENT_CHECK_MS = 2000;
+if (config.parentPid !== undefined) {
+  const parentPid = config.parentPid;
+  setInterval(() => {
+    if (process.ppid !== parentPid) {
+      logger.info("parent exited, shutting down", { parentPid });
+      process.exit(0);
+    }
+  }, PARENT_CHECK_MS).unref();
+}
+
 logger.info("backend listening", {
   url: `http://${config.hostname}:${server.port}`,
   db: config.dbPath,

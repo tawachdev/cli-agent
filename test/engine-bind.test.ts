@@ -151,3 +151,11 @@ describe("bearer token", () => {
     expect(() => loadConfig({ AGENT_TOKEN: "short" })).toThrow();
   });
 });
+
+describe("parent watch config", () => {
+  it("reads AGENT_PARENT_PID as a positive integer and ignores it when unset", () => {
+    expect(loadConfig({ AGENT_PARENT_PID: "4242" }).parentPid).toBe(4242);
+    expect(loadConfig({}).parentPid).toBeUndefined();
+    expect(() => loadConfig({ AGENT_PARENT_PID: "-1" })).toThrow();
+  });
+});

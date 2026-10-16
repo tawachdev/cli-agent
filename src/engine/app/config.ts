@@ -5,6 +5,7 @@ const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const configSchema = z.object({
   port: z.coerce.number().int().min(0).max(65535).default(7800),
   token: z.string().min(32).optional(),
+  parentPid: z.coerce.number().int().positive().optional(),
   hostname: z
     .string()
     .default("127.0.0.1")
@@ -51,6 +52,7 @@ export function loadConfig(
   return configSchema.parse({
     port: env.AGENT_PORT,
     token: env.AGENT_TOKEN || undefined,
+    parentPid: env.AGENT_PARENT_PID || undefined,
     hostname: env.AGENT_HOSTNAME,
     dbPath: env.AGENT_DB_PATH,
     logLevel: env.AGENT_LOG_LEVEL,
