@@ -34,7 +34,7 @@ describe("engine bind config", () => {
   });
 });
 
-function makeApp(hostname?: string) {
+function makeApp(hostname?: string, token?: string) {
   const db = openDb(":memory:");
   runMigrations(db, migrations);
   const audit = new SqliteAudit(db);
@@ -82,6 +82,7 @@ function makeApp(hostname?: string) {
     workspaceRoot: "/tmp",
     dataDir: "/tmp",
     brand: new BrandStore("/tmp", process.env),
+    token,
   });
 }
 
@@ -122,5 +123,31 @@ describe("host/origin middleware", () => {
     for (const hostname of ["0.0.0.0", "::", ""]) {
       expect(() => makeApp(hostname)).toThrow(/wildcard/);
     }
+  });
+});
+
+describe("bearer token", () => {
+  const token = "t".repeat(48);
+  const host = { host: "127.0.0.1:7800" };
+
+  it("rejects requests without the token when one is configured", async () => {
+    const app = makeApp("127.0.0.1", token);
+    expect((await app.request("/health", { headers: host })).status).toBe(401);
+    const wrong = await app.request("/health", { headers: { ...host, authorization: `Bearer ${"x".repeat(48)}` } });
+    expect(wrong.status).toBe(401);
+  });
+
+  it("accepts the exact token", async () => {
+    const app = makeApp("127.0.0.1", token);
+    const res = await app.request("/health", { headers: { ...host, authorization: `Bearer ${token}` } });
+    expect(res.status).toBe(200);
+  });
+
+  it("keeps the CLI tokenless when no token is configured", async () => {
+    expect((await makeApp("127.0.0.1").request("/health", { headers: host })).status).toBe(200);
+  });
+
+  it("refuses a token shorter than 32 characters in config", () => {
+    expect(() => loadConfig({ AGENT_TOKEN: "short" })).toThrow();
   });
 });

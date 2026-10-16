@@ -183,6 +183,8 @@ const server = Bun.serve({
     workspaceRoot: config.workspaceRoot,
     dataDir,
     brand: brandStore,
+    token: config.token,
+    complete: { router, numCtx: config.numCtx, temperature: config.temperature },
   }).fetch,
   websocket,
   port: config.port,
@@ -191,7 +193,7 @@ const server = Bun.serve({
 });
 
 logger.info("backend listening", {
-  url: `http://${config.hostname}:${config.port}`,
+  url: `http://${config.hostname}:${server.port}`,
   db: config.dbPath,
   activeModel: registry.splitBinding(bindings.get("mimon2")).def ? bindings.get("mimon2") : "not connected (/setup)",
   workspaceRoot: config.workspaceRoot,

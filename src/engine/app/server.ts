@@ -1,6 +1,8 @@
+import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { createAgentRoute } from "../api/routes/agent";
 import { createBrandRoute } from "../api/routes/brand";
+import { createCompleteRoute, type CompleteSettings } from "../api/routes/complete";
 import { createHealthRoute } from "../api/routes/health";
 import { createModelsRoute } from "../api/routes/models";
 import { createProvidersRoute } from "../api/routes/providers";
@@ -30,9 +32,19 @@ export interface ServerDeps {
   workspaceRoot: string;
   dataDir: string;
   brand: BrandStore;
+  token?: string;
+  complete?: CompleteSettings;
 }
 
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+const BEARER_PREFIX = "Bearer ";
+
+function bearerMatches(header: string | undefined, token: string): boolean {
+  if (!header?.startsWith(BEARER_PREFIX)) return false;
+  const given = Buffer.from(header.slice(BEARER_PREFIX.length));
+  const expected = Buffer.from(token);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
 
 function hostnameFromHeader(header: string): string {
   const value = header.trim().toLowerCase();
@@ -73,6 +85,9 @@ export function createServer(deps: ServerDeps): Hono {
         return c.json({ ok: false, error: "forbidden origin" }, 403);
       }
     }
+    if (deps.token && !bearerMatches(c.req.header("authorization"), deps.token)) {
+      return c.json({ ok: false, error: "unauthorized" }, 401);
+    }
     await next();
   });
   app.get("/", (c) => c.json({ ok: true, service: "agent-backend" }));
@@ -83,6 +98,7 @@ export function createServer(deps: ServerDeps): Hono {
   app.route("/brand", createBrandRoute(deps.brand, deps.audit));
   app.route("/sessions", createSessionsRoute(deps.db));
   app.route("/agent", createAgentRoute(deps.agent, deps.streams, deps.pending, deps.db));
+  if (deps.complete) app.route("/complete", createCompleteRoute(deps.complete));
   app.get(
     "/sessions/:id/stream",
     upgradeWebSocket((c) => {
