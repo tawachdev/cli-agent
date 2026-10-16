@@ -20,7 +20,7 @@ export const BUILTIN_PROVIDERS: ProviderDef[] = [
     name: "anthropic",
     kind: "anthropic",
     baseUrl: "https://api.anthropic.com/v1",
-    models: ["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-1"],
+    models: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5", "claude-sonnet-4-5", "claude-haiku-4-5"],
   },
   {
     name: "openai",
